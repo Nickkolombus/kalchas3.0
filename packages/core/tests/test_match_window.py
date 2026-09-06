@@ -9,7 +9,16 @@ from __future__ import annotations
 
 import pytest
 from conftest import timeline_from
-from kalchas_core.match import PERIOD_STARTS, Side, TeamDeltas, TeamStats, resolve_window
+from kalchas_core.match import (
+    FIRST_PERIOD_START,
+    PERIOD_STARTS,
+    Side,
+    TeamDeltas,
+    TeamStats,
+    WindowClamp,
+    period_start_for,
+    resolve_window,
+)
 from kalchas_core.match import earliest_allowed_start as earliest
 
 
@@ -108,3 +117,70 @@ class TestHalfBoundaryClamp:
 
         assert window is not None
         assert window.start_minute == 51, "window reached back across half-time"
+
+
+class TestPeriodStart:
+    @pytest.mark.parametrize(
+        ("minute", "expected"),
+        [(1, 1), (45, 1), (50, 1), (51, 51), (96, 51), (97, 97), (110, 97), (111, 111), (120, 111)],
+    )
+    def test_locates_the_containing_period(self, minute: int, expected: int) -> None:
+        assert period_start_for(minute) == expected
+
+    def test_the_first_period_includes_its_stoppage_time(self) -> None:
+        """Minutes 46-50 are first-half stoppage, not the second half."""
+        assert period_start_for(48) == FIRST_PERIOD_START
+
+
+class TestClampPolicies:
+    """The two rules 2.2 used are kept apart because they genuinely disagree."""
+
+    def test_period_start_clamp_holds_for_the_whole_period(self) -> None:
+        assert earliest(58, 10, WindowClamp.PERIOD_START) == 51
+        assert earliest(70, 10, WindowClamp.PERIOD_START) == 60
+
+    def test_short_after_break_imposes_nothing_once_underway(self) -> None:
+        """Safe for a five-minute window, but a ten-minute one crosses the break."""
+        assert earliest(58, 10, WindowClamp.SHORT_AFTER_BREAK) == 48
+
+    def test_the_two_policies_disagree_at_minute_55(self) -> None:
+        assert earliest(55, 5, WindowClamp.SHORT_AFTER_BREAK) == 52
+        assert earliest(55, 5, WindowClamp.PERIOD_START) == 51
+
+    @pytest.mark.parametrize("period_start", PERIOD_STARTS)
+    def test_neither_policy_reaches_before_a_period_start(self, period_start: int) -> None:
+        for minute in range(period_start, period_start + 10):
+            for clamp in WindowClamp:
+                if clamp is WindowClamp.SHORT_AFTER_BREAK and minute >= period_start + 5:
+                    continue  # documented gap: see test above
+                assert earliest(minute, 10, clamp) >= period_start
+
+
+class TestPartialWindows:
+    def test_a_full_span_is_required_by_default(self) -> None:
+        timeline = timeline_from({1: {}, 2: {}, 3: {}}, current_minute=3)
+        assert resolve_window(timeline, 5) is None
+
+    def test_a_partial_window_can_be_accepted(self) -> None:
+        timeline = timeline_from({1: {}, 2: {}, 3: {}}, current_minute=3)
+        window = resolve_window(timeline, 5, require_full_span=False)
+
+        assert window is not None
+        assert window.start_minute == 1
+
+
+class TestFallbackLookback:
+    def test_a_stale_snapshot_is_accepted_within_the_fallback(self) -> None:
+        timeline = timeline_from({28: {}, 40: {}}, current_minute=40)
+
+        assert resolve_window(timeline, 10) is None
+        window = resolve_window(timeline, 10, fallback_lookback=15)
+        assert window is not None
+        assert window.start_minute == 28
+
+    def test_the_nearest_snapshot_to_the_fallback_target_wins(self) -> None:
+        timeline = timeline_from({5: {}, 27: {}, 40: {}}, current_minute=40)
+        window = resolve_window(timeline, 10, fallback_lookback=15)
+
+        assert window is not None
+        assert window.start_minute == 27, "a very old snapshot would read as one long surge"

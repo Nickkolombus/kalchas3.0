@@ -8,15 +8,19 @@ from kalchas_core.match.snapshot import (
 )
 from kalchas_core.match.window import (
     DEFAULT_WINDOW_MINUTES,
+    FIRST_PERIOD_START,
     PERIOD_STARTS,
     ActivityWindow,
     TeamDeltas,
+    WindowClamp,
     earliest_allowed_start,
+    period_start_for,
     resolve_window,
 )
 
 __all__ = [
     "DEFAULT_WINDOW_MINUTES",
+    "FIRST_PERIOD_START",
     "PERIOD_STARTS",
     "ActivityWindow",
     "MatchTimeline",
@@ -24,6 +28,8 @@ __all__ = [
     "Side",
     "TeamDeltas",
     "TeamStats",
+    "WindowClamp",
     "earliest_allowed_start",
+    "period_start_for",
     "resolve_window",
 ]

@@ -5,6 +5,6 @@ take their tunable coefficients in a `WeightSet`, never read configuration
 themselves, and never mutate their inputs.
 """
 
-from kalchas_core.strategies import rule_of_three
+from kalchas_core.strategies import pressure_index, rule_of_three
 
-__all__ = ["rule_of_three"]
+__all__ = ["pressure_index", "rule_of_three"]
