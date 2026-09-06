@@ -53,7 +53,7 @@ ignore = [
 # in Telegram alerts, so the real multiplication sign, minus sign, en dash and
 # Greek letters are intentional. Without this, RUF001 pushes them toward ASCII
 # lookalikes and the formulas read worse for the people tuning them.
-allowed-confusables = ["×", "−", "–", "α", "θ", "ω", "Ω", "Φ", "Δ", "·"]
+allowed-confusables = ["×", "−", "–", "α", "θ", "ω", "Ω", "Φ", "Δ", "·", "σ"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S101"]  # assert is the point of a test

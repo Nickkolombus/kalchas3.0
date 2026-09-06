@@ -8,9 +8,17 @@ themselves, and never mutate their inputs.
 from kalchas_core.strategies import (
     delta_5min,
     delta_goal,
+    kscore,
     omega,
     pressure_index,
     rule_of_three,
 )
 
-__all__ = ["delta_5min", "delta_goal", "omega", "pressure_index", "rule_of_three"]
+__all__ = [
+    "delta_5min",
+    "delta_goal",
+    "kscore",
+    "omega",
+    "pressure_index",
+    "rule_of_three",
+]

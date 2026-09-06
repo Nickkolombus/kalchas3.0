@@ -142,6 +142,23 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
                 "display-only; the engine fires on linear PI/min thresholds."
             ),
         ),
+        "kscore": StrategyInfo(
+            slot="7",
+            name="K-Score",
+            equation=(
+                "votes: momentum=σ(Δ5/ms), pressure=PI/100, rule3=(RO3+0.3)/1.3,\n"
+                "       omega=σ(accel/8)·(0.45+0.55·σ(base/2.5))·clamp(level/55,0.2,1)\n"
+                "logit = bias + Σ trust_i · (2·vote_i − 1) + context\n"
+                "K = round(100 · σ(logit) · ΦI)   ΦI = floor+(1−floor)·NPEI/100"
+            ),
+            blurb=(
+                "Meta-strategy: four consultant strategies vote in [0,1], a weighted "
+                "logit blend produces a probability, and NPEI scales it as a focus "
+                "multiplier (ΦI). Optional context terms adjust for red cards, late "
+                "trailing and kickoff odds. Outputs a 0–100 score per team and a "
+                "match-level OR of both."
+            ),
+        ),
     }
 )
 
@@ -633,6 +650,119 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 "|θ| and |α| below this both classify as 'flat' (display).",
             ),
         ),
+        "kscore": _specs(
+            WeightSpec(
+                "trust_momentum",
+                "Trust: Δ5min (momentum)",
+                1.2,
+                0.0,
+                3.0,
+                0.1,
+                "Logit weight on the Delta 5min consultant vote.",
+            ),
+            WeightSpec(
+                "trust_pressure",
+                "Trust: Pressure Index",
+                0.7,
+                0.0,
+                3.0,
+                0.1,
+                "Logit weight on the Pressure Index consultant vote.",
+            ),
+            WeightSpec(
+                "trust_rule3",
+                "Trust: Rule of Three",
+                0.8,
+                0.0,
+                3.0,
+                0.1,
+                "Logit weight on the Rule of Three consultant vote.",
+            ),
+            WeightSpec(
+                "trust_omega",
+                "Trust: Omega",
+                0.4,
+                0.0,
+                3.0,
+                0.1,
+                "Logit weight on the Omega consultant vote.",
+            ),
+            WeightSpec(
+                "phi_floor",
+                "ΦI focus floor",
+                0.2,
+                0.0,
+                1.0,
+                0.05,
+                "Minimum focus multiplier when NPEI is zero.",
+            ),
+            WeightSpec(
+                "bias",
+                "Logit bias",
+                -1.0,
+                -5.0,
+                5.0,
+                0.1,
+                "Constant shift applied before the sigmoid.",
+            ),
+            WeightSpec(
+                "momentum_scale",
+                "Δ5 → vote scale",
+                8.0,
+                1.0,
+                30.0,
+                0.5,
+                "Divisor in σ(Δ5 / scale) for the momentum vote.",
+            ),
+            # Declared and stored in 2.2's kscore_settings, shown in the admin
+            # UI, and never read by any computation. Kept so the slider still
+            # exists; a test asserts changing it moves nothing.
+            WeightSpec(
+                "horizon",
+                "Horizon (minutes, unused)",
+                10.0,
+                5.0,
+                15.0,
+                1.0,
+                "Declared in 2.2 and never used in the formula. Dead control.",
+            ),
+            WeightSpec(
+                "ctx_red_card",
+                "Context: red-card penalty",
+                0.4,
+                0.0,
+                1.0,
+                0.05,
+                "Logit subtracted per red card (capped at 2).",
+            ),
+            WeightSpec(
+                "ctx_ko_prior",
+                "Context: kickoff-odds prior",
+                0.25,
+                0.0,
+                1.0,
+                0.05,
+                "Logit shift from normalised kickoff implied probabilities.",
+            ),
+            WeightSpec(
+                "ctx_trailing",
+                "Context: late-trailing boost",
+                0.15,
+                0.0,
+                0.5,
+                0.05,
+                "Logit added when trailing after ctx_late_minute.",
+            ),
+            WeightSpec(
+                "ctx_late_minute",
+                "Context: late-game start",
+                70.0,
+                60.0,
+                90.0,
+                1.0,
+                "Minute from which the trailing boost begins to ramp.",
+            ),
+        ),
     }
 )
 
@@ -720,6 +850,19 @@ BUILTIN_PRESETS: Mapping[str, Mapping[str, Mapping[str, float]]] = MappingProxyT
                 "min_accel": 8.0,
                 "min_baseline_slope": 1.0,
                 "pi_level_min": 45.0,
+            },
+        },
+        "kscore": {
+            "Balanced (default)": {},
+            "Momentum-led": {
+                "trust_momentum": 1.8,
+                "trust_pressure": 0.5,
+                "trust_omega": 0.3,
+            },
+            "Context-aware": {
+                "ctx_red_card": 0.6,
+                "ctx_trailing": 0.25,
+                "ctx_ko_prior": 0.4,
             },
         },
     }
