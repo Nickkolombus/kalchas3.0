@@ -102,3 +102,30 @@ class TestInsights:
         away = calculate_team_form([fx(3, 4, 0, 2) for _ in range(5)], team_id=3)
         lines = build_form_insights("Home", "Away", home, away)
         assert 1 <= len(lines) <= 3
+
+
+class TestPositionInsights:
+    def test_table_clash_when_gap_is_large(self) -> None:
+        from kalchas_core.form import position_insights
+
+        standings = [
+            {"team_id": 1, "position": 2},
+            {"team_id": 2, "position": 14},
+        ]
+        lines = position_insights(standings, 1, 2, "Home", "Away")
+        assert lines == ["Table clash: 2th vs 14th place"]
+
+    def test_top_table_clash(self) -> None:
+        from kalchas_core.form import position_insights
+
+        standings = [
+            {"team": {"id": 1}, "position": 1},
+            {"team": {"id": 2}, "position": 3},
+        ]
+        lines = position_insights(standings, 1, 2, "Home", "Away")
+        assert lines == ["Top-table clash: 1nd vs 3rd place"]
+
+    def test_missing_team_returns_empty(self) -> None:
+        from kalchas_core.form import position_insights
+
+        assert position_insights([{"team_id": 1, "position": 1}], 1, 99, "H", "A") == []

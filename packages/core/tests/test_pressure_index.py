@@ -21,6 +21,7 @@ from kalchas_core.strategies.pressure_index import (
     TeamPressure,
     evaluate,
     game_state_modifier,
+    pressure_series,
     raw_pressure,
     time_multiplier,
 )
@@ -273,3 +274,29 @@ class TestPeriodClamp:
 
         assert result is not None
         assert result.window_start_minute == 60
+
+
+class TestPressureSeries:
+    def test_series_length_matches_up_to_minute(self) -> None:
+        timeline = busy_timeline(
+            start_minute=10,
+            end_minute=20,
+            home={"shots_on_target": 3, "dangerous_attacks": 8},
+        )
+        series = pressure_series(timeline, Side.HOME, up_to_minute=20, window_minutes=10)
+        assert len(series) == 21
+        assert series[9] == 0.0  # no snapshot before activity
+        assert series[20] > 0.0
+
+    def test_negative_up_to_returns_empty(self) -> None:
+        timeline = busy_timeline()
+        assert pressure_series(timeline, Side.HOME, up_to_minute=-1, window_minutes=10) == []
+
+    def test_missing_minutes_read_as_zero(self) -> None:
+        timeline = timeline_from(
+            {10: {"home": {}}, 20: {"home": {"shots_on_target": 2}}},
+            current_minute=20,
+        )
+        series = pressure_series(timeline, Side.HOME, up_to_minute=20, window_minutes=10)
+        assert series[15] == 0.0
+        assert series[20] > 0.0

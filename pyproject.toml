@@ -11,6 +11,7 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
     "ruff>=0.8",
     "mypy>=1.13",
 ]
@@ -83,3 +84,16 @@ ignore_missing_imports = true
 testpaths = ["packages/core/tests"]
 asyncio_mode = "auto"
 filterwarnings = ["error::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["kalchas_core"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 85
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]

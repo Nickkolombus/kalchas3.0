@@ -74,3 +74,23 @@ class TestNormalizeScore:
         assert normalize_score({"home": 1, "away": 0}) == "1-0"
         assert normalize_score("2-2") == "2-2"
         assert normalize_score(None) == ""
+
+
+class TestFinishedFromDictAndPhaseFromMinute:
+    def test_is_match_finished_from_dict(self) -> None:
+        from kalchas_core.match_status import is_match_finished_from_dict
+
+        assert is_match_finished_from_dict({"status_short": "FT", "elapsed": 105}) is True
+        assert is_match_finished_from_dict({"status_short": "FT", "current_minute": 92}) is False
+        assert is_match_finished_from_dict({"status_short": "2H", "elapsed": 70}) is False
+
+    def test_phase_from_minute_bands(self) -> None:
+        from kalchas_core.match_status import phase_from_minute
+
+        assert phase_from_minute(0) is MatchPhase.NOT_STARTED
+        assert phase_from_minute(30) is MatchPhase.FIRST_HALF
+        assert phase_from_minute(48) is MatchPhase.FIRST_HALF
+        assert phase_from_minute(60) is MatchPhase.SECOND_HALF
+        assert phase_from_minute(100) is MatchPhase.EXTRA_TIME_FIRST
+        assert phase_from_minute(110) is MatchPhase.EXTRA_TIME_SECOND
+        assert phase_from_minute(140) is MatchPhase.FINISHED
