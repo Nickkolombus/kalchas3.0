@@ -1,0 +1,39 @@
+# Keep the build context small and free of secrets.
+# Kalchas 2.2 had no .dockerignore and a `COPY . .`, so a 2 GB tree including
+# .env and Telegram session files was baked into every image layer.
+
+.git/
+.github/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+node_modules/
+apps/web/dist/
+.vite/
+
+.env
+.env.*
+!.env.example
+*.session
+*.pem
+*.key
+
+/data/
+/logs/
+*.log
+*.db
+*.sqlite3
+
+.claude/
+.cursor/
+.idea/
+.vscode/
+*.md
+!README.md

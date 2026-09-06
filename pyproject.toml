@@ -1,0 +1,79 @@
+[project]
+name = "kalchas"
+version = "3.0.0"
+description = "Strategy-based live football analytics: scanner, API, and Telegram delivery."
+requires-python = ">=3.13"
+dependencies = [
+    "kalchas-core",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[tool.uv.workspace]
+# apps/api, apps/scanner and apps/bot join this list as each is built.
+# Listing a member before it exists makes `uv sync` silently skip it.
+members = ["packages/*"]
+
+[tool.uv.sources]
+kalchas-core = { workspace = true }
+
+# ---------------------------------------------------------------------------
+# Lint
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["apps/web"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle
+    "F",      # pyflakes -- F811 catches the redefinition bug that hid dead
+              # methods inside StrategyGeneral in 2.2
+    "I",      # import sorting
+    "UP",     # pyupgrade
+    "B",      # bugbear
+    "ASYNC",  # blocking calls in async defs
+    "S",      # bandit
+    "BLE",    # blind except -- 2.2 accumulated 1806 of these
+    "RUF",
+]
+ignore = [
+    "E501",    # line length is handled by the formatter
+    "B008",    # FastAPI Depends() in defaults is idiomatic
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101"]  # assert is the point of a test
+
+# ---------------------------------------------------------------------------
+# Types
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.13"
+packages = ["kalchas_core"]
+mypy_path = "packages/core/src"
+strict = false
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = true
+no_implicit_optional = true
+disallow_untyped_defs = false   # tightened per-module as the port lands
+
+[[tool.mypy.overrides]]
+module = ["numpy.*", "sklearn.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["packages/core/tests"]
+asyncio_mode = "auto"
+filterwarnings = ["error::DeprecationWarning"]

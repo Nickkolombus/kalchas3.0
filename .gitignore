@@ -1,0 +1,61 @@
+# Kalchas 3.0 .gitignore
+#
+# Rules here are deliberately ANCHORED and NARROW.
+#
+# Kalchas 2.2 was broken by three unanchored rules: a blanket `*.json` (which
+# untracked every package.json), a bare `lib/` meant for Python build output
+# (which untracked frontend `src/lib/`), and `*token*` meant for secrets (which
+# untracked the CSS design tokens). Its entire frontend existed only on disk.
+#
+# Before adding a pattern here: anchor it with a leading `/` if it should only
+# match the repo root, and never match a whole extension that is also used for
+# checked-in config.
+
+# ---------------------------------------------------------------- secrets
+.env
+.env.*
+!.env.example
+*.session
+*.pem
+*.key
+credentials.json
+service-account*.json
+
+# ---------------------------------------------------------------- python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+.venv/
+venv/
+*.egg-info/
+/build/
+/dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ---------------------------------------------------------------- node
+node_modules/
+.vite/
+apps/web/dist/
+*.tsbuildinfo
+
+# ---------------------------------------------------------------- local data
+/data/
+/logs/
+*.log
+*.db
+*.sqlite3
+
+# ---------------------------------------------------------------- tooling
+.claude/
+.cursor/
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
