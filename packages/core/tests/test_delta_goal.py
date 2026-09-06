@@ -1,4 +1,4 @@
-"""Delta Goal (Strategy 3).
+"""League Bar (Strategy 3, key ``delta_goal``).
 
 New in 3.0. Kalchas 2.2 had no tests for this strategy at all, despite it
 being the most intricate of them: the calculation sat in a 380-line method
@@ -20,18 +20,23 @@ from kalchas_core.match import MatchTimeline, Side
 from kalchas_core.strategies.delta_goal import (
     DEFAULT_BASELINE,
     GLOBAL_AVERAGE_GOALS_PER_GAME,
+    LEAGUE_BAR_NORMAL_HIGH,
+    LEAGUE_BAR_NORMAL_LOW,
     LEAGUE_BASELINES,
     LEAGUE_GOALS_PER_GAME,
     MAX_THREAT_SCORE,
     MINIMUM_MINUTE,
     AttackingPatterns,
     EventBaseline,
+    LeagueBar,
     MatchContext,
     Tier,
     WindowEvents,
     baseline_for,
     detect_patterns,
     evaluate,
+    league_bar_for,
+    league_bar_score,
     league_prior,
     sigmoid,
     threat_score,
@@ -246,14 +251,8 @@ class TestPatternDetection:
         assert not detect_patterns(timeline, Side.AWAY, 30).sustained_attack
 
 
-class TestFoulsCountAsSustainedAttack:
-    """A preserved defect, pinned so it cannot be silently tidied away.
-
-    2.2 summed the whole event dict when testing for a sustained attack, which
-    pulled fouls in alongside shots and corners. Because a sustained attack
-    satisfies the evidence gate on its own, a scrappy passage of play with no
-    shots at all can clear a gate written to require attacking intent.
-    """
+class TestFoulsDoNotCountAsSustainedAttack:
+    """Fouls are not attacking intent; they must not clear the evidence gate."""
 
     def _fouls_only(self, minute: int = 30) -> MatchTimeline:
         minutes = {}
@@ -261,31 +260,60 @@ class TestFoulsCountAsSustainedAttack:
             minutes[m] = {"home": {"fouls": index * 2}, "away": {}}
         return timeline_from(minutes, current_minute=minute)
 
-    def test_fouls_alone_register_as_a_sustained_attack(self) -> None:
+    def test_fouls_alone_are_not_a_sustained_attack(self) -> None:
         patterns = detect_patterns(self._fouls_only(), Side.HOME, 30)
-        assert patterns.sustained_attack
+        assert not patterns.sustained_attack
         assert not patterns.shot_burst
         assert not patterns.corner_sequence
 
-    def test_and_therefore_satisfy_the_evidence_gate(self) -> None:
+    def test_fouls_alone_do_not_satisfy_the_evidence_gate(self) -> None:
         result = evaluate(self._fouls_only(), league_id="152")
         assert result.home.events.shots_on_target == 0
         assert result.home.events.attacking_total == 0
-        assert result.home.has_evidence, "no shots, no corners, yet the gate passes"
+        assert not result.home.has_evidence
+
+
+class TestLeagueBar:
+    def test_bands_around_the_league_prior(self) -> None:
+        assert league_bar_for(LEAGUE_BAR_NORMAL_LOW - 0.01) is LeagueBar.BELOW
+        assert league_bar_for(1.0) is LeagueBar.NORMAL
+        assert league_bar_for(LEAGUE_BAR_NORMAL_HIGH + 0.01) is LeagueBar.ABOVE
+        assert league_bar_for(LEAGUE_BAR_NORMAL_LOW) is LeagueBar.NORMAL
+        assert league_bar_for(LEAGUE_BAR_NORMAL_HIGH) is LeagueBar.NORMAL
+
+    def test_score_is_zero_on_the_league_prior(self) -> None:
+        assert league_bar_score(1.0) == 0.0
+
+    def test_score_range_is_minus_ten_to_plus_ten(self) -> None:
+        assert league_bar_score(0.0) == -MAX_THREAT_SCORE
+        assert league_bar_score(2.0) == MAX_THREAT_SCORE
+        assert league_bar_score(5.0) == MAX_THREAT_SCORE
+        assert league_bar_score(1.15) == pytest.approx(1.5)
+
+    def test_evaluate_exposes_league_bar(self) -> None:
+        result = evaluate(timeline_from({m: {"home": {}, "away": {}} for m in range(0, 15)}, 14))
+        assert result.home.league_bar in {
+            LeagueBar.BELOW,
+            LeagueBar.NORMAL,
+            LeagueBar.ABOVE,
+        }
+        assert -MAX_THREAT_SCORE <= result.home.threat <= MAX_THREAT_SCORE
 
 
 class TestTiers:
     def test_tiers_step_up_with_the_margin_over_the_threshold(self) -> None:
-        assert tier_for(17.9, 18.0) is None
-        assert tier_for(18.0, 18.0) is Tier.YELLOW
-        assert tier_for(20.0, 18.0) is Tier.ORANGE
-        assert tier_for(22.0, 18.0) is Tier.RED
+        assert tier_for(5.9, 6.0) is None
+        assert tier_for(6.0, 6.0) is Tier.YELLOW
+        assert tier_for(8.0, 6.0) is Tier.ORANGE
+        assert tier_for(9.5, 6.0) is Tier.RED
 
     def test_tiers_rank_in_severity_order(self) -> None:
         assert Tier.RED.rank > Tier.ORANGE.rank > Tier.YELLOW.rank
 
 
-class TestThreatScore:
+class TestLegacyCompositeThreat:
+    """Old 0-20 blend kept for differentials; live path uses league_bar_score."""
+
     def _context(self, minute: int = 50, difference: int = 1) -> MatchContext:
         return MatchContext.build(minute, difference, 0)
 
@@ -316,34 +344,9 @@ class TestThreatScore:
         assert late > mid
 
     def test_the_probability_term_is_capped(self) -> None:
-        """Beyond the ceiling, more probability adds nothing."""
         at_ceiling = threat_score(0.12, 1.0, 50.0, self._context(), AttackingPatterns(), DEFAULTS)
         far_beyond = threat_score(0.95, 1.0, 50.0, self._context(), AttackingPatterns(), DEFAULTS)
         assert at_ceiling == far_beyond
-
-    def test_the_score_can_exceed_its_nominal_ceiling(self) -> None:
-        """Preserved from 2.2, which applied no clamp.
-
-        Every term maxed in a late, level match with all three patterns pushes
-        the composite past 1.0. The differential harness found this in the
-        majority of triggering cases, so it is the common path, not an edge.
-        """
-        maxed = threat_score(
-            0.5,
-            5.0,
-            100.0,
-            MatchContext.build(90, 0, 0),
-            AttackingPatterns(sustained_attack=True, corner_sequence=True, shot_burst=True),
-            DEFAULTS,
-        )
-        assert maxed > MAX_THREAT_SCORE
-
-    def test_a_floor_applies_when_something_is_happening(self) -> None:
-        """So the dashboard shows a reading rather than a bare zero."""
-        scored = threat_score(
-            0.0, 0.0, 0.0, MatchContext.build(89, 0, 0), AttackingPatterns(), DEFAULTS
-        )
-        assert scored > 0
 
     def test_the_weights_are_tunable(self) -> None:
         heavy = WeightSet.from_overrides({"delta_goal": {"threat_w_ps": 0.6}})
@@ -365,16 +368,17 @@ class TestEvaluate:
         assert result.triggering_team is None
 
     def test_a_dominant_team_triggers(self) -> None:
-        result = evaluate(busy(70), league_id="152", threshold=10.0)
+        result = evaluate(busy(70), league_id="152", threshold=3.0)
         assert result.triggering_team is Side.HOME
         assert result.trigger_value > 0
+        assert -MAX_THREAT_SCORE <= result.trigger_value <= MAX_THREAT_SCORE
 
     def test_the_quiet_team_does_not_trigger(self) -> None:
-        result = evaluate(busy(70), league_id="152", threshold=10.0)
+        result = evaluate(busy(70), league_id="152", threshold=3.0)
         assert not result.away.qualifies
 
     def test_the_full_chain_is_reported(self) -> None:
-        team = evaluate(busy(70), league_id="152", threshold=10.0).home
+        team = evaluate(busy(70), league_id="152", threshold=3.0).home
         assert team.pressure_index > 0
         assert 0 < team.pressure_score < 100
         assert 0 < team.confidence <= 1
@@ -388,17 +392,17 @@ class TestEvaluate:
 
     def test_a_high_threshold_suppresses_the_alert(self) -> None:
         timeline = busy(70)
-        assert evaluate(timeline, threshold=10.0).triggering_team is Side.HOME
-        assert evaluate(timeline, threshold=100.0).triggering_team is None
+        assert evaluate(timeline, threshold=3.0).triggering_team is Side.HOME
+        assert evaluate(timeline, threshold=10.1).triggering_team is None
 
     def test_the_strongest_team_is_reported_even_without_a_trigger(self) -> None:
         """The dashboard needs a reading when nothing alerts."""
-        result = evaluate(busy(70), threshold=100.0)
+        result = evaluate(busy(70), threshold=10.1)
         assert result.triggering_team is None
         assert result.strongest_team is Side.HOME
 
     def test_the_higher_tier_wins_over_the_higher_score(self) -> None:
-        result = evaluate(busy(70), threshold=10.0)
+        result = evaluate(busy(70), threshold=3.0)
         side = result.triggering_team
         assert side is not None
         assert result.team(side).tier is not None
@@ -450,21 +454,12 @@ class TestEvidenceGate:
         assert result.triggering_team is None
 
 
-class TestDangerousAttacksDefeatTheEvidenceGate:
-    """A second, larger instance of the `sustained_attack` defect.
+class TestDangerousAttacksCanClearEvidenceViaSustainedAttack:
+    """Dangerous attacks count as attacking events for sustained_attack.
 
-    The gate's first two clauses both require a shot on target, which is what
-    makes it a gate against alerting on dangerous attacks -- the noisiest
-    signal the feed carries. But its third clause accepts a sustained attack,
-    and that pattern is computed by summing *all* events, dangerous attacks
-    included. Three or more of them in each of the last two windows is enough.
-
-    So the gate does not do the job it was written for. Since dangerous
-    attacks are the highest-frequency stat in the feed, and the competition
-    baseline is only about 1.2 per five minutes, this is not a rare path.
-
-    Preserved because changing it would change which alerts subscribers
-    receive, which is a product decision rather than a porting one.
+    The shot-based gate clauses require SOT; the sustained-attack clause can
+    still pass on DA volume alone across consecutive windows. That is a
+    separate product question from fouls (which are excluded).
     """
 
     def _dangerous_attacks_only(self, per_minute: int) -> MatchTimeline:
@@ -484,8 +479,9 @@ class TestDangerousAttacksDefeatTheEvidenceGate:
         result = evaluate(self._dangerous_attacks_only(per_minute=2), threshold=0.0)
         assert result.home.events.shots_on_target == 0
         assert result.home.has_evidence
-        assert result.home.qualifies
-        assert result.triggering_team is Side.HOME
+        # DA-only pressure can still sit below the league bar → no alert tier.
+        assert result.home.league_bar is LeagueBar.BELOW
+        assert not result.home.qualifies
 
 
 class TestOddsPrior:
@@ -522,24 +518,19 @@ class TestWeightTuning:
         preset = WeightSet.from_preset("delta_goal", "SOT-driven")
         assert evaluate(busy(50), weights=preset).home.pressure_score > 0
 
-    def test_the_possession_weight_is_not_wired_in(self) -> None:
-        """A dead control inherited from 2.2, left dead rather than reinterpreted.
-
-        The registry carries `weight_possession` and 2.2 resolved it on
-        startup, but it was never multiplied into anything. Changing it must
-        not move the score, or the port has invented behaviour.
-        """
-        timeline = busy(50)
-        tweaked = WeightSet.from_overrides({"delta_goal": {"weight_possession": 0.5}})
-        assert evaluate(timeline, weights=tweaked).home.threat == evaluate(timeline).home.threat
+    def test_weight_possession_is_not_in_the_registry(self) -> None:
+        """2.2 declared it; the formula never multiplied it in. Dropped in 3.0."""
+        assert "weight_possession" not in WeightSet.defaults().for_strategy("delta_goal")
 
 
 class TestScoreline:
-    def test_the_scoreline_reaches_the_threat_score(self) -> None:
-        timeline = busy(85)
-        level = evaluate(timeline, home_score=1, away_score=1, threshold=10.0)
-        rout = evaluate(timeline, home_score=4, away_score=0, threshold=10.0)
-        assert level.home.threat > rout.home.threat
+    def test_the_scoreline_reaches_lift(self) -> None:
+        """Urgency from a close scoreline still moves lift (and thus the bar)."""
+        timeline = busy(85, per_minute=1)
+        level = evaluate(timeline, home_score=1, away_score=1, threshold=3.0)
+        rout = evaluate(timeline, home_score=4, away_score=0, threshold=3.0)
+        assert level.home.lift > rout.home.lift
+        assert level.home.threat >= rout.home.threat
 
     def test_a_string_scoreline_is_not_this_layer_s_problem(self) -> None:
         """Scores arrive as integers here; parsing feed formats belongs upstream."""

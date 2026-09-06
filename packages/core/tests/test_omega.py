@@ -1,9 +1,8 @@
 """Omega (Strategy 6).
 
-New in 3.0; 2.2 had no tests for it. Verified against 2.2 by differential
-comparison over 1,600 timelines across five settings configurations, agreeing
-on both pressure series, both slopes, the angles, the level, the state label
-and the trigger decision (`scripts/verify_omega_port.py`).
+New in 3.0; originally verified against 2.2 by differential comparison. Accel
+and baseline are now window-normalised (intentional 3.0 divergence — see
+module docstring and `scripts/verify_omega_port.py`).
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ from kalchas_core.strategies.omega import (
 from kalchas_core.weights import WeightSet
 
 DEFAULTS = OmegaSettings()
-LOOSE = OmegaSettings(min_acceleration=0.1, min_baseline_slope=-10.0, min_level=0.0)
+LOOSE = OmegaSettings(min_acceleration=0.01, min_baseline_slope=-1.0, min_level=0.0)
 
 
 def shaped(minute: int, rate) -> MatchTimeline:
@@ -37,9 +36,7 @@ def shaped(minute: int, rate) -> MatchTimeline:
     Rates are kept low on purpose. Pressure is square-root scaled and clamped
     at 100, so a busy fixture saturates both windows and the acceleration
     inverts. The shapes below were picked by sweeping activity profiles and
-    reading off the resulting acceleration, not by assuming that "more
-    attacking" means "accelerating" -- for this signal it often does not, as
-    `TestAccelerationIsBiasedNegative` records.
+    reading off the resulting acceleration.
     """
     minutes: dict[int, dict] = {}
     totals = {"shots_on_target": 0.0, "dangerous_attacks": 0.0, "corners": 0.0}
@@ -139,25 +136,26 @@ class TestSettings:
 
     def test_an_angle_threshold_converts_to_a_slope(self) -> None:
         """Saved settings predate the linear thresholds, so both shapes work."""
-        settings = OmegaSettings.from_stored(theta_threshold=20.0, angle_scale=15.0)
+        settings = OmegaSettings.from_stored(theta_threshold=20.0, angle_scale=DEFAULT_ANGLE_SCALE)
         assert settings.min_acceleration == pytest.approx(DEFAULT_MIN_ACCELERATION, abs=0.01)
 
     def test_a_linear_threshold_wins_over_an_angle(self) -> None:
-        settings = OmegaSettings.from_stored(min_acceleration=9.0, theta_threshold=45.0)
-        assert settings.min_acceleration == 9.0
+        settings = OmegaSettings.from_stored(min_acceleration=0.9, theta_threshold=45.0)
+        assert settings.min_acceleration == 0.9
 
     def test_the_angle_conversion_uses_the_bounded_scale(self) -> None:
         """Order matters: the scale is clamped before the angle is converted."""
         settings = OmegaSettings.from_stored(theta_threshold=20.0, angle_scale=9999.0)
         assert settings.angle_scale == 50.0
-        assert settings.min_acceleration == pytest.approx(degrees_to_slope(20.0, 50.0), abs=1e-9)
+        # 20° at k=50 is ~18 PI/min; the normalised accel ceiling clamps it.
+        assert settings.min_acceleration == 10.0
 
     def test_thresholds_are_bounded(self) -> None:
         settings = OmegaSettings.from_stored(
             min_acceleration=1e6, min_baseline_slope=-1e6, min_level=1e6
         )
-        assert settings.min_acceleration == 50.0
-        assert settings.min_baseline_slope == -20.0
+        assert settings.min_acceleration == 10.0
+        assert settings.min_baseline_slope == -5.0
         assert settings.min_level == 100.0
 
     def test_the_angle_properties_round_trip_the_thresholds(self) -> None:
@@ -239,25 +237,25 @@ class TestTriggerGate:
         )
 
     def test_all_three_conditions_are_required(self) -> None:
-        settings = OmegaSettings(min_acceleration=5.0, min_baseline_slope=0.0, min_level=20.0)
-        assert self._reading(6.0, 1.0, 30.0).meets(settings)
-        assert not self._reading(4.0, 1.0, 30.0).meets(settings), "acceleration too low"
-        assert not self._reading(6.0, -1.0, 30.0).meets(settings), "baseline falling"
-        assert not self._reading(6.0, 1.0, 10.0).meets(settings), "level too low"
+        settings = OmegaSettings(min_acceleration=0.2, min_baseline_slope=0.0, min_level=20.0)
+        assert self._reading(0.3, 0.1, 30.0).meets(settings)
+        assert not self._reading(0.1, 0.1, 30.0).meets(settings), "acceleration too low"
+        assert not self._reading(0.3, -0.1, 30.0).meets(settings), "baseline falling"
+        assert not self._reading(0.3, 0.1, 10.0).meets(settings), "level too low"
 
     def test_acceleration_must_exceed_rather_than_meet_the_threshold(self) -> None:
-        settings = OmegaSettings(min_acceleration=5.0, min_baseline_slope=0.0, min_level=0.0)
-        assert not self._reading(5.0, 1.0, 50.0).meets(settings)
-        assert self._reading(5.001, 1.0, 50.0).meets(settings)
+        settings = OmegaSettings(min_acceleration=0.2, min_baseline_slope=0.0, min_level=0.0)
+        assert not self._reading(0.2, 0.1, 50.0).meets(settings)
+        assert self._reading(0.201, 0.1, 50.0).meets(settings)
 
     def test_the_level_floor_is_inclusive(self) -> None:
-        settings = OmegaSettings(min_acceleration=1.0, min_baseline_slope=0.0, min_level=20.0)
-        assert self._reading(2.0, 1.0, 20.0).meets(settings)
+        settings = OmegaSettings(min_acceleration=0.05, min_baseline_slope=0.0, min_level=20.0)
+        assert self._reading(0.1, 0.1, 20.0).meets(settings)
 
     def test_a_spike_on_a_falling_baseline_is_rejected(self) -> None:
         """The point of the baseline gate: a blip inside a fade is not a surge."""
-        settings = OmegaSettings(min_acceleration=1.0, min_baseline_slope=0.0, min_level=0.0)
-        assert not self._reading(50.0, -0.5, 90.0).meets(settings)
+        settings = OmegaSettings(min_acceleration=0.05, min_baseline_slope=0.0, min_level=0.0)
+        assert not self._reading(2.0, -0.05, 90.0).meets(settings)
 
 
 class TestDataClamp:
@@ -319,73 +317,68 @@ class TestWeightTuning:
         )
 
 
-class TestZeroAccelerationIsLabelledCollapsing:
-    """A preserved classification defect, cosmetic but visible on the dashboard.
+class TestZeroAccelerationWithRisingBaseline:
+    """Zero accel + rising baseline is softening, not collapsing."""
 
-    `classify` tests `theta > 0` then `theta < 0`, so an acceleration of
-    exactly zero falls through every branch to `COLLAPSING` -- even when the
-    baseline is climbing steeply and the team is plainly building pressure.
+    def test_the_bare_classifier_agrees(self) -> None:
+        assert classify(0.0, 30.0) is OmegaState.SOFTENING
+        assert classify(-1.0, 30.0) is OmegaState.SOFTENING
+        assert classify(0.0, -30.0) is OmegaState.COLLAPSING
 
-    Exactly zero is not a rarity here. When all of a team's activity falls
-    inside the fast window, both windows see the same events, the two series
-    are identical, and their slopes cancel precisely.
+
+class TestLateBurstIsPositiveAcceleration:
+    """A burst confined to the fast window used to read as zero accel.
+
+    Both raw slopes matched, so unnormalised accel cancelled. After dividing
+    by window length the same raw slope is a higher *rate* on the fast window,
+    which is the correct surge reading.
     """
 
-    def test_a_burst_inside_the_fast_window_gives_exactly_zero_acceleration(self) -> None:
+    def test_a_burst_inside_the_fast_window_accelerates(self) -> None:
         result = evaluate(late_burst(), settings=LOOSE)
         assert result is not None
         home = result.home
         assert home is not None
-        assert home.acceleration == 0.0
-        assert home.baseline_slope > 0, "pressure is climbing steeply"
+        assert home.fast_slope == pytest.approx(home.slow_slope)
+        assert home.acceleration > 0
+        assert home.baseline_slope > 0
 
-    def test_and_is_therefore_labelled_collapsing(self) -> None:
+    def test_and_is_labelled_a_confirmed_surge(self) -> None:
         result = evaluate(late_burst(), settings=LOOSE)
         assert result is not None
         home = result.home
         assert home is not None
-        assert home.state is OmegaState.COLLAPSING
-
-    def test_the_same_holds_for_the_bare_classifier(self) -> None:
-        assert classify(0.0, 30.0) is OmegaState.COLLAPSING
+        assert home.state is OmegaState.CONFIRMED_SURGE
 
 
-class TestAccelerationIsBiasedNegative:
-    """The two series are not on a common scale, which skews the signal.
+class TestWindowNormalisation:
+    """Slopes are divided by window length before differencing.
 
-    The slow window spans twice as long as the fast one, so it counts more
-    events and sits at a systematically higher level. During any sustained
-    build-up its slope therefore tends to exceed the fast window's, and
-    `fast_slope - slow_slope` comes out negative -- the opposite sign from the
-    one the signal is meant to carry.
-
-    Preserved because it is the signal 2.2 shipped and its threshold was tuned
-    against it, but it is worth reviewing: normalising each series to a
-    per-minute rate before differencing would change what Omega detects.
+    A flat activity rate should sit near zero accel (not strongly negative).
+    A quadratic surge should read positive.
     """
 
-    def test_the_slow_window_sits_above_the_fast_one(self) -> None:
+    def test_the_slow_window_still_sits_above_the_fast_one(self) -> None:
         result = evaluate(steady(), settings=LOOSE)
         assert result is not None
         home = result.home
         assert home is not None
         assert home.level > home.fast_level
 
-    def test_steady_activity_reads_as_negative_acceleration(self) -> None:
-        """Nothing is decelerating here; activity is flat by construction."""
+    def test_steady_activity_is_near_zero_acceleration(self) -> None:
         result = evaluate(steady(), settings=LOOSE)
         assert result is not None
         home = result.home
         assert home is not None
-        assert home.acceleration < 0
+        assert abs(home.acceleration) < 0.15
 
-    def test_a_sharpening_ramp_can_also_read_negative(self) -> None:
-        result = evaluate(shaped(40, lambda p: 1.5 * p**3), settings=LOOSE)
+    def test_a_quadratic_surge_reads_positive(self) -> None:
+        result = evaluate(surging(), settings=LOOSE)
         assert result is not None
         home = result.home
         assert home is not None
-        assert home.baseline_slope > 0, "pressure is rising"
-        assert home.acceleration < 0, "yet the signal says it is decelerating"
+        assert home.baseline_slope > 0
+        assert home.acceleration > 0
 
 
 class TestRounding:

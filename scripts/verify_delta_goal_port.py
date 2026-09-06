@@ -1,14 +1,9 @@
-"""Differential check: does the 3.0 Delta Goal match 2.2 exactly?
+"""Differential check: League Bar (slot 3) vs 2.2 Delta Goal.
 
-Strategy 3 is the one with real arithmetic depth -- normalisation, two
-sigmoids, a confidence blend and a weighted composite -- so this compares the
-whole intermediate chain per team, not just the final decision. Any drift in
-an early term would otherwise hide behind the threshold.
-
-2.2's formula.py reaches for PostgreSQL and the learning layer on import, so
-the singleton is patched before use: the shadow-mode engine, the feature
-collector and the learning recorder are all stubbed out. None of them feed the
-alert number, which is the point being demonstrated.
+3.0 product scale is a signed League Bar score in [-10, +10] from lift.
+Expect intentional divergences on the final threat/alert number versus 2.2's
+0-20 composite; intermediate pressure/probability/lift terms should still
+align where the arithmetic is unchanged.
 
     uv run python scripts/verify_delta_goal_port.py [path-to-kalchas2.2]
 """

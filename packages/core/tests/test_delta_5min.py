@@ -138,13 +138,8 @@ class TestTriggering:
         assert result.triggering_team is Side.HOME
 
 
-class TestAsymmetricTriggerLogic:
-    """2.2's branching is asymmetric, and it decides which alerts go out.
-
-    The home team is tested only when it leads on pressure; the away team is
-    the sole fallback. Both consequences are pinned here so that neither can
-    be "tidied up" into symmetry without a failing test.
-    """
+class TestFairTriggerLogic:
+    """Eligible sides only; highest pressure wins; ties go home."""
 
     def test_a_leading_home_team_that_fails_the_gate_hands_off_to_away(self) -> None:
         result = evaluate(
@@ -156,9 +151,10 @@ class TestAsymmetricTriggerLogic:
         assert result is not None
         assert result.home.pressure > result.away.pressure
         assert not result.home.passes_gate
-        assert result.triggering_team is Side.AWAY, "weaker side should inherit the alert"
+        assert result.away.passes_gate
+        assert result.triggering_team is Side.AWAY
 
-    def test_a_qualifying_home_team_is_ignored_when_away_leads_and_fails(self) -> None:
+    def test_a_qualifying_home_team_wins_when_away_leads_and_fails(self) -> None:
         result = evaluate(
             window(
                 end={"shots_on_target": 1, "dangerous_attacks": 5},
@@ -168,8 +164,8 @@ class TestAsymmetricTriggerLogic:
         assert result is not None
         assert result.away.pressure > result.home.pressure
         assert not result.away.passes_gate
-        assert result.home.passes_gate, "home would qualify on its own"
-        assert result.triggering_team is None, "but 2.2 never considers it"
+        assert result.home.passes_gate
+        assert result.triggering_team is Side.HOME
 
 
 class TestNegativeDeltas:

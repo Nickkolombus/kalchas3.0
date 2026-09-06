@@ -98,30 +98,19 @@ class Delta5MinResult:
 
     @property
     def triggering_team(self) -> Side | None:
-        """The team this alert is about, or None if neither qualifies.
+        """The qualifying team with the strongest pressure, or None.
 
-        The test is asymmetric, exactly as 2.2 wrote it, and the asymmetry has
-        two consequences worth knowing:
-
-        * The home team is considered *only* when it leads on pressure. If the
-          away team has more pressure but fails the gate, the home team is
-          never evaluated -- even if it would have passed. No alert fires.
-        * The away team is the sole fallback. When the home team leads but
-          fails the gate, the alert passes to the away team despite it being
-          the weaker side.
-
-        This is preserved because it decides which alerts subscribers receive.
-        The differential harness treats a change here as a failure.
+        Fair rule (3.0): any side with ``pressure > 0`` that passes the
+        corroboration gate is eligible. Highest pressure wins; ties go home.
         """
-        if (
-            self.home.pressure >= self.away.pressure
-            and self.home.pressure > 0
-            and self.home.passes_gate
-        ):
-            return Side.HOME
-        if self.away.pressure > 0 and self.away.passes_gate:
-            return Side.AWAY
-        return None
+        eligible = [
+            side
+            for side in (Side.HOME, Side.AWAY)
+            if self.team(side).pressure > 0 and self.team(side).passes_gate
+        ]
+        if not eligible:
+            return None
+        return max(eligible, key=lambda side: (self.team(side).pressure, side is Side.HOME))
 
     @property
     def trigger_value(self) -> float:

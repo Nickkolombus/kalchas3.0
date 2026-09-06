@@ -56,16 +56,21 @@ class TestIsMatchFinished:
     def test_ht_short_alone_is_not_finished(self) -> None:
         assert is_match_finished(status_short="HT") is False
 
-    def test_ht_with_half_time_long_reports_finished(self) -> None:
-        """Pinned defect: long-status tokens fire even when short code is HT."""
-        assert is_match_finished(status_short="HT", status_long="Half Time") is True
+    def test_ht_with_half_time_long_is_not_finished(self) -> None:
+        assert is_match_finished(status_short="HT", status_long="Half Time") is False
 
-    def test_half_time_token_alone_reports_finished(self) -> None:
-        """Pinned defect: FINISHED_TOKENS includes 'half time'."""
-        assert is_match_finished(status_long="Half Time") is True
+    def test_half_time_token_alone_is_not_finished(self) -> None:
+        assert is_match_finished(status_long="Half Time") is False
+        assert is_match_finished(status_long="Halftime") is False
+
+    def test_break_time_is_not_finished(self) -> None:
+        assert is_match_finished(status_short="BT") is False
+        assert is_match_finished(status_long="Break Time") is False
+        assert is_match_finished(status_short="BT", status_long="Break Time") is False
 
     def test_is_match_live(self) -> None:
         assert is_match_live("HT") is True
+        assert is_match_live("BT") is True
         assert is_match_live("FT") is False
 
 

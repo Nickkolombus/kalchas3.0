@@ -8,10 +8,9 @@ Two related helpers from 2.2:
   correctly treats HT as a break, not finished (the critical HT +
   ``match_live='0'`` bug fix).
 
-Pinned defect in ``is_match_finished``: ``FINISHED_TOKENS`` includes
-``"half time"`` / ``"halftime"``, so a long-status of ``"Half Time"`` with an
-empty short code reports finished. Prefer ``infer_phase`` when you need
-HT-aware behaviour.
+3.0 fix: half-time and extra-time break are never finished. Pause phrases are
+checked before ``FINISHED_TOKENS`` (which still contains bare ``"ft"``, a
+substring of ``"halftime"``).
 """
 
 from __future__ import annotations
@@ -60,9 +59,16 @@ FINISHED_TOKENS = (
     "award",
     "walkover",
     "w/o",
-    "break time",
+)
+
+# Checked before FINISHED_TOKENS: bare "ft" is a substring of "halftime".
+PAUSE_TOKENS = (
     "half time",
     "halftime",
+    "half-time",
+    "break time",
+    "breaktime",
+    "break-time",
 )
 
 
@@ -105,6 +111,8 @@ LONG_STATUS_TO_PHASE = {
     "half time": MatchPhase.HALF_TIME,
     "halftime": MatchPhase.HALF_TIME,
     "ht": MatchPhase.HALF_TIME,
+    "break time": MatchPhase.EXTRA_TIME_BREAK,
+    "breaktime": MatchPhase.EXTRA_TIME_BREAK,
     "finished": MatchPhase.FINISHED,
     "match finished": MatchPhase.FINISHED,
     "full time": MatchPhase.FINISHED,
@@ -133,10 +141,10 @@ def is_match_finished(
     status: str = "",
     minute: int | None = None,
 ) -> bool:
-    """Return True if the match is considered finished (2.2 live-filter SSOT).
+    """Return True if the match is considered finished.
 
     Stoppage-time rule: FT/AET/PEN with ``minute < 100`` returns False so
-    late goals still land. See module docstring for the HT-token defect.
+    late goals still land. Half-time and extra-time break are never finished.
     """
     norm_short = (status_short or "").strip().upper()
     if norm_short and norm_short in FINISHED_STATUS_CODES:
@@ -145,6 +153,9 @@ def is_match_finished(
         return True
     norm_long = (status_long or "").strip().lower()
     norm_status = (status or "").strip().lower()
+    for token in PAUSE_TOKENS:
+        if token in norm_long or token in norm_status:
+            return False
     for token in FINISHED_TOKENS:
         if token in norm_long or token in norm_status:
             return True

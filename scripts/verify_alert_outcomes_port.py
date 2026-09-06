@@ -40,7 +40,7 @@ OFFLINE_RULES_2_2 = [
     },
     {
         "strategy_slot": 3,
-        "strategy_name": "Delta Goal",
+        "strategy_name": "League Bar",
         "success_window_minutes": 20,
         "expiration_buffer_minutes": 2,
         "infinite_ttl": False,

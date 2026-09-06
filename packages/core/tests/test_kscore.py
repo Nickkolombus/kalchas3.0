@@ -1,9 +1,8 @@
 """K-Score (Strategy 7).
 
-New in 3.0; 2.2 had no unit tests for the blend. Verified against 2.2 over
-800 signal pairs -- 400 on the truncated alert-path Omega inputs, 400 on the
-full dashboard-path inputs -- agreeing on every score and every intermediate
-(`scripts/verify_kscore_port.py`).
+New in 3.0; 2.2 had no unit tests for the blend. Verified historically against
+2.2 over 800 signal pairs (`scripts/verify_kscore_port.py`). Product SSOT:
+Omega always contributes via the full TeamOmega triple.
 """
 
 from __future__ import annotations
@@ -48,20 +47,19 @@ class TestSigmoid:
 
 
 class TestOmegaVote:
-    def test_alert_path_vote_never_exceeds_the_level_floor_ceiling(self) -> None:
-        """Slot 7 forwarded acceleration only; level stuck at the 0.2 floor."""
-        votes = [omega_vote(acceleration=a) for a in (0, 1, 5, 10, 50, 200, 1e6)]
-        assert max(votes) == pytest.approx(0.145, abs=0.001)
-        assert min(votes) == pytest.approx(0.0725, abs=0.001)
+    def test_incomplete_omega_is_neutral(self) -> None:
+        """Accel without baseline/level must not apply the old truncated drag."""
+        for accel in (0, 1, 10, 50, 200, 1e6):
+            assert omega_vote(acceleration=accel) == pytest.approx(0.5)
 
-    def test_alert_path_lever_is_always_negative(self) -> None:
-        for accel in (0, 1, 10, 50, 200):
-            vote = omega_vote(acceleration=accel)
-            assert vote < 0.5, "a vote below 0.5 levers negative and can only hurt"
-
-    def test_dashboard_path_can_produce_a_supporting_vote(self) -> None:
-        vote = omega_vote(acceleration=25.0, baseline=2.5, level=60.0)
+    def test_full_omega_can_produce_a_supporting_vote(self) -> None:
+        vote = omega_vote(acceleration=0.6, baseline=0.3, level=60.0)
         assert vote > 0.5
+
+    def test_full_omega_with_zero_level_stays_at_floor_band(self) -> None:
+        vote = omega_vote(acceleration=5.0, baseline=0.0, level=0.0)
+        assert vote == pytest.approx(0.145, abs=0.001)
+        assert vote < 0.5
 
     def test_legacy_angle_form_when_acceleration_is_absent(self) -> None:
         assert omega_vote(theta=0.0, alpha=0.0) == pytest.approx(0.5)
@@ -69,7 +67,9 @@ class TestOmegaVote:
         assert rising > 0.5
 
     def test_negative_acceleration_is_floored_at_zero(self) -> None:
-        assert omega_vote(acceleration=-10.0) == omega_vote(acceleration=0.0)
+        assert omega_vote(acceleration=-10.0, baseline=2.0, level=50.0) == omega_vote(
+            acceleration=0.0, baseline=2.0, level=50.0
+        )
 
 
 class TestConsultantVotes:
@@ -233,12 +233,12 @@ class TestEvaluate:
         assert high.probability_raw == pytest.approx(low.probability_raw)
 
 
-class TestAlertPathDefect:
-    """Pinned: Omega on the alert path can only hurt the K-Score."""
+class TestOmegaSsot:
+    """Full TeamOmega is the only supporting path; incomplete is neutral."""
 
-    def test_adding_omega_acceleration_alone_lowers_the_score(self) -> None:
+    def test_accel_only_does_not_change_the_score(self) -> None:
         without = evaluate_team(signals(delta_5min=15.0, pressure_index=60.0, npei=50.0))
-        with_omega = evaluate_team(
+        incomplete = evaluate_team(
             signals(
                 delta_5min=15.0,
                 pressure_index=60.0,
@@ -246,8 +246,8 @@ class TestAlertPathDefect:
                 omega_acceleration=50.0,
             )
         )
-        assert with_omega.votes["omega"] < 0.5
-        assert with_omega.score <= without.score
+        assert incomplete.votes["omega"] == pytest.approx(0.5)
+        assert incomplete.score == without.score
 
     def test_full_omega_signals_can_raise_the_score(self) -> None:
         without = evaluate_team(signals(delta_5min=15.0, pressure_index=60.0, npei=50.0))
@@ -265,22 +265,10 @@ class TestAlertPathDefect:
         assert with_full.score >= without.score
 
 
-class TestDeadHorizon:
-    def test_changing_horizon_moves_nothing(self) -> None:
-        """Declared, stored, shown in the admin UI, never read."""
-        base = evaluate(
-            signals(delta_5min=20.0, pressure_index=70.0, npei=60.0),
-            signals(delta_5min=10.0, pressure_index=40.0, npei=30.0),
-        )
-        tweaked = WeightSet.from_overrides({"kscore": {"horizon": 15.0}})
-        moved = evaluate(
-            signals(delta_5min=20.0, pressure_index=70.0, npei=60.0),
-            signals(delta_5min=10.0, pressure_index=40.0, npei=30.0),
-            weights=tweaked,
-        )
-        assert base.home.score == moved.home.score
-        assert base.away.score == moved.away.score
-        assert base.match_score == moved.match_score
+class TestRemovedDeadControls:
+    def test_horizon_is_not_in_the_registry(self) -> None:
+        """2.2 showed a horizon slider that the formula never read."""
+        assert "horizon" not in WeightSet.defaults().for_strategy("kscore")
 
 
 class TestWeightTuning:

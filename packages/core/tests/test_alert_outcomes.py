@@ -51,7 +51,7 @@ class TestMatchRule:
     def test_hint_pressure_to_goal_resolves_slot_3(self) -> None:
         rule = match_rule(["Pressure to Goal (5m)"], DEFAULT_RULES)
         assert rule.strategy_slot == 3
-        assert rule.strategy_name == "Delta Goal"
+        assert rule.strategy_name == "League Bar"
 
     def test_hint_omega_resolves_slot_6(self) -> None:
         assert match_rule(["Ω Surge"], DEFAULT_RULES).strategy_slot == 6
@@ -281,10 +281,13 @@ class TestHalfFromMinute:
         assert half_from_minute(110) == "Extra time 2nd"
 
 
-class TestDefaultRulesDiscrepancy:
-    def test_evaluator_defaults_mark_slots_2_to_4_team_specific(self) -> None:
-        """Pinned: evaluator offline defaults differ from db_helper seeds."""
+class TestDefaultRules:
+    def test_slots_2_to_4_default_to_any_goal(self) -> None:
         by_slot = {r.strategy_slot: r for r in DEFAULT_RULES}
-        assert by_slot[2].team_specific is True
-        assert by_slot[3].team_specific is True
-        assert by_slot[4].team_specific is True
+        assert by_slot[2].team_specific is False
+        assert by_slot[3].team_specific is False
+        assert by_slot[4].team_specific is False
+
+    def test_rule_of_three_stays_team_specific(self) -> None:
+        by_slot = {r.strategy_slot: r for r in DEFAULT_RULES}
+        assert by_slot[1].team_specific is True

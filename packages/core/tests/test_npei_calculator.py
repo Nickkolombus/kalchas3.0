@@ -140,14 +140,7 @@ class TestActivityGuards:
 
 
 class TestDroppedRatiosDepressTheScore:
-    """Carried over from 2.2 deliberately -- see `compute_npei`.
-
-    2.2's docstring promised that a dropped ratio's weight was "redistributed
-    proportionally among the remaining ratios". Its code never did that; a
-    dropped ratio simply contributed zero. Preserving the real behaviour keeps
-    scores comparable with historical alerts. These tests pin it so the choice
-    stays deliberate rather than becoming folklore.
-    """
+    """Product rule: missing ratios contribute 0; no weight redistribution."""
 
     def test_flawless_shooting_below_the_attack_guard_is_capped_at_the_r2_weight(self) -> None:
         timeline = timeline_with(
@@ -159,6 +152,7 @@ class TestDroppedRatiosDepressTheScore:
         assert snapshot.home.shot_accuracy == pytest.approx(1.0)
         assert snapshot.home.score == pytest.approx(40.0)
         assert snapshot.home.score < 100.0
+        assert snapshot.home.is_partial
 
     def test_dropped_ratios_are_named_so_the_caller_can_tell(self) -> None:
         timeline = timeline_with(home_end={"attacks": 2, "shots_on_target": 5})

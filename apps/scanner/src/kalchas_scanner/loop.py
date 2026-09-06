@@ -14,6 +14,7 @@ from kalchas_football import FootballAPIClient, LiveMatch
 
 from kalchas_scanner.enrich import api_events_to_ssot, api_statistics_to_list
 from kalchas_scanner.outbox import AlertSink, default_sink
+from kalchas_scanner.persist import MatchPersist, default_persist
 from kalchas_scanner.store import MinuteStore
 
 logger = logging.getLogger("kalchas.scanner")
@@ -25,6 +26,8 @@ class ScannerConfig:
     min_minute: int = 5
     slots: tuple[int, ...] = (1, 2, 3, 4, 6, 7)
     max_matches_per_cycle: int = 40
+    stale_cleanup_minutes: int = 360
+    cleanup_every_cycles: int = 30
 
 
 @dataclass
@@ -35,10 +38,25 @@ class Scanner:
     weights: WeightSet = field(default_factory=WeightSet.defaults)
     config: ScannerConfig = field(default_factory=ScannerConfig)
     sink: AlertSink = field(default_factory=default_sink)
+    persist: MatchPersist = field(default_factory=default_persist)
+    _cycles: int = 0
+
+    def _hydrate_if_needed(self, match_id: str) -> None:
+        if self.store.has(match_id):
+            return
+        try:
+            history = self.persist.load_history(match_id)
+        except Exception:
+            logger.exception("failed loading history for %s", match_id)
+            return
+        if history:
+            self.store.seed_history(match_id, history)
+            logger.info("hydrated %s with %s minutes from postgres", match_id, len(history))
 
     def process_match(self, match: LiveMatch) -> list[dict]:
         if match.minute < self.config.min_minute:
             return []
+        self._hydrate_if_needed(match.match_id)
         stats_raw = self.client.get_fixture_statistics(match.match_id)
         stats_list = api_statistics_to_list(stats_raw)
         timeline = self.store.merge_snapshot(
@@ -48,8 +66,34 @@ class Scanner:
             home_goals=match.home_score,
             away_goals=match.away_score,
         )
-        events_raw = self.client.get_fixture_events(match.match_id)
-        ssot_events = api_events_to_ssot(events_raw, match.home_team_id, match.away_team_id)
+        block = self.store.latest_block(match.match_id, match.minute)
+        if block is not None:
+            try:
+                self.persist.save_minute(
+                    match_id=match.match_id,
+                    home_team=match.home_team,
+                    away_team=match.away_team,
+                    home_team_id=match.home_team_id,
+                    away_team_id=match.away_team_id,
+                    league_name=match.league_name or None,
+                    status_short=match.status_short,
+                    home_score=match.home_score,
+                    away_score=match.away_score,
+                    minute=match.minute,
+                    minute_block=block,
+                )
+            except Exception:
+                logger.exception("failed persisting minute for %s", match.match_id)
+
+        # Prefer events embedded in the live get_events row (saves a free-tier call).
+        events_raw = match.raw if match.raw else self.client.get_fixture_events(match.match_id)
+        ssot_events = api_events_to_ssot(
+            events_raw,
+            match.home_team_id,
+            match.away_team_id,
+            home_team=match.home_team,
+            away_team=match.away_team,
+        )
         goals, cards = convert_ssot_events(
             ssot_events, home_team=match.home_team, away_team=match.away_team
         )
@@ -122,7 +166,25 @@ class Scanner:
                 n += len(self.process_match(match))
             except Exception:
                 logger.exception("failed processing match %s", match.match_id)
+        self._cycles += 1
+        if self._cycles % self.config.cleanup_every_cycles == 0:
+            self._maybe_cleanup()
         return n
+
+    def _maybe_cleanup(self) -> None:
+        dsn = getattr(self.persist, "dsn", None)
+        if not dsn:
+            return
+        try:
+            from kalchas_db.matches import delete_stale_matches_sync
+
+            deleted = delete_stale_matches_sync(
+                dsn, max_age_minutes=self.config.stale_cleanup_minutes
+            )
+            if deleted:
+                logger.info("cleaned %s stale matches", deleted)
+        except Exception:
+            logger.exception("stale match cleanup failed")
 
     def run_forever(self) -> None:
         while True:

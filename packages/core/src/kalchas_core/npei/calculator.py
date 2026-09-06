@@ -10,9 +10,13 @@ Three ratios over a rolling window, each 0-1:
 
 A ratio is only computed when its denominator clears a minimum-activity guard;
 one dangerous attack out of one attack is not a 100% conversion rate, it is
-noise. Ratios below the guard are dropped.
+noise. Ratios below the guard are dropped and contribute **0** — their weight
+is not redistributed. Thin samples must not inflate the score. Callers can
+see what was dropped via ``TeamEfficiency.dropped_ratios`` / ``is_partial``.
 
-Ported from Kalchas 2.2 `utils/npei_calculator.py`.
+Ported from Kalchas 2.2 `utils/npei_calculator.py` (behaviour matched the
+code there; an old 2.2 docstring that claimed redistribution was wrong and
+is not carried forward).
 """
 
 from __future__ import annotations
@@ -42,8 +46,8 @@ class TeamEfficiency:
     def dropped_ratios(self) -> tuple[str, ...]:
         """Ratios the activity guards excluded from this score.
 
-        Worth surfacing: a score built from one ratio is not comparable to one
-        built from three. See `compute_npei` on why it is also depressed.
+        A partial score is not comparable to a full three-ratio reading;
+        missing ratios contribute 0 (see ``compute_npei``).
         """
         missing = {
             "attack_conversion": self.attack_conversion,
@@ -137,15 +141,11 @@ def compute_npei(
     the minutes needed were never recorded. That is "no reading", which the
     caller must not confuse with a reading of zero.
 
-    Known behaviour, carried over deliberately from 2.2: a dropped ratio
-    contributes 0 rather than having its weight redistributed across the
-    surviving ratios. A team below the attack guard therefore cannot score
-    above 40 no matter how accurate its shooting, because R1 and R3 together
-    account for 60% of the weight. 2.2's docstring claimed weights were
-    "redistributed proportionally among the remaining ratios"; its code never
-    did that. The behaviour is preserved here so scores stay comparable with
-    historical alerts, and `TeamEfficiency.dropped_ratios` makes the condition
-    visible. Changing it would shift every alert threshold.
+    Dropped ratios (below activity guards) contribute 0. Weight is **not**
+    redistributed across the surviving ratios: incomplete samples must not
+    look as efficient as full ones. A team below the attack guard therefore
+    cannot score above the remaining weights' share (e.g. R2 alone caps at
+    40 when w2=0.4). ``TeamEfficiency.dropped_ratios`` makes the gap visible.
     """
     resolved = window if window is not None else resolve_window(timeline)
     if resolved is None:

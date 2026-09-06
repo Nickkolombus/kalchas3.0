@@ -5,17 +5,26 @@ measures whether that pressure is *building*, which is a different question and
 answers it with a second derivative.
 
 Two pressure series are tracked per team: a fast one over a short window and a
-slow one over a long window. Each is differentiated over a few minutes:
+slow one over a long window. Each is differentiated over a few minutes, then
+normalised by its window length so the slopes share a common per-minute scale:
 
-    accel    = d(fast)/dt - d(slow)/dt
-    baseline = d(slow)/dt
+    accel    = d(fast)/dt / fast_window - d(slow)/dt / slow_window
+    baseline = d(slow)/dt / slow_window
     level    = slow(now)
 
-`accel` is positive when short-term pressure is pulling away from the longer
-trend -- the team is not merely applying pressure but increasing it. Requiring
-`baseline` to be positive as well is what separates a genuine surge from a
-brief spike inside a fading passage of play, and `level` sets a floor so a
-surge from nothing does not qualify.
+`accel` is positive when short-term pressure intensity is pulling away from the
+longer trend -- the team is not merely applying pressure but increasing it.
+Requiring `baseline` to be positive as well is what separates a genuine surge
+from a brief spike inside a fading passage of play, and `level` sets a floor so
+a surge from nothing does not qualify.
+
+Without the per-window normalisation, the slow series sat on a higher absolute
+scale (it counts more events), so a steady build-up often produced *negative*
+accel. 3.0 divides each slope by its window length before differencing; a
+linear rise then reads near zero, and a real surge stays positive. Thresholds
+and the display angle scale were retuned onto that normalised unit. Raw
+`fast_slope` / `slow_slope` on ``TeamOmega`` remain the unnormalised
+derivatives for diagnostics.
 
 Theta and alpha are the same two quantities expressed as angles, via
 `arctan(x / k)`. They exist because a slope in pressure-per-minute is hard to
@@ -25,22 +34,15 @@ display transforms and thresholds are stored either way -- see `OmegaSettings`.
 Ported from `strategies/strategy_006_omega/formula.py`, which was the
 best-organised strategy in 2.2: settings in one frozen dataclass, the firing
 gate in one testable function, and display concerns kept honestly separate.
-The arithmetic is unchanged. Removed: an admin-settings loader that read
-thresholds from a database on every evaluation, the HTML message building, and
-a writeback that stashed values on the match dictionary for other strategies.
+Removed: an admin-settings loader that read thresholds from a database on
+every evaluation, the HTML message building, and a writeback that stashed
+values on the match dictionary for other strategies.
 
-Two things about the signal are worth knowing, both preserved and both pinned
-by tests:
-
-* The two series are not on a common scale. The slow window spans twice as
-  long, so it counts more events and sits systematically higher, and during a
-  sustained build-up its slope tends to exceed the fast window's. That makes
-  `accel` come out *negative* while pressure is plainly rising. Normalising
-  each series to a per-minute rate before differencing would change what
-  Omega detects, so it is left alone here.
-* When all of a team's activity falls inside the fast window, both series are
-  identical and `accel` is exactly zero, which `classify` labels
-  `COLLAPSING`. See that function.
+When all of a team's activity falls inside the fast window, the two *raw*
+slopes match. After normalisation that still yields positive accel (fast rate
+above slow rate), which is the intended reading for a concentrated burst.
+``classify`` labels ``theta == 0`` with a rising baseline as ``SOFTENING``,
+not ``COLLAPSING``.
 """
 
 from __future__ import annotations
@@ -59,10 +61,11 @@ STRATEGY_KEY = "omega"
 DEFAULT_FAST_WINDOW: Final = 5
 DEFAULT_SLOW_WINDOW: Final = 10
 DEFAULT_DERIVATIVE_WINDOW: Final = 3
-DEFAULT_ANGLE_SCALE: Final = 15.0
+DEFAULT_ANGLE_SCALE: Final = 0.5
+"""Chosen so ~20 degrees still maps to a meaningful normalised accel (~0.18)."""
 
-DEFAULT_MIN_ACCELERATION: Final = 5.46
-"""Roughly 20 degrees at the default angle scale."""
+DEFAULT_MIN_ACCELERATION: Final = 0.182
+"""Roughly 20 degrees at the default angle scale (normalised PI/min²)."""
 
 DEFAULT_MIN_BASELINE_SLOPE: Final = 0.0
 DEFAULT_MIN_LEVEL: Final = 0.0
@@ -72,14 +75,14 @@ DEFAULT_ALPHA_FLOOR: Final = 0.0
 
 FLAT_BAND_DEGREES: Final = 5.0
 
-# Bounds the settings loader applied, kept so a caller constructing settings
-# from stored values lands in the same place 2.2 did.
+# Bounds the settings loader applied. Angle / accel bounds were tightened in
+# 3.0 for the normalised slope unit; window bounds match 2.2.
 FAST_WINDOW_BOUNDS: Final = (2, 30)
 SLOW_WINDOW_BOUNDS: Final = (0, 45)
 DERIVATIVE_WINDOW_BOUNDS: Final = (1, 10)
 ANGLE_SCALE_BOUNDS: Final = (0.1, 50.0)
-MIN_ACCELERATION_BOUNDS: Final = (0.0, 50.0)
-MIN_BASELINE_BOUNDS: Final = (-20.0, 20.0)
+MIN_ACCELERATION_BOUNDS: Final = (0.0, 10.0)
+MIN_BASELINE_BOUNDS: Final = (-5.0, 5.0)
 MIN_LEVEL_BOUNDS: Final = (0.0, 100.0)
 
 _ACCELERATION_PRECISION: Final = 3
@@ -123,13 +126,8 @@ class OmegaState(StrEnum):
 def classify(theta: float, alpha: float, flat_band: float = FLAT_BAND_DEGREES) -> OmegaState:
     """Label the quadrant. Diagnostic only; firing uses the thresholds.
 
-    An acceleration of exactly zero falls through every branch to
-    `COLLAPSING`, even with a steeply rising baseline. That is 2.2's behaviour
-    and it is preserved, but it is not rare: a burst confined to the fast
-    window makes both series identical, so their slopes cancel exactly and a
-    team visibly building pressure gets labelled as collapsing on the
-    dashboard. Fixing it is a one-line change to this function whenever the
-    display is revisited.
+    ``theta == 0`` with a rising baseline (``alpha > 0``) is ``SOFTENING`` —
+    pressure is building without acceleration — not ``COLLAPSING``.
     """
     if abs(theta) < flat_band and abs(alpha) < flat_band:
         return OmegaState.FLAT
@@ -137,7 +135,7 @@ def classify(theta: float, alpha: float, flat_band: float = FLAT_BAND_DEGREES) -
         return OmegaState.CONFIRMED_SURGE
     if theta > 0:
         return OmegaState.SPIKE_ONLY
-    if theta < 0 and alpha > 0:
+    if theta <= 0 and alpha > 0:
         return OmegaState.SOFTENING
     return OmegaState.COLLAPSING
 
@@ -324,14 +322,17 @@ def _evaluate_side(
     step = settings.derivative_window
     fast_slope = (fast[minute] - fast[minute - step]) / step
     slow_slope = (slow[minute] - slow[minute - step]) / step
-    acceleration = fast_slope - slow_slope
+    # Per-window rates so a longer slow window does not dominate the difference.
+    fast_rate = fast_slope / settings.fast_window
+    slow_rate = slow_slope / settings.slow_window
+    acceleration = fast_rate - slow_rate
 
     theta = slope_to_degrees(acceleration, settings.angle_scale)
-    alpha = slope_to_degrees(slow_slope, settings.angle_scale)
+    alpha = slope_to_degrees(slow_rate, settings.angle_scale)
 
     return TeamOmega(
         acceleration=round(acceleration, _ACCELERATION_PRECISION),
-        baseline_slope=round(slow_slope, _ACCELERATION_PRECISION),
+        baseline_slope=round(slow_rate, _ACCELERATION_PRECISION),
         level=round(slow[minute], _LEVEL_PRECISION),
         theta=round(theta, _ANGLE_PRECISION),
         alpha=round(alpha, _ANGLE_PRECISION),

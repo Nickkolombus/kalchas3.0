@@ -4,15 +4,9 @@ In 2.2 rules lived in Postgres (`strategy_rules`) and were cached for 60s
 inside the evaluator. Here they are an injected sequence: adapters load them
 once and hand them over. Resolution order is unchanged.
 
-Two offline default tables existed in 2.2 and disagreed on `team_specific`
-for slots 2–4:
-
-* `AlertOutcomeEvaluator._get_default_rules` — True for 2, 3, 4, 6
-* `db_helper._get_default_strategy_rules` / migration 010 — False for 2–4
-
-`DEFAULT_RULES` below matches the **evaluator** offline fallback, so a bare
-`AlertOutcomeEvaluator()` that cannot reach a database behaves the same as
-2.2. Production rows from Postgres override either set.
+3.0 product default: slots 2–4 are match-level (``team_specific=False``, any
+goal counts). Rule of 3 / Omega / K-Score stay team-specific. Admins can
+override any row via ``strategy_rules.team_specific`` in settings.
 """
 
 from __future__ import annotations
@@ -28,9 +22,11 @@ ALERT_NAME_HINTS: Final[tuple[tuple[str, int], ...]] = (
     ("inplay pressure", 2),
     ("in-play pressure", 2),
     ("in play pressure", 2),
-    # slot 3 — Delta Goal / Pressure-to-Goal display variants
+    # slot 3 — League Bar (legacy: Delta Goal / Pressure-to-Goal)
+    ("league bar", 3),
     ("pressure to goal", 3),
     ("enhanced pressure to goal", 3),
+    ("delta goal", 3),
     # slot 4 — Δ(5min) display variants
     ("δ(5min)", 4),
     ("delta(5min)", 4),
@@ -68,12 +64,12 @@ FALLBACK_RULE: Final = StrategyRule(
 )
 
 
-# Evaluator offline defaults (not db_helper's). See module docstring.
+# Offline / seed defaults. Postgres ``strategy_rules`` overrides at runtime.
 DEFAULT_RULES: Final[tuple[StrategyRule, ...]] = (
     StrategyRule(1, "Rule of 3", 999, 0, True, True),
-    StrategyRule(2, "InPlay Pressure", 20, 2, False, True),
-    StrategyRule(3, "Delta Goal", 20, 2, False, True),
-    StrategyRule(4, "Δ(5min)", 20, 2, False, True),
+    StrategyRule(2, "InPlay Pressure", 20, 2, False, False),
+    StrategyRule(3, "League Bar", 20, 2, False, False),
+    StrategyRule(4, "Δ(5min)", 20, 2, False, False),
     StrategyRule(6, "Omega", 20, 2, False, True),
     StrategyRule(7, "K-Score", 20, 2, False, True),
     StrategyRule(9, "Team Form", 20, 2, False, False),

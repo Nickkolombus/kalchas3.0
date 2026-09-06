@@ -81,20 +81,17 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
         ),
         "delta_goal": StrategyInfo(
             slot="3",
-            name="Delta Goal (5m Pressure→Goal)",
+            name="League Bar",
             equation=(
-                "Energy = weight_sot·ΔSOT + weight_sofft·ΔSOFFT + weight_corners·ΔCorners"
-                " + weight_da·ΔDA + weight_possession·PossBonus\n"
-                "Threat(0..20) ≈ 20·(threat_w_p·P_goal(5m) + threat_w_ps·PressureScore"
-                " + threat_w_l·Lift + PatternBonuses)"
+                "Lift L = P_goal(5m) / P0_league\n"
+                "Bar score = clamp(10·(L − 1), −10, +10)   # 0 = on the league bar\n"
+                "Band: below L<0.85, normal 0.85–1.15, above L>1.15"
             ),
             blurb=(
-                "Estimates goal probability in the next 5 minutes from normalised "
-                "shot/corner/dangerous-attack rates versus league baselines. "
-                "Combines a Poisson likelihood, a pressure-driven probability, and "
-                "pattern bonuses (sustained attacks, corner sequences, shot bursts) "
-                "into a 0-20 threat score. Alerts when the score crosses the "
-                "dynamic threshold."
+                "League Bar: short-horizon scoring chance versus the league prior. "
+                "Score is usually near 0 (on the bar); positive is above, negative "
+                "below, clamped to ±10. Alerts when the score clears the threshold "
+                "and evidence passes the gate."
             ),
         ),
         "delta_5min": StrategyInfo(
@@ -118,7 +115,8 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
             name="NPEI (Net Pressure Efficiency)",
             equation=(
                 "R1=ΔD/ΔA, R2=ΔT/ΔS, R3=ΔS/ΔA (5m window)\n"
-                "NPEI = 100·(w1·R1 + w2·R2 + w3·R3) with mins: ΔA≥min_attacks, ΔS≥min_shots"
+                "NPEI = 100·(w1·R1 + w2·R2 + w3·R3); ratios below min activity "
+                "contribute 0 (no weight redistribution)"
             ),
             blurb=(
                 "Measures conversion efficiency, not volume. Three ratios over a "
@@ -131,15 +129,16 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
             slot="6",
             name="Omega (Ω Surge)",
             equation=(
-                "ω = D5' − D10'  (PI/min),  baseline = D10',  level = PI₁₀\n"
+                "ω = (D5'/W_fast) − (D10'/W_slow),  baseline = D10'/W_slow,  level = PI₁₀\n"
                 "Trigger (per team): ω > min_accel AND baseline > min_baseline_slope"
                 " AND PI₁₀ ≥ pi_level_min\n"
                 "θ, α = display angles via atan(·/k_scale)"
             ),
             blurb=(
-                "Per-team pressure acceleration: fast-window momentum minus slow-window "
-                "momentum, gated by a rising baseline and minimum PI level. θ/α are "
-                "display-only; the engine fires on linear PI/min thresholds."
+                "Per-team pressure acceleration: fast-window rate minus slow-window "
+                "rate (each slope divided by its window), gated by a rising baseline "
+                "and minimum PI level. θ/α are display-only; the engine fires on "
+                "linear normalised PI/min thresholds."
             ),
         ),
         "kscore": StrategyInfo(
@@ -147,7 +146,7 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
             name="K-Score",
             equation=(
                 "votes: momentum=σ(Δ5/ms), pressure=PI/100, rule3=(RO3+0.3)/1.3,\n"
-                "       omega=σ(accel/8)·(0.45+0.55·σ(base/2.5))·clamp(level/55,0.2,1)\n"
+                "       omega=σ(accel/0.8)·(0.45+0.55·σ(base/0.4))·clamp(level/55,0.2,1)\n"
                 "logit = bias + Σ trust_i · (2·vote_i − 1) + context\n"
                 "K = round(100 · σ(logit) · ΦI)   ΦI = floor+(1−floor)·NPEI/100"
             ),
@@ -358,15 +357,6 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 "Adaptive weight for dangerous attacks.",
             ),
             WeightSpec(
-                "weight_possession",
-                "Possession bonus weight",
-                0.1,
-                0.0,
-                0.5,
-                0.01,
-                "Extra lift when possession favours the attacking team.",
-            ),
-            WeightSpec(
                 "threat_w_p",
                 "Threat weight: P (probability)",
                 0.4,
@@ -431,12 +421,12 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
             ),
             WeightSpec(
                 "alert_threshold",
-                "Alert threshold (0-20)",
-                18.5,
-                5.0,
-                20.0,
+                "Alert threshold (−10…+10 bar score)",
+                6.0,
+                0.0,
+                10.0,
                 0.5,
-                "Fire alert when threat score reaches this level.",
+                "Fire when the signed League Bar score reaches this level (above the bar).",
             ),
         ),
         "delta_5min": _specs(
@@ -579,21 +569,21 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
         "omega": _specs(
             WeightSpec(
                 "min_accel",
-                "Min accel ω (PI/min)",
-                5.46,
-                0.5,
-                25.0,
-                0.1,
-                "Fast-minus-slow PI slope required to fire (per team).",
+                "Min accel ω (norm. PI/min)",
+                0.182,
+                0.0,
+                5.0,
+                0.01,
+                "Window-normalised fast-minus-slow rate required to fire (per team).",
             ),
             WeightSpec(
                 "min_baseline_slope",
-                "Min baseline slope (PI/min)",
+                "Min baseline slope (norm. PI/min)",
                 0.0,
-                -5.0,
-                10.0,
-                0.1,
-                "Slow-window PI slope floor — baseline must be rising.",
+                -1.0,
+                2.0,
+                0.01,
+                "Normalised slow-window rate floor — baseline must be rising.",
             ),
             WeightSpec(
                 "pi_level_min",
@@ -607,11 +597,11 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
             WeightSpec(
                 "k_scale",
                 "Display k (arctan scale)",
-                15.0,
-                1.0,
-                50.0,
                 0.5,
-                "Maps PI/min to θ/α degrees for display only.",
+                0.1,
+                50.0,
+                0.1,
+                "Maps normalised PI/min to θ/α degrees for display only.",
             ),
             WeightSpec(
                 "fast_window",
@@ -713,18 +703,6 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 30.0,
                 0.5,
                 "Divisor in σ(Δ5 / scale) for the momentum vote.",
-            ),
-            # Declared and stored in 2.2's kscore_settings, shown in the admin
-            # UI, and never read by any computation. Kept so the slider still
-            # exists; a test asserts changing it moves nothing.
-            WeightSpec(
-                "horizon",
-                "Horizon (minutes, unused)",
-                10.0,
-                5.0,
-                15.0,
-                1.0,
-                "Declared in 2.2 and never used in the formula. Dead control.",
             ),
             WeightSpec(
                 "ctx_red_card",
@@ -842,13 +820,13 @@ BUILTIN_PRESETS: Mapping[str, Mapping[str, Mapping[str, float]]] = MappingProxyT
         "omega": {
             "Balanced (default)": {},
             "Earlier signals": {
-                "min_accel": 4.0,
-                "min_baseline_slope": -0.5,
+                "min_accel": 0.12,
+                "min_baseline_slope": -0.05,
                 "pi_level_min": 0.0,
             },
             "Confirmed surges only": {
-                "min_accel": 8.0,
-                "min_baseline_slope": 1.0,
+                "min_accel": 0.3,
+                "min_baseline_slope": 0.05,
                 "pi_level_min": 45.0,
             },
         },

@@ -26,7 +26,7 @@ from kalchas_core.weights import WeightSet
 DEFAULT_THRESHOLDS: dict[int, float] = {
     1: 1.0,  # Rule of Three unrealised goals
     2: 70.0,  # Pressure Index
-    3: 8.0,  # Delta Goal threat
+    3: 6.0,  # League Bar signed score threshold
     4: 3.0,  # Delta 5min
     6: 0.0,  # Omega uses its own gate; threshold unused
     7: 60.0,  # K-Score
@@ -137,8 +137,10 @@ def evaluate_match(
                 )
             )
 
-    if 6 in slots:
+    if 6 in slots or 7 in slots:
         om = omega.evaluate(timeline, weights=w)
+
+    if 6 in slots:
         if om is not None and om.triggering_team is not None:
             side = om.triggering_team
             candidates.append(
@@ -152,17 +154,28 @@ def evaluate_match(
             )
 
     if 7 in slots:
+        # Consultants needed for K-Score even when their own slots are off.
+        if pi is None and 2 not in slots:
+            pi = pressure_index.evaluate(
+                timeline, home_goals=home_goals, away_goals=away_goals, weights=w
+            )
+        if d5 is None and 4 not in slots:
+            d5 = delta_5min.evaluate(timeline, weights=w)
+        if ro3 is None and 1 not in slots:
+            ro3 = rule_of_three.evaluate(
+                _shot_profile(timeline, Side.HOME),
+                _shot_profile(timeline, Side.AWAY),
+                minute=minute,
+                weights=w,
+            )
 
         def _signals(side: Side) -> TeamSignals:
-            om_team = om.team(side) if om else None
-            return TeamSignals(
+            return TeamSignals.from_omega(
+                om.team(side) if om else None,
                 delta_5min=float(d5.team(side).pressure) if d5 else 0.0,
                 pressure_index=float(pi.team(side).pressure) if pi else 0.0,
                 rule_of_three=float(ro3.team(side).unrealised_goals) if ro3 else 0.0,
                 npei=float(npei_snap.team(side).score) if npei_snap else 0.0,
-                omega_acceleration=float(om_team.acceleration) if om_team else None,
-                omega_baseline=float(om_team.baseline_slope) if om_team else None,
-                omega_level=float(om_team.level) if om_team else None,
             )
 
         ks = kscore.evaluate(_signals(Side.HOME), _signals(Side.AWAY), weights=w, threshold=th[7])

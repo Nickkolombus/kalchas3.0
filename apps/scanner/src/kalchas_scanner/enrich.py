@@ -1,61 +1,113 @@
-"""Convert API-Football statistics/events into core shapes."""
+"""Convert apifootball.com statistics/events into core shapes."""
 
 from __future__ import annotations
 
 from typing import Any
 
 
-def api_statistics_to_list(response: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Map `/fixtures/statistics` response into the two-element list shape."""
-    if not response or len(response) < 2:
+def _parse_minute(time_str: Any) -> int:
+    text = str(time_str or "0").strip()
+    if "+" in text:
+        parts = text.split("+")
+        try:
+            return int(parts[0]) + (int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0)
+        except ValueError:
+            return 0
+    return int(text) if text.isdigit() else 0
+
+
+def api_statistics_to_list(response: object) -> object:
+    """Pass through home_team/away_team dicts; leave lists for RapidAPI-era fixtures."""
+    if isinstance(response, dict) and "home_team" in response and "away_team" in response:
+        return response
+    if isinstance(response, list):
+        return response
+    return {"home_team": {}, "away_team": {}}
+
+
+def api_events_to_ssot(
+    events: object,
+    home_id: int,
+    away_id: int,
+    *,
+    home_team: str = "",
+    away_team: str = "",
+) -> list[dict]:
+    """Map apifootball goalscorer/cards (or a full match row) into SSOT rows.
+
+    Accepts:
+    - a match row dict with ``goalscorer`` / ``cards``
+    - a list of pre-shaped SSOT events (pass-through)
+    """
+    if isinstance(events, list):
+        # Already SSOT-like or empty.
+        if not events:
+            return []
+        if isinstance(events[0], dict) and "event_type" in events[0]:
+            return list(events)
         return []
 
-    def side_map(entry: dict[str, Any]) -> dict[str, Any]:
-        stats = {s.get("type"): s.get("value") for s in (entry.get("statistics") or [])}
+    if not isinstance(events, dict):
+        return []
 
-        def num(key: str) -> int:
-            v = stats.get(key)
-            if v is None or v == "None":
-                return 0
-            try:
-                return int(float(str(v).replace("%", "")))
-            except (TypeError, ValueError):
-                return 0
+    match_data = events
+    home_name = home_team or str(match_data.get("match_hometeam_name") or "")
+    away_name = away_team or str(match_data.get("match_awayteam_name") or "")
+    home_team_id = int(home_id or match_data.get("match_hometeam_id") or 0)
+    away_team_id = int(away_id or match_data.get("match_awayteam_id") or 0)
 
-        shots = num("Total Shots")
-        sot = num("Shots on Goal")
-        return {
-            "shots_on_goal": sot,
-            "shots": shots,
-            "corner_kicks": num("Corner Kicks"),
-            "attacks": num("Attacks"),
-            "dangerous_attacks": num("Dangerous Attacks"),
-        }
-
-    # API returns team-keyed rows; order is usually home then away.
-    return [side_map(response[0]), side_map(response[1])]
-
-
-def api_events_to_ssot(events: list[dict[str, Any]], home_id: int, away_id: int) -> list[dict]:
-    """Map fixture events into SSOT-like rows for ``convert_ssot_events``."""
     out: list[dict] = []
-    for ev in events or []:
-        etype = str(ev.get("type") or "").lower()
-        if etype not in ("goal", "card"):
+    for goal in match_data.get("goalscorer") or []:
+        if not isinstance(goal, dict):
             continue
-        team = ev.get("team") or {}
-        tid = int(team.get("id") or 0)
-        side = "home" if tid == home_id else "away" if tid == away_id else ""
-        time_block = ev.get("time") or {}
-        minute = int(time_block.get("elapsed") or 0)
+        home_scorer = goal.get("home_scorer") or ""
+        away_scorer = goal.get("away_scorer") or ""
+        info_side = str(goal.get("info") or "").strip().lower()
+        if home_scorer:
+            side = "home"
+            player = home_scorer
+        elif away_scorer:
+            side = "away"
+            player = away_scorer
+        elif info_side in ("home", "away"):
+            side = info_side
+            player = ""
+        else:
+            continue
         out.append(
             {
-                "event_type": etype,
-                "minute": minute,
+                "event_type": "goal",
+                "minute": _parse_minute(goal.get("time")),
                 "side": side,
-                "player_name": (ev.get("player") or {}).get("name") or "",
-                "detail": ev.get("detail") or "",
-                "team": team.get("name") or "",
+                "player_name": player,
+                "detail": "Normal Goal",
+                "team": home_name if side == "home" else away_name,
+                "team_id": home_team_id if side == "home" else away_team_id,
+            }
+        )
+
+    for card in match_data.get("cards") or []:
+        if not isinstance(card, dict):
+            continue
+        if card.get("home_fault"):
+            side = "home"
+            player = card.get("home_fault")
+        elif card.get("away_fault"):
+            side = "away"
+            player = card.get("away_fault")
+        else:
+            continue
+        card_type = str(card.get("card") or "").lower()
+        detail = "Red Card" if "red" in card_type else "Yellow Card"
+        out.append(
+            {
+                "event_type": "card",
+                "minute": _parse_minute(card.get("time")),
+                "side": side,
+                "player_name": player or "",
+                "detail": detail,
+                "team": home_name if side == "home" else away_name,
+                "team_id": home_team_id if side == "home" else away_team_id,
             }
         )
     return out

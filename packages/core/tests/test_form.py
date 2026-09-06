@@ -40,17 +40,22 @@ class TestCalculateTeamForm:
         assert form.current_streak.count == 4
         assert form.goals_per_game == 2.0
 
-    def test_streak_counter_keeps_incrementing_after_a_break(self) -> None:
-        """Pinned 2.2 quirk: after a break, later matching results still increment.
+    def test_streak_stops_at_the_first_break(self) -> None:
+        """Current streak is the unbroken run from the most recent match.
 
-        Sequence newest-first W, D, W leaves type=W and count=2 — not a true
-        'current' streak of 1. Differential confirms 2.2 does the same.
+        Sequence newest-first W, D, W → type=W and count=1 (not 2).
         """
         fixtures = [fx(1, 2, 1, 0), fx(1, 2, 0, 0), fx(1, 2, 2, 0)]
         form = calculate_team_form(fixtures, team_id=1, window=3)
         assert form.current_streak.type == "W"
-        assert form.current_streak.count == 2
+        assert form.current_streak.count == 1
         assert form.draws == 1
+
+    def test_unbroken_streak_still_counts_through(self) -> None:
+        fixtures = [fx(1, 2, 1, 0), fx(1, 2, 2, 0), fx(1, 2, 3, 1)]
+        form = calculate_team_form(fixtures, team_id=1, window=3)
+        assert form.current_streak.type == "W"
+        assert form.current_streak.count == 3
 
     def test_accepts_legacy_dict_keys(self) -> None:
         raw = [

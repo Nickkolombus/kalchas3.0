@@ -7,7 +7,7 @@ takes the *outputs* of other strategies as inputs and blends them into a
     momentum  ← Delta 5min pressure
     pressure  ← Pressure Index
     rule3     ← Rule of Three unrealised goals
-    omega     ← Omega acceleration (and, when available, baseline + level)
+    omega     ← Omega (acceleration + baseline + level) — same TeamOmega SSOT
     focus ΦI  ← NPEI, as a multiplier rather than a fifth vote
 
 Each consultant produces a vote in [0, 1]. The votes are levered around 0.5,
@@ -20,37 +20,31 @@ normal `WeightSet` strategy key. Removed: the database resolver, the
 `_formula_cache` mutation, and the orchestrator that assembled signals from
 whatever earlier slots had written onto the match dict.
 
-Two findings about the 2.2 live path, both preserved as callable behaviours
-rather than silently fixed:
-
-* Slot 7's alert path only forwarded Omega's acceleration into the blend.
-  Baseline and level defaulted to zero, which pins the level factor at its
-  0.2 floor and keeps the Omega vote in [0.07, 0.145] for *any* acceleration.
-  The consultant's lever is therefore always negative: Omega can only hurt
-  the K-Score on the alert path. The dashboard path (`resolve_match_kscore`)
-  forwarded the full block and could produce supporting votes. Pass
-  `omega_baseline` and `omega_level` to get the dashboard behaviour; omit
-  them (or leave them at zero) to reproduce the alert path.
-* `horizon` is declared, ranged, stored and shown in the admin UI, and never
-  read by any computation. Changing it moves nothing; a test pins that.
+3.0 SSOT: Omega's consultant vote always uses the full ``TeamOmega`` reading
+(acceleration, baseline slope, level). The 2.2 alert path that forwarded
+acceleration alone is retired — incomplete Omega inputs vote neutral (0.5)
+instead of applying the truncated drag. The unused 2.2 ``horizon`` admin
+control is not carried forward.
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 from kalchas_core.match import Side
+from kalchas_core.strategies.omega import TeamOmega
 from kalchas_core.weights import WeightSet
 
 STRATEGY_KEY = "kscore"
 
 DEFAULT_THRESHOLD: Final = 60.0
 
-# Hardcoded inside the Omega vote in 2.2 -- not admin-tunable.
-_OMEGA_ACCEL_SCALE: Final = 8.0
-_OMEGA_BASELINE_SCALE: Final = 2.5
+# Hardcoded inside the Omega vote -- scaled for 3.0's window-normalised
+# accel / baseline (2.2 used 8.0 and 2.5 on the unnormalised slopes).
+_OMEGA_ACCEL_SCALE: Final = 0.8
+_OMEGA_BASELINE_SCALE: Final = 0.4
 _OMEGA_LEVEL_DIVISOR: Final = 55.0
 _OMEGA_LEVEL_FLOOR: Final = 0.2
 _OMEGA_BASELINE_MIX: Final = (0.45, 0.55)
@@ -110,10 +104,10 @@ class MatchContext:
 class TeamSignals:
     """One team's consultant inputs.
 
-    `omega_acceleration` alone reproduces 2.2's alert path. Supplying
-    `omega_baseline` and `omega_level` as well reproduces the dashboard path.
-    When `omega_acceleration` is None the blend falls back to the legacy
-    angle-based vote using `omega_theta` and `omega_alpha`.
+    Omega SSOT: pass acceleration, baseline, and level together from
+    ``TeamOmega``. Use ``TeamSignals.from_omega`` so the three fields stay
+    aligned. Incomplete Omega (acceleration without baseline/level) votes
+    neutral rather than applying the retired 2.2 accel-only drag.
     """
 
     delta_5min: float = 0.0
@@ -125,6 +119,20 @@ class TeamSignals:
     omega_level: float | None = None
     omega_theta: float = 0.0
     omega_alpha: float = 0.0
+
+    @classmethod
+    def from_omega(cls, omega: TeamOmega | None, **kwargs: Any) -> TeamSignals:
+        """Build signals with Omega fields copied from a ``TeamOmega`` reading."""
+        if omega is None:
+            return cls(**kwargs)
+        return cls(
+            omega_acceleration=float(omega.acceleration),
+            omega_baseline=float(omega.baseline_slope),
+            omega_level=float(omega.level),
+            omega_theta=float(omega.theta),
+            omega_alpha=float(omega.alpha),
+            **kwargs,
+        )
 
 
 # --------------------------------------------------------------------------
@@ -142,19 +150,20 @@ def omega_vote(
 ) -> float:
     """Omega's consultant vote in [0, 1].
 
-    Linear form (preferred, used when `acceleration` is not None):
+    Full linear form (SSOT — requires acceleration, baseline, and level):
 
-        σ(accel/8) · (0.45 + 0.55 · σ(baseline/2.5)) · clamp(level/55, 0.2, 1)
+        σ(accel/0.8) · (0.45 + 0.55 · σ(baseline/0.4)) · clamp(level/55, 0.2, 1)
 
-    With baseline and level at zero -- which is how slot 7's alert path called
-    this -- the level factor sticks at 0.2 and the vote never exceeds ~0.145,
-    so the lever is always negative. Legacy form (no acceleration): a sine
-    product of the display angles.
+    Incomplete Omega (acceleration set but baseline or level missing) returns
+    neutral 0.5 so a truncated feed cannot drag the score. Legacy angle form
+    when acceleration is absent: sine product of the display angles.
     """
     if acceleration is not None:
+        if baseline is None or level is None:
+            return 0.5
         accel = max(0.0, float(acceleration))
-        base = max(0.0, float(baseline or 0.0))
-        lvl = float(level or 0.0)
+        base = max(0.0, float(baseline))
+        lvl = float(level)
         return _clamp(
             sigmoid(accel / _OMEGA_ACCEL_SCALE)
             * (

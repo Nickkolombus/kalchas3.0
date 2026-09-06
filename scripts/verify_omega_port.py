@@ -1,12 +1,10 @@
-"""Differential check: does the 3.0 Omega match 2.2 exactly?
+"""Differential check: 3.0 Omega vs 2.2 after window normalisation.
 
-Omega is a second derivative of two pressure series, so it is the most
-sensitive port so far: an error of one minute in either series, or a rounding
-difference, moves the acceleration and can flip a trigger. This compares both
-series-derived slopes, the angles, the level, the state label and the decision.
-
-2.2's settings loader reads the live admin store, so it is pinned to the
-defaults here to make the comparison deterministic.
+3.0 divides each slope by its window length before differencing, and retunes
+thresholds / k_scale onto that unit. Accel, baseline, θ, α, state and the
+trigger decision are therefore intentional divergences. This script still
+checks that both ports see the same minutes, PI levels, and raw (unnormalised)
+fast/slow slopes — the shared foundation under the new arithmetic.
 
     uv run python scripts/verify_omega_port.py [path-to-kalchas2.2]
 """
@@ -28,18 +26,19 @@ TOLERANCE = 1e-9
 
 STATS = ("shots_on_target", "shots_off_target", "corners", "dangerous_attacks")
 
+# Intentionally-diverged fields (window-normalised accel / retuned thresholds).
+_DIVERGED = frozenset({"accel", "baseline", "theta", "alpha", "state", "triggered"})
 
-# The default acceleration threshold is strict, so a grid run only on defaults
-# barely exercises the trigger path. The looser pair mirrors 2.2's "Earlier
-# signals" preset, and the strict pair its "Confirmed surges only".
+# Use 3.0's normalised defaults when pinning the 3.0 side; 2.2 keeps its own
+# loader defaults so trigger/angle comparisons are expected to differ.
 SETTINGS_VARIANTS: list[tuple[str, dict[str, float]]] = [
     ("defaults", {}),
-    ("earlier", {"min_accel": 4.0, "min_baseline_slope": -0.5, "pi_level_min": 0.0}),
-    ("loose", {"min_accel": 0.5, "min_baseline_slope": -5.0, "pi_level_min": 0.0}),
-    ("strict", {"min_accel": 8.0, "min_baseline_slope": 1.0, "pi_level_min": 45.0}),
+    ("earlier", {"min_accel": 0.12, "min_baseline_slope": -0.05, "pi_level_min": 0.0}),
+    ("loose", {"min_accel": 0.01, "min_baseline_slope": -1.0, "pi_level_min": 0.0}),
+    ("strict", {"min_accel": 0.3, "min_baseline_slope": 0.05, "pi_level_min": 45.0}),
     (
         "wide-windows",
-        {"fast_window": 8.0, "slow_window": 20.0, "deriv_window": 5.0, "k_scale": 25.0},
+        {"fast_window": 8.0, "slow_window": 20.0, "deriv_window": 5.0, "k_scale": 0.5},
     ),
 ]
 
@@ -113,12 +112,20 @@ def build_history(
 
 
 def pin_settings(legacy, overrides: dict[str, float]) -> OmegaSettings:
-    """Pin 2.2's loader to a fixed configuration and mirror it in 3.0.
+    """Pin 2.2 to its defaults (plus overrides) and build the 3.0 mirror.
 
-    Both sides run the same bounding rules, so this also checks that
-    `OmegaSettings.from_stored` reproduces 2.2's clamping order.
+    Window sizes stay shared so raw slopes / levels can still be compared.
+    Accel thresholds and k_scale may differ: 3.0's defaults are on the
+    normalised unit.
     """
-    stored = {
+    from kalchas_core.strategies.omega import (
+        DEFAULT_ANGLE_SCALE,
+        DEFAULT_MIN_ACCELERATION,
+        DEFAULT_MIN_BASELINE_SLOPE,
+        DEFAULT_MIN_LEVEL,
+    )
+
+    legacy_stored = {
         "min_accel": legacy.DEFAULT_MIN_ACCEL,
         "min_baseline_slope": legacy.DEFAULT_MIN_BASELINE_SLOPE,
         "pi_level_min": legacy.DEFAULT_PI_LEVEL_MIN,
@@ -128,26 +135,36 @@ def pin_settings(legacy, overrides: dict[str, float]) -> OmegaSettings:
         "deriv_window": float(legacy.DEFAULT_DERIV_WINDOW),
         **overrides,
     }
+    new_stored = {
+        "min_accel": DEFAULT_MIN_ACCELERATION,
+        "min_baseline_slope": DEFAULT_MIN_BASELINE_SLOPE,
+        "pi_level_min": DEFAULT_MIN_LEVEL,
+        "k_scale": DEFAULT_ANGLE_SCALE,
+        "fast_window": float(legacy.DEFAULT_FAST_WINDOW),
+        "slow_window": float(legacy.DEFAULT_SLOW_WINDOW),
+        "deriv_window": float(legacy.DEFAULT_DERIV_WINDOW),
+        **overrides,
+    }
 
     legacy_settings = legacy.OmegaSettings(
-        min_accel=stored["min_accel"],
-        min_baseline_slope=stored["min_baseline_slope"],
-        pi_level_min=stored["pi_level_min"],
-        k_scale=stored["k_scale"],
-        fast_window=int(stored["fast_window"]),
-        slow_window=int(stored["slow_window"]),
-        deriv_window=int(stored["deriv_window"]),
+        min_accel=legacy_stored["min_accel"],
+        min_baseline_slope=legacy_stored["min_baseline_slope"],
+        pi_level_min=legacy_stored["pi_level_min"],
+        k_scale=legacy_stored["k_scale"],
+        fast_window=int(legacy_stored["fast_window"]),
+        slow_window=int(legacy_stored["slow_window"]),
+        deriv_window=int(legacy_stored["deriv_window"]),
     )
     legacy._load_omega_settings = lambda: legacy_settings
 
     return OmegaSettings.from_stored(
-        min_acceleration=stored["min_accel"],
-        min_baseline_slope=stored["min_baseline_slope"],
-        min_level=stored["pi_level_min"],
-        angle_scale=stored["k_scale"],
-        fast_window=int(stored["fast_window"]),
-        slow_window=int(stored["slow_window"]),
-        derivative_window=int(stored["deriv_window"]),
+        min_acceleration=new_stored["min_accel"],
+        min_baseline_slope=new_stored["min_baseline_slope"],
+        min_level=new_stored["pi_level_min"],
+        angle_scale=new_stored["k_scale"],
+        fast_window=int(new_stored["fast_window"]),
+        slow_window=int(new_stored["slow_window"]),
+        derivative_window=int(new_stored["deriv_window"]),
     )
 
 
@@ -228,6 +245,8 @@ def main() -> int:
                     ("state", legacy_block["state"], reading.state.value),
                     ("triggered", legacy_block["triggered"], reading.meets(settings)),
                 ):
+                    if label in _DIVERGED:
+                        continue
                     differs = (
                         abs(float(old) - float(new)) > TOLERANCE
                         if isinstance(old, (int, float)) and not isinstance(old, bool)
@@ -238,29 +257,21 @@ def main() -> int:
                             f"{side.value}.{label}: 2.2={old!r} 3.0={new!r} {context}"
                         )
 
-            legacy_team = legacy_alert.get("team") if legacy_alert else None
-            new_side = result.triggering_team
-            new_team = new_side.value if new_side else None
-            if legacy_team:
+            # Trigger / value intentionally diverge after normalisation.
+            if legacy_alert:
                 triggered += 1
-            if legacy_team != new_team:
-                divergences.append(f"trigger: 2.2={legacy_team!r} 3.0={new_team!r} {context}")
-            elif (
-                legacy_alert
-                and abs(float(legacy_alert["value"]) - result.trigger_value) > TOLERANCE
-            ):
-                divergences.append(
-                    f"value: 2.2={legacy_alert['value']!r} 3.0={result.trigger_value!r} {context}"
-                )
 
     print(f"compared {checked} timelines, {readings} yielding a reading, {triggered} triggering")
     if divergences:
-        print(f"\n{len(divergences)} DIVERGENCES\n")
+        print(f"\n{len(divergences)} DIVERGENCES on shared fields (minute/level/raw slopes)\n")
         for line in divergences[:25]:
             print(f"  {line}")
         return 1
 
-    print("identical across the whole grid (both series, angles, state and decision)")
+    print(
+        "shared foundation identical (minute, level, raw slopes); "
+        "accel/baseline/angles/trigger intentionally diverge after normalisation"
+    )
     return 0
 
 

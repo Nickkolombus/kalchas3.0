@@ -95,7 +95,7 @@ def upgrade() -> None:
             success_window_minutes      INTEGER NOT NULL DEFAULT 20,
             expiration_buffer_minutes   INTEGER NOT NULL DEFAULT 2,
             infinite_ttl                BOOLEAN NOT NULL DEFAULT FALSE,
-            team_specific               BOOLEAN NOT NULL DEFAULT TRUE,
+            team_specific               BOOLEAN NOT NULL DEFAULT FALSE,
             enabled                     BOOLEAN NOT NULL DEFAULT TRUE,
             updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
@@ -105,9 +105,9 @@ def upgrade() -> None:
              infinite_ttl, team_specific, enabled)
         VALUES
             (1, 'Rule of 3', 999, 0, TRUE, TRUE, TRUE),
-            (2, 'InPlay Pressure', 20, 2, FALSE, TRUE, TRUE),
-            (3, 'Delta Goal', 20, 2, FALSE, TRUE, TRUE),
-            (4, 'Delta 5min', 20, 2, FALSE, TRUE, TRUE),
+            (2, 'InPlay Pressure', 20, 2, FALSE, FALSE, TRUE),
+            (3, 'League Bar', 20, 2, FALSE, FALSE, TRUE),
+            (4, 'Delta 5min', 20, 2, FALSE, FALSE, TRUE),
             (5, 'NPEI', 20, 2, FALSE, FALSE, TRUE),
             (6, 'Omega', 20, 2, FALSE, TRUE, TRUE),
             (7, 'K-Score', 20, 2, FALSE, TRUE, TRUE),

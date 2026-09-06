@@ -1,13 +1,9 @@
-"""Differential check: does the 3.0 K-Score match 2.2 exactly?
+"""Differential check: does the 3.0 K-Score match 2.2?
 
-K-Score is a meta-strategy -- it blends other strategies' outputs -- so this
-compares the pure blend (`_per_team` / `compute_kscore_from_signals`) rather
-than the slot-7 orchestrator. Two Omega input shapes are exercised:
-
-* alert path: acceleration only (baseline/level absent → zero) -- reproduces
-  the truncated vote that slot 7 shipped
-* dashboard path: full accel + baseline + level -- reproduces
-  `resolve_match_kscore`
+Historically compared both Omega input shapes from 2.2. Product SSOT in 3.0
+uses the full TeamOmega triple only; accel-only incomplete inputs now vote
+neutral (0.5) instead of the truncated drag. This script still exercises
+both shapes so intentional divergences are visible.
 
     uv run python scripts/verify_kscore_port.py [path-to-kalchas2.2]
 """
@@ -118,7 +114,6 @@ def main() -> int:
             "phi_floor",
             "bias",
             "momentum_scale",
-            "horizon",
             "ctx_red_card",
             "ctx_ko_prior",
             "ctx_trailing",

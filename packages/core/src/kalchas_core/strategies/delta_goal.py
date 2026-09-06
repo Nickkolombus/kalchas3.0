@@ -1,7 +1,11 @@
-"""Delta Goal (Strategy 3) -- pressure translated into goal probability.
+"""League Bar (Strategy 3, key ``delta_goal``) -- scoring chance vs the league bar.
 
-The most elaborate of the strategies, and the only one that models an actual
-probability rather than a score. The chain is:
+Display name: **League Bar**. Internal key stays ``delta_goal`` for stability.
+
+The chain estimates short-horizon goal probability from attacking pressure,
+compares it to the league (or odds) prior, and reports whether the team is
+**below**, **normal**, or **above** that bar (lift ``P / P0``). A 0-20 threat
+score still drives alerts when evidence clears the gate.
 
 1. Count attacking events for one team over the last 5 minutes, and over the
    5 minutes before that.
@@ -14,9 +18,9 @@ probability rather than a score. The chain is:
    (`lambda`) rises with how much has actually happened in the last 10 minutes,
    so a quiet match stays near its prior.
 5. Divide by the prior to get lift `L` -- how much more likely a goal is than
-   it would be by default.
-6. Combine probability, pressure and lift into a 0-20 threat score, and alert
-   when it clears the threshold and an evidence gate.
+   it would be by default. Map `L` onto League Bar: below / normal / above.
+6. Map lift onto a signed League Bar score in ``[-10, +10]`` (0 = on the
+   league prior) and alert when it clears the threshold with evidence.
 
 Ported from Kalchas 2.2's `strategies/strategy_003_delta_goal/`, which held
 roughly 3,900 lines across six files. Only `formula.py` was reachable in
@@ -62,8 +66,13 @@ MINIMUM_MINUTE: Final = 10
 with a comment noting it had been lowered. The config value was never read.
 """
 
-MAX_THREAT_SCORE: Final = 20.0
-DEFAULT_ALERT_THRESHOLD: Final = 18.5
+MAX_THREAT_SCORE: Final = 10.0
+"""Half-width of the League Bar scale. Readings live in ``[-10, +10]``."""
+
+BAR_SCORE_MAX: Final = MAX_THREAT_SCORE
+
+DEFAULT_ALERT_THRESHOLD: Final = 6.0
+"""Alert when the signed bar score clears this (clearly above the league bar)."""
 
 SNAPSHOT_LOOKBACK: Final = 5
 """How far back to accept a stale snapshot when a minute is missing."""
@@ -102,6 +111,10 @@ LIFT_CEILING: Final = 2.5
 """Values at which the probability and lift terms are considered maxed out.
 A 12% chance of a goal in 5 minutes, or 2.5x the prior, scores full marks."""
 
+# League Bar bands on lift L = P / P0 (1.0 = on the league bar).
+LEAGUE_BAR_NORMAL_LOW: Final = 0.85
+LEAGUE_BAR_NORMAL_HIGH: Final = 1.15
+
 THREAT_URGENCY_MULTIPLIER: Final = 0.2
 """Boost to the whole threat score from late, close-game urgency.
 
@@ -114,15 +127,14 @@ TIED_GAME_PROBABILITY_BONUS: Final = 0.05
 """Added to the probability weight when the match is late and when it is level,
 so the same pressure counts for more when a goal matters more."""
 
-MINIMUM_LIVE_THREAT: Final = 2.0
-"""Floor applied so the dashboard shows something for a team that is clearly
-doing *something*, rather than a bare zero."""
+MINIMUM_LIVE_THREAT: Final = 0.5
+"""Legacy floor for the old composite scorer; unused by League Bar score."""
 
 LATE_GAME_MINUTE: Final = 75
 EARLY_GAME_MINUTE: Final = 30
 
 TIER_ORANGE_MARGIN: Final = 2.0
-TIER_RED_MARGIN: Final = 4.0
+TIER_RED_MARGIN: Final = 3.5
 
 SUSTAINED_ATTACK_EVENTS: Final = 3
 CORNER_SEQUENCE_CORNERS: Final = 3
@@ -336,13 +348,7 @@ class WindowEvents:
 
     @property
     def total_including_fouls(self) -> int:
-        """Every counted event, fouls included.
-
-        2.2 summed the whole event dict when testing for a sustained attack,
-        which pulled fouls in. Kept as a named property so the one place that
-        depends on it is explicit rather than incidental -- see
-        `detect_patterns`.
-        """
+        """Attacking events plus fouls (diagnostic only; not used for patterns)."""
         return self.attacking_total + self.fouls
 
 
@@ -419,11 +425,9 @@ def detect_patterns(
 
     Windows are ordered most recent first.
 
-    Note that `sustained_attack` counts every event, fouls and dangerous
-    attacks included, because 2.2 summed the whole event dict. This is what
-    lets the evidence gate be satisfied with no shots at all -- see
-    `TeamThreat.has_evidence`. Preserved and pinned by tests rather than
-    quietly corrected.
+    ``sustained_attack`` uses ``attacking_total`` only (shots, corners,
+    dangerous attacks). Fouls are excluded so broken play cannot clear the
+    evidence gate on its own.
     """
     if len(timeline.minutes) < 3:
         return AttackingPatterns()
@@ -436,9 +440,7 @@ def detect_patterns(
     recent_two = windows[:2]
 
     return AttackingPatterns(
-        sustained_attack=all(
-            w.total_including_fouls >= SUSTAINED_ATTACK_EVENTS for w in recent_two
-        ),
+        sustained_attack=all(w.attacking_total >= SUSTAINED_ATTACK_EVENTS for w in recent_two),
         corner_sequence=sum(w.corners for w in recent_two) >= CORNER_SEQUENCE_CORNERS,
         shot_burst=(windows[0].shots_on_target + windows[0].shots_off_target) >= SHOT_BURST_SHOTS,
         building_pressure=windows[0].shots_on_target > windows[1].shots_on_target,
@@ -446,12 +448,43 @@ def detect_patterns(
 
 
 # --------------------------------------------------------------------------
-# Threat score
+# Threat score / League Bar
 # --------------------------------------------------------------------------
 
 
+class LeagueBar(StrEnum):
+    """Where live scoring chance sits relative to the league prior.
+
+    Derived from lift ``L = P / P0``: below the bar, on it (normal), or above.
+    """
+
+    BELOW = "below"
+    NORMAL = "normal"
+    ABOVE = "above"
+
+
+def league_bar_for(lift: float) -> LeagueBar:
+    """Map lift onto below / normal / above the league bar."""
+    if lift > LEAGUE_BAR_NORMAL_HIGH:
+        return LeagueBar.ABOVE
+    if lift < LEAGUE_BAR_NORMAL_LOW:
+        return LeagueBar.BELOW
+    return LeagueBar.NORMAL
+
+
+def league_bar_score(lift: float) -> float:
+    """Signed League Bar reading from lift ``L = P / P0``.
+
+    ``0`` means on the league prior. Positive is above the bar, negative below.
+    Clamped to ``[-10, +10]``: each +1 of lift above 1.0 adds +10 points until
+    the cap (so ``L = 2`` → ``+10``, ``L = 0`` → ``-10``).
+    """
+    raw = BAR_SCORE_MAX * (float(lift) - 1.0)
+    return round(max(-BAR_SCORE_MAX, min(BAR_SCORE_MAX, raw)), 1)
+
+
 class Tier(StrEnum):
-    """Alert severity, set by how far the threat score clears the threshold."""
+    """Alert severity from how far the bar score clears the threshold."""
 
     YELLOW = "Y"
     ORANGE = "O"
@@ -480,14 +513,7 @@ def threat_score(
     patterns: AttackingPatterns,
     weights: WeightSet,
 ) -> float:
-    """Combine probability, pressure and lift into a 0-20 threat score.
-
-    Not actually bounded by 20. With the probability weight raised for a late,
-    level match and both urgency multipliers applied, the composite can pass
-    1.0 and the score can reach roughly 25. Since the alert value is reported
-    as `threat / 20`, it can exceed 1.0. 2.2 had the same behaviour and no
-    clamp; preserved, and pinned by a test.
-    """
+    """Legacy 2.2 composite (kept for differentials). Live path uses ``league_bar_score``."""
     p = min(probability / PROBABILITY_CEILING, 1.0)
     l = min(lift / LIFT_CEILING, 1.0)  # noqa: E741 - matches the published formula
     s = pressure_score / 100.0
@@ -512,7 +538,7 @@ def threat_score(
     composite = (weight_p * p + weight_ps * s + weight_l * l) * (1 + bonus)
     composite *= 1 + context.urgency * THREAT_URGENCY_MULTIPLIER
 
-    score = round(composite * MAX_THREAT_SCORE, 1)
+    score = round(composite * 20.0, 1)
 
     if score <= 0 and (patterns.sustained_attack or context.urgency > 0.5):
         return MINIMUM_LIVE_THREAT
@@ -536,6 +562,7 @@ class TeamThreat:
     prior: float
     probability: float
     lift: float
+    league_bar: LeagueBar
     threat: float
     tier: Tier | None
 
@@ -545,17 +572,12 @@ class TeamThreat:
 
         Intended as a gate against alerting on a score built from dangerous
         attacks alone, which is the noisiest thing the feed carries. The first
-        two clauses enforce that by requiring a shot on target.
+        two clauses require a shot on target (alone or with support).
 
-        The third clause undoes it. A sustained attack qualifies on its own,
-        and that pattern is computed by summing every event -- dangerous
-        attacks and fouls included -- so three of either in each of the last
-        two windows clears a gate written to require attacking intent, with no
-        shot anywhere. Given a competition baseline near 1.2 dangerous attacks
-        per five minutes, that is a common path rather than an edge case.
-
-        Preserved because it decides which alerts subscribers receive.
-        `TestDangerousAttacksDefeatTheEvidenceGate` pins it.
+        The third clause allows a sustained attack pattern on its own.
+        That pattern counts attacking events only (not fouls). Dangerous
+        attacks alone can still form a sustained attack when volume is high
+        across consecutive windows — see the dedicated tests.
         """
         return (
             self.events.shots_on_target >= EVIDENCE_SHOTS_ALONE
@@ -607,12 +629,9 @@ class DeltaGoalResult:
 
     @property
     def trigger_value(self) -> float:
-        """Threat score as a fraction of the maximum, for threshold comparison.
-
-        Can exceed 1.0; see `threat_score`.
-        """
+        """Signed League Bar score for the triggering team (0 if none)."""
         side = self.triggering_team
-        return self.team(side).threat / MAX_THREAT_SCORE if side else 0.0
+        return self.team(side).threat if side else 0.0
 
     @property
     def strongest_team(self) -> Side:
@@ -636,10 +655,9 @@ def _odds_prior(team_odds: float, opponent_odds: float) -> float:
 def _event_score(events: WindowEvents, baseline: EventBaseline, weights: WeightSet) -> float:
     """Weighted, competition-normalised attacking score.
 
-    Fouls are excluded, and so is possession: the registry carries a
-    `weight_possession` coefficient that 2.2 resolved on startup and then never
-    multiplied into anything. It is a dead control, like the Delta 5min weights
-    were, and is left unwired here rather than given a new meaning.
+    Fouls and possession are excluded. 2.2 declared a ``weight_possession``
+    admin coefficient that never entered this sum; 3.0 drops that dead control
+    from the registry rather than inventing a use for it.
     """
 
     def normalised(count: int, mu: float) -> float:
@@ -688,7 +706,7 @@ def _evaluate_team(
     probability = blended * (1 + context.urgency * weights.get(STRATEGY_KEY, "time_urgency_mult"))
 
     lift = probability / max(prior, 1e-6)
-    threat = threat_score(probability, lift, pressure_score, context, patterns, weights)
+    threat = league_bar_score(lift)
 
     return TeamThreat(
         events=events,
@@ -699,6 +717,7 @@ def _evaluate_team(
         prior=prior,
         probability=probability,
         lift=lift,
+        league_bar=league_bar_for(lift),
         threat=threat,
         tier=tier_for(threat, threshold),
     )
@@ -737,7 +756,8 @@ def evaluate(
             confidence=0.0,
             prior=league_prior(league_id),
             probability=0.0,
-            lift=0.0,
+            lift=1.0,
+            league_bar=LeagueBar.NORMAL,
             threat=0.0,
             tier=None,
         )

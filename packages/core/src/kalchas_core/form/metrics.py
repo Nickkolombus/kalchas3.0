@@ -88,6 +88,7 @@ def calculate_team_form(
     wins = draws = losses = 0
     goals_for = goals_against = 0
     current_streak = Streak()
+    streak_open = True
     home_wins = away_wins = 0
     home_goals = away_goals = 0
     home_games = away_games = 0
@@ -126,10 +127,13 @@ def calculate_team_form(
             if len(results) < window:
                 results.append(result)
 
+            # Current streak = unbroken run from the most recent match only.
             if i == 0:
                 current_streak = Streak(type=result, count=1)
-            elif current_streak.type == result:
+            elif streak_open and current_streak.type == result:
                 current_streak = Streak(type=result, count=current_streak.count + 1)
+            else:
+                streak_open = False
         except (ValueError, TypeError, KeyError, AttributeError):
             continue
 

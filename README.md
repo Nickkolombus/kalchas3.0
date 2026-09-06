@@ -15,7 +15,8 @@ packages/core     Pure domain logic. No IO. This is the valuable part.
 packages/football API-Football HTTP client.
 packages/db       asyncpg pool + Alembic migrations.
 apps/api          FastAPI service. Serves the dashboard and admin endpoints.
-apps/scanner      Polls the football feed, evaluates strategies, writes alerts.
+apps/scanner      Polls the football feed, evaluates strategies, persists
+                  match minutes to Postgres, writes alerts to the outbox.
 apps/bot          Telegram delivery.
 apps/web          React + Vite dashboard (mock fixtures until OpenAPI live contract).
 ```
@@ -50,7 +51,7 @@ uv run ruff check .          # lint
 uv run mypy                  # type check
 
 # Apps (each is a workspace member)
-uv run kalchas-api           # FastAPI on :8000 — /health, /api/weights/defaults, /api/live
+uv run kalchas-api           # FastAPI on :8000 — /health, /api/weights, /api/live (Postgres)
 uv run kalchas-scanner       # poll live matches (needs API_FOOTBALL_KEY)
 SCANNER_ONCE=1 uv run kalchas-scanner   # single cycle
 uv run kalchas-bot           # Telegram (needs TELEGRAM_TOKEN; single replica only)
@@ -68,7 +69,9 @@ cd apps/web && npm install && npm run dev
 | Variable | Used by |
 |---|---|
 | `DATABASE_URL` | migrate, api, scanner, bot |
-| `API_FOOTBALL_KEY` | scanner |
+| `API_FOOTBALL_KEY` | scanner (apiv3.apifootball.com) |
+| `FOOTBALL_API_BASE` | scanner (default `https://apiv3.apifootball.com/`) |
+| `FOOTBALL_REQUESTS_PER_HOUR` | scanner (default 180 — free-tier friendly) |
 | `SCANNER_INTERVAL_SEC` | scanner (default 60) |
 | `SCANNER_ONCE` | scanner (one cycle then exit) |
 | `TELEGRAM_TOKEN` | bot |

@@ -20,7 +20,7 @@ _S6_DEGREE_CUTOFF = 15.0
 def normalize_strategy_condition(
     row: dict[str, Any],
     *,
-    k_scale: float = 15.0,
+    k_scale: float = 0.5,
 ) -> dict[str, Any]:
     """Normalize one strategy_conditions row for display and evaluation."""
     out = dict(row)
@@ -37,7 +37,7 @@ def normalize_strategy_condition(
 def prepare_strategy_conditions_for_save(
     rows: Any,
     *,
-    k_scale: float = 15.0,
+    k_scale: float = 0.5,
 ) -> list[dict[str, Any]]:
     """Validate and normalize admin POST payloads before DB replace."""
     if rows is None:
@@ -81,7 +81,7 @@ def prepare_strategy_conditions_for_save(
 def normalize_strategy_conditions(
     rows: list | None,
     *,
-    k_scale: float = 15.0,
+    k_scale: float = 0.5,
 ) -> list[dict[str, Any]]:
     """Normalize DB/read paths; tolerate legacy rows, skip invalid entries."""
     if not isinstance(rows, list):

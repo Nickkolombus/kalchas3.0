@@ -1,12 +1,10 @@
-"""Differential check: does the 3.0 Delta 5min match 2.2 exactly?
+"""Differential check: does the 3.0 Delta 5min match 2.2?
 
-This one matters more than the others. In 2.2 the coefficients were hardcoded
-in `utils/delta_calculator.py` (SOT x 2.0, secondary x 0.5) and the registry
-default for `da_weight` was 1.0, which nothing read. 3.0 wires the coefficients
-through the registry and corrects that default to 0.5. This script is the proof
-that doing so left every computed value and every trigger decision unchanged.
-
-Compares the pressure values, the corroboration gate, and which team triggers.
+In 2.2 the coefficients were hardcoded in `utils/delta_calculator.py`
+(SOT x 2.0, secondary x 0.5) and the registry default for `da_weight` was 1.0,
+which nothing read. 3.0 wires the coefficients through the registry (default
+0.5) and uses fair home/away trigger selection. Expect intentional divergences
+on trigger side when 2.2's asymmetric branch would have differed.
 
     uv run python scripts/verify_delta_5min_port.py [path-to-kalchas2.2]
 """

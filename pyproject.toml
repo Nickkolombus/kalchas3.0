@@ -115,7 +115,13 @@ ignore_missing_imports = true
 # Tests
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
-testpaths = ["packages/core/tests", "apps/api/tests", "apps/scanner/tests"]
+testpaths = [
+    "packages/core/tests",
+    "packages/db/tests",
+    "packages/football/tests",
+    "apps/api/tests",
+    "apps/scanner/tests",
+]
 asyncio_mode = "auto"
 filterwarnings = [
     "error::DeprecationWarning",
