@@ -432,15 +432,20 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 0.5,
                 "Multiplier on 5-minute shot-on-target delta.",
             ),
+            # 2.2 registered this default as 1.0, but `utils/delta_calculator.py`
+            # hardcoded 0.5 and never read the registry at all -- so the admin
+            # slider moved nothing, and the alert text quoted subscribers a DA
+            # term twice its real size. Defaulted to the value actually in use,
+            # so wiring the coefficient up leaves computed values unchanged.
             WeightSpec(
                 "da_weight",
                 "DA Δ weight",
-                1.0,
+                0.5,
                 0.0,
                 3.0,
                 0.5,
                 "Multiplier on 5-minute dangerous-attack delta "
-                "(falls back to SOFFT if DA missing).",
+                "(falls back to shots off target if DA is unavailable).",
             ),
             WeightSpec(
                 "min_da_delta",

@@ -67,11 +67,7 @@ def period_start_for(minute: int) -> int:
 
 @dataclass(frozen=True, slots=True)
 class TeamDeltas:
-    """Activity by one team across a window: end counters minus start counters.
-
-    Never negative. A provider correcting a counter downward mid-match would
-    otherwise register as negative activity.
-    """
+    """Activity by one team across a window: end counters minus start counters."""
 
     attacks: int
     dangerous_attacks: int
@@ -80,14 +76,27 @@ class TeamDeltas:
     corners: int
 
     @classmethod
-    def between(cls, start: TeamStats, end: TeamStats) -> TeamDeltas:
+    def between(cls, start: TeamStats, end: TeamStats, *, clamp: bool = True) -> TeamDeltas:
+        """Difference two stat lines.
+
+        Clamped to zero by default: a provider revising a counter downward
+        mid-match is data noise, not negative activity. Strategy 4 asks for
+        `clamp=False` because 2.2 computed its pressure from raw differences,
+        and clamping would change which alerts fire -- see
+        `kalchas_core.strategies.delta_5min`.
+        """
+        floor = (lambda v: max(0, v)) if clamp else (lambda v: v)
         return cls(
-            attacks=max(0, end.attacks - start.attacks),
-            dangerous_attacks=max(0, end.dangerous_attacks - start.dangerous_attacks),
-            shots=max(0, end.total_shots - start.total_shots),
-            shots_on_target=max(0, end.shots_on_target - start.shots_on_target),
-            corners=max(0, end.corners - start.corners),
+            attacks=floor(end.attacks - start.attacks),
+            dangerous_attacks=floor(end.dangerous_attacks - start.dangerous_attacks),
+            shots=floor(end.total_shots - start.total_shots),
+            shots_on_target=floor(end.shots_on_target - start.shots_on_target),
+            corners=floor(end.corners - start.corners),
         )
+
+    @property
+    def shots_off_target(self) -> int:
+        return self.shots - self.shots_on_target
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,8 +119,8 @@ class ActivityWindow:
         """Minutes actually covered, which may be less than the span requested."""
         return self.end.minute - self.start.minute
 
-    def deltas(self, side: Side) -> TeamDeltas:
-        return TeamDeltas.between(self.start.team(side), self.end.team(side))
+    def deltas(self, side: Side, *, clamp: bool = True) -> TeamDeltas:
+        return TeamDeltas.between(self.start.team(side), self.end.team(side), clamp=clamp)
 
 
 def earliest_allowed_start(
