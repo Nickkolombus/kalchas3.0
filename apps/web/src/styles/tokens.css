@@ -1,0 +1,67 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  color-scheme: dark;
+  --bg: #06060c;
+  --surface: #0c0c14;
+  --surface-2: #12121c;
+  --surface-3: #1a1a28;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --text: #f0ece4;
+  --text-2: #a8a4b8;
+  --muted: #6b6778;
+  --accent: #38bdf8;
+  --accent-dim: rgba(56, 189, 248, 0.12);
+  --gold: #f5c542;
+  --gold-dim: rgba(245, 197, 66, 0.15);
+  --hot: #f97316;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --warn: #eab308;
+}
+
+:root.light {
+  color-scheme: light;
+  --bg: #f8f7f4;
+  --surface: #ffffff;
+  --surface-2: #f2f0ec;
+  --surface-3: #e8e6e1;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.16);
+  --text: #1a1830;
+  --text-2: #4a4860;
+  --muted: #6e6c80;
+  --accent: #2255cc;
+  --accent-dim: rgba(34, 85, 204, 0.12);
+  --gold: #b8860b;
+  --gold-dim: rgba(184, 134, 11, 0.12);
+  --hot: #d95306;
+  --success: #15803d;
+  --danger: #dc2626;
+  --warn: #a16207;
+}
+
+/* Respect OS preference until user explicitly toggles */
+@media (prefers-color-scheme: light) {
+  :root:not(.dark):not(.light) {
+    color-scheme: light;
+    --bg: #f8f7f4;
+    --surface: #ffffff;
+    --surface-2: #f2f0ec;
+    --surface-3: #e8e6e1;
+    --border: rgba(0, 0, 0, 0.08);
+    --border-strong: rgba(0, 0, 0, 0.16);
+    --text: #1a1830;
+    --text-2: #4a4860;
+    --muted: #6e6c80;
+    --accent: #2255cc;
+    --accent-dim: rgba(34, 85, 204, 0.12);
+    --gold: #b8860b;
+    --gold-dim: rgba(184, 134, 11, 0.12);
+    --hot: #d95306;
+    --success: #15803d;
+    --danger: #dc2626;
+    --warn: #a16207;
+  }
+}

@@ -1,0 +1,21 @@
+[project]
+name = "kalchas-scanner"
+version = "3.0.0"
+description = "Live match scanner: poll feed, evaluate strategies, emit alerts."
+requires-python = ">=3.13"
+dependencies = [
+    "kalchas-core",
+    "kalchas-football",
+    "kalchas-db",
+]
+
+
+[project.scripts]
+kalchas-scanner = "kalchas_scanner.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kalchas_scanner"]

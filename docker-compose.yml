@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: kalchas
+      POSTGRES_PASSWORD: kalchas
+      POSTGRES_DB: kalchas
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kalchas -d kalchas"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://kalchas:kalchas@postgres:5432/kalchas
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+      DATABASE_URL: postgresql://kalchas:kalchas@postgres:5432/kalchas
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  scanner:
+    build:
+      context: .
+      target: scanner
+    environment:
+      DATABASE_URL: postgresql://kalchas:kalchas@postgres:5432/kalchas
+      API_FOOTBALL_KEY: ${API_FOOTBALL_KEY:-}
+      SCANNER_INTERVAL_SEC: "60"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    profiles: ["live"]
+
+  bot:
+    build:
+      context: .
+      target: bot
+    environment:
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
+      DATABASE_URL: postgresql://kalchas:kalchas@postgres:5432/kalchas
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    profiles: ["live"]
+    deploy:
+      replicas: 1
+
+volumes:
+  pgdata:

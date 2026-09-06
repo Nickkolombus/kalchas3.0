@@ -1,0 +1,16 @@
+[project]
+name = "kalchas-football"
+version = "3.0.0"
+description = "API-Football HTTP client and rate limiter."
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.27",
+    "kalchas-core",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kalchas_football"]

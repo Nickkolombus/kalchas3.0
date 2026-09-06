@@ -1,0 +1,165 @@
+{
+  "timestamp": "2026-06-11T20:18:49Z",
+  "total_matches": 4,
+  "triggered_matches": 2,
+  "active_strategies": [
+    {
+      "match_id": "12345",
+      "match_label": "Arsenal vs Liverpool",
+      "minute": 75,
+      "strategy_name": "pressure_index",
+      "trigger_level": "high",
+      "value": 65
+    }
+  ],
+  "rule_threshold": 1.2,
+  "s2_threshold": 5.0,
+  "s4_threshold": 60.0,
+  "pressure_window_minutes": 10,
+  "recent_alerts": [],
+  "matches": [
+    {
+      "match_id": "12345",
+      "home_team": "Arsenal",
+      "away_team": "Liverpool",
+      "league": "Premier League",
+      "country_code": "GB",
+      "minute": 75,
+      "minute_display": "75",
+      "status_short": "2H",
+      "score": "1-1",
+      "score_breakdown": { "home": 1, "away": 1 },
+      "score_reliable": true,
+      "stat_lines": {
+        "shots_on_target": { "home": 5, "away": 3 },
+        "shots_off_target": { "home": 6, "away": 4 },
+        "attacks": { "home": 45, "away": 38 },
+        "dangerous_attacks": { "home": 28, "away": 19 },
+        "corners": { "home": 7, "away": 4 },
+        "possession": { "home": 58, "away": 42 },
+        "yellow_cards": { "home": 1, "away": 2 },
+        "red_cards": { "home": 0, "away": 0 }
+      },
+      "strategy_status": {
+        "rule_of_three": { "teams": { "home": { "value": 1.4, "triggered": true }, "away": { "value": 0.6 } }, "threshold": 1.2 },
+        "pressure_index": { "teams": { "home": { "value": 65, "triggered": true }, "away": { "value": 45 } }, "threshold": 60 },
+        "delta_5min": { "teams": { "home": { "value": 8, "triggered": true }, "away": { "value": 2 } }, "threshold": 5 },
+        "npei": { "teams": { "home": { "value": 58 }, "away": { "value": 48 } }, "threshold": 55 },
+        "omega": { "teams": { "home": { "value": 72, "triggered": true }, "away": { "value": 34 } }, "threshold": 60 }
+      },
+      "active_strategies": ["pressure_index", "rule_of_three", "delta_5min", "omega"],
+      "hot_score": 78,
+      "odds": { "home": 2.1, "draw": 3.4, "away": 3.6, "matched": 1250000 },
+      "statless": false,
+      "goal_events": [{ "minute": 12, "side": "home" }, { "minute": 54, "side": "away" }],
+      "last_goal": { "minute": 54, "side": "away", "team": "Liverpool" }
+    },
+    {
+      "match_id": "12346",
+      "home_team": "Real Madrid",
+      "away_team": "Barcelona",
+      "league": "La Liga",
+      "country_code": "ES",
+      "minute": 23,
+      "minute_display": "23",
+      "status_short": "1H",
+      "score": "0-0",
+      "score_breakdown": { "home": 0, "away": 0 },
+      "score_reliable": true,
+      "stat_lines": {
+        "shots_on_target": { "home": 1, "away": 2 },
+        "shots_off_target": { "home": 3, "away": 2 },
+        "attacks": { "home": 18, "away": 22 },
+        "dangerous_attacks": { "home": 8, "away": 11 },
+        "corners": { "home": 1, "away": 2 },
+        "possession": { "home": 48, "away": 52 },
+        "yellow_cards": { "home": 0, "away": 1 },
+        "red_cards": { "home": 0, "away": 0 }
+      },
+      "strategy_status": {
+        "rule_of_three": { "teams": { "home": { "value": 0.3 }, "away": { "value": 0.5 } }, "threshold": 1.2 },
+        "pressure_index": { "teams": { "home": { "value": 32 }, "away": { "value": 38 } }, "threshold": 60 },
+        "delta_5min": { "teams": { "home": { "value": 1 }, "away": { "value": 3 } }, "threshold": 5 },
+        "npei": { "teams": { "home": { "value": 42 }, "away": { "value": 46 } }, "threshold": 55 },
+        "omega": { "teams": { "home": { "value": 22 }, "away": { "value": 28 } }, "threshold": 60 }
+      },
+      "active_strategies": [],
+      "hot_score": 34,
+      "odds": { "home": 1.95, "draw": 3.6, "away": 4.0, "matched": 850000 },
+      "statless": false,
+      "goal_events": [],
+      "last_goal": {}
+    },
+    {
+      "match_id": "12347",
+      "home_team": "Bayern Munich",
+      "away_team": "Borussia Dortmund",
+      "league": "Bundesliga",
+      "country_code": "DE",
+      "minute": 58,
+      "minute_display": "58",
+      "status_short": "2H",
+      "score": "2-1",
+      "score_breakdown": { "home": 2, "away": 1 },
+      "score_reliable": true,
+      "stat_lines": {
+        "shots_on_target": { "home": 7, "away": 4 },
+        "shots_off_target": { "home": 5, "away": 6 },
+        "attacks": { "home": 52, "away": 41 },
+        "dangerous_attacks": { "home": 31, "away": 18 },
+        "corners": { "home": 8, "away": 3 },
+        "possession": { "home": 62, "away": 38 },
+        "yellow_cards": { "home": 2, "away": 3 },
+        "red_cards": { "home": 0, "away": 0 }
+      },
+      "strategy_status": {
+        "rule_of_three": { "teams": { "home": { "value": 1.1 }, "away": { "value": 0.9 } }, "threshold": 1.2 },
+        "pressure_index": { "teams": { "home": { "value": 58, "triggered": true }, "away": { "value": 41 } }, "threshold": 60 },
+        "delta_5min": { "teams": { "home": { "value": 6, "triggered": true }, "away": { "value": 4 } }, "threshold": 5 },
+        "npei": { "teams": { "home": { "value": 61, "triggered": true }, "away": { "value": 44 } }, "threshold": 55 },
+        "omega": { "teams": { "home": { "value": 55 }, "away": { "value": 31 } }, "threshold": 60 }
+      },
+      "active_strategies": ["pressure_index", "delta_5min", "npei"],
+      "hot_score": 66,
+      "odds": { "home": 1.45, "draw": 4.8, "away": 7.2, "matched": 2100000 },
+      "statless": false,
+      "goal_events": [{ "minute": 8, "side": "home" }, { "minute": 35, "side": "away" }, { "minute": 51, "side": "home" }],
+      "last_goal": { "minute": 51, "side": "home", "team": "Bayern Munich" }
+    },
+    {
+      "match_id": "12348",
+      "home_team": "Inter Milan",
+      "away_team": "AC Milan",
+      "league": "Serie A",
+      "country_code": "IT",
+      "minute": 12,
+      "minute_display": "12",
+      "status_short": "1H",
+      "score": "0-0",
+      "score_breakdown": { "home": 0, "away": 0 },
+      "score_reliable": true,
+      "stat_lines": {
+        "shots_on_target": { "home": 0, "away": 1 },
+        "shots_off_target": { "home": 1, "away": 1 },
+        "attacks": { "home": 8, "away": 9 },
+        "dangerous_attacks": { "home": 2, "away": 3 },
+        "corners": { "home": 0, "away": 1 },
+        "possession": { "home": 51, "away": 49 },
+        "yellow_cards": { "home": 0, "away": 0 },
+        "red_cards": { "home": 0, "away": 0 }
+      },
+      "strategy_status": {
+        "rule_of_three": { "teams": { "home": { "value": 0.1 }, "away": { "value": 0.2 } }, "threshold": 1.2 },
+        "pressure_index": { "teams": { "home": { "value": 12 }, "away": { "value": 15 } }, "threshold": 60 },
+        "delta_5min": { "teams": { "home": { "value": 0 }, "away": { "value": 1 } }, "threshold": 5 },
+        "npei": { "teams": { "home": { "value": 35 }, "away": { "value": 38 } }, "threshold": 55 },
+        "omega": { "teams": { "home": { "value": 12 }, "away": { "value": 15 } }, "threshold": 60 }
+      },
+      "active_strategies": [],
+      "hot_score": 12,
+      "statless": false,
+      "goal_events": [],
+      "last_goal": {}
+    }
+  ]
+}

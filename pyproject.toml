@@ -5,6 +5,11 @@ description = "Strategy-based live football analytics: scanner, API, and Telegra
 requires-python = ">=3.13"
 dependencies = [
     "kalchas-core",
+    "kalchas-football",
+    "kalchas-db",
+    "kalchas-scanner",
+    "kalchas-api",
+    "kalchas-bot",
 ]
 
 [dependency-groups]
@@ -12,17 +17,28 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
+    "httpx>=0.27",
     "ruff>=0.8",
     "mypy>=1.13",
 ]
 
 [tool.uv.workspace]
-# apps/api, apps/scanner and apps/bot join this list as each is built.
-# Listing a member before it exists makes `uv sync` silently skip it.
-members = ["packages/*"]
+members = [
+    "packages/core",
+    "packages/football",
+    "packages/db",
+    "apps/api",
+    "apps/scanner",
+    "apps/bot",
+]
 
 [tool.uv.sources]
 kalchas-core = { workspace = true }
+kalchas-football = { workspace = true }
+kalchas-db = { workspace = true }
+kalchas-scanner = { workspace = true }
+kalchas-api = { workspace = true }
+kalchas-bot = { workspace = true }
 
 # ---------------------------------------------------------------------------
 # Lint
@@ -64,8 +80,15 @@ allowed-confusables = ["×", "−", "–", "α", "θ", "ω", "Ω", "Φ", "Δ", "
 # ---------------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.13"
-packages = ["kalchas_core"]
-mypy_path = "packages/core/src"
+packages = ["kalchas_core", "kalchas_football", "kalchas_db", "kalchas_scanner", "kalchas_api", "kalchas_bot"]
+mypy_path = [
+    "packages/core/src",
+    "packages/football/src",
+    "packages/db/src",
+    "apps/scanner/src",
+    "apps/api/src",
+    "apps/bot/src",
+]
 strict = false
 warn_redundant_casts = true
 warn_unused_ignores = true
@@ -74,17 +97,32 @@ no_implicit_optional = true
 disallow_untyped_defs = false   # tightened per-module as the port lands
 
 [[tool.mypy.overrides]]
-module = ["numpy.*", "sklearn.*"]
+module = [
+    "numpy.*",
+    "sklearn.*",
+    "telegram.*",
+    "telegram.ext.*",
+    "fastapi.*",
+    "uvicorn.*",
+    "pydantic.*",
+    "asyncpg.*",
+    "alembic.*",
+    "sqlalchemy.*",
+]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
-testpaths = ["packages/core/tests"]
+testpaths = ["packages/core/tests", "apps/api/tests", "apps/scanner/tests"]
 asyncio_mode = "auto"
-filterwarnings = ["error::DeprecationWarning"]
-
+filterwarnings = [
+    "error::DeprecationWarning",
+    # Starlette/anyio emit these while we still use httpx ASGITransport.
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:DeprecationWarning",
+]
 [tool.coverage.run]
 source = ["kalchas_core"]
 branch = true

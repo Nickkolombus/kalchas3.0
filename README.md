@@ -12,10 +12,12 @@ infrastructure around it was not.
 
 ```
 packages/core     Pure domain logic. No IO. This is the valuable part.
+packages/football API-Football HTTP client.
+packages/db       asyncpg pool + Alembic migrations.
 apps/api          FastAPI service. Serves the dashboard and admin endpoints.
 apps/scanner      Polls the football feed, evaluates strategies, writes alerts.
 apps/bot          Telegram delivery.
-apps/web          React + Vite dashboard.
+apps/web          React + Vite dashboard (mock fixtures until OpenAPI live contract).
 ```
 
 Three deployables (`api`, `scanner`, `bot`) share `packages/core`. They scale
@@ -46,7 +48,32 @@ uv sync --all-extras --dev   # create the venv and install everything
 uv run pytest                # run the test suite
 uv run ruff check .          # lint
 uv run mypy                  # type check
+
+# Apps (each is a workspace member)
+uv run kalchas-api           # FastAPI on :8000 — /health, /api/weights/defaults, /api/live
+uv run kalchas-scanner       # poll live matches (needs API_FOOTBALL_KEY)
+SCANNER_ONCE=1 uv run kalchas-scanner   # single cycle
+uv run kalchas-bot           # Telegram (needs TELEGRAM_TOKEN; single replica only)
+uv run kalchas-migrate       # alembic upgrade head (needs DATABASE_URL)
+
+# Local Postgres + API
+docker compose up postgres migrate api
+
+# Web (mock fixtures)
+cd apps/web && npm install && npm run dev
 ```
+
+### Environment
+
+| Variable | Used by |
+|---|---|
+| `DATABASE_URL` | migrate, api, scanner, bot |
+| `API_FOOTBALL_KEY` | scanner |
+| `SCANNER_INTERVAL_SEC` | scanner (default 60) |
+| `SCANNER_ONCE` | scanner (one cycle then exit) |
+| `TELEGRAM_TOKEN` | bot |
+| `TELEGRAM_CHAT_ID` | bot delivery worker |
+| `API_HOST` / `API_PORT` | api (default 127.0.0.1:8000) |
 
 ## Relationship to Kalchas 2.2
 
