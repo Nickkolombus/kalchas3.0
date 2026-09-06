@@ -48,6 +48,14 @@ class TeamStats:
     fouls: int = 0
     possession: float = 0.0
 
+    goals: int | None = None
+    """Goals scored by this team as at this minute, or None if unrecorded.
+
+    Distinguished from zero on purpose. A caller walking back over a match
+    wants the scoreline as it stood, and falls back to the current score only
+    where the feed never recorded one.
+    """
+
     @property
     def total_shots(self) -> int:
         return self.shots_on_target + self.shots_off_target
@@ -108,6 +116,13 @@ def _team_stats(raw_minute: Mapping[str, Any], side: Side) -> TeamStats:
         else 0.0
     )
 
+    goals_block = raw_minute.get("goals")
+    goals = (
+        _coerce_count(goals_block.get(side.value))
+        if isinstance(goals_block, Mapping) and goals_block.get(side.value) is not None
+        else None
+    )
+
     return TeamStats(
         attacks=counter("attacks"),
         dangerous_attacks=counter("dangerous_attacks"),
@@ -116,6 +131,7 @@ def _team_stats(raw_minute: Mapping[str, Any], side: Side) -> TeamStats:
         corners=counter("corners"),
         fouls=counter("fouls"),
         possession=possession,
+        goals=goals,
     )
 
 

@@ -152,6 +152,7 @@ def resolve_window(
     clamp: WindowClamp = WindowClamp.SHORT_AFTER_BREAK,
     fallback_lookback: int | None = None,
     require_full_span: bool = True,
+    at_minute: int | None = None,
 ) -> ActivityWindow | None:
     """The most recent `span`-minute window of play, or None if unavailable.
 
@@ -169,8 +170,12 @@ def resolve_window(
     window, accept the nearest recorded minute no more than that many minutes
     back. Pressure Index uses it so a gap in polling degrades the reading
     instead of dropping it. Without it, a gap yields None.
+
+    `at_minute` ends the window somewhere other than the timeline's current
+    minute, for walking back over a match. Omega needs this to build a
+    pressure series and differentiate it.
     """
-    current_minute = timeline.current_minute
+    current_minute = timeline.current_minute if at_minute is None else at_minute
     if require_full_span and current_minute < span:
         return None
 

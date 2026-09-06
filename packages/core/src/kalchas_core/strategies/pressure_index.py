@@ -137,6 +137,71 @@ def raw_pressure(deltas: TeamDeltas, weights: WeightSet) -> float:
     return min(MAX_PRESSURE, max(MIN_PRESSURE, total))
 
 
+def pressure_series(
+    timeline: MatchTimeline,
+    side: Side,
+    *,
+    up_to_minute: int,
+    window_minutes: int,
+    home_goals: int = 0,
+    away_goals: int = 0,
+    weights: WeightSet | None = None,
+) -> list[float]:
+    """One team's pressure at every minute from 0 to `up_to_minute`.
+
+    The same reading `evaluate` produces, computed at each minute in turn, so a
+    caller can look at how pressure moved rather than only where it is. Omega
+    differentiates two of these against each other.
+
+    Minutes the scanner never recorded, and minutes with no resolvable window,
+    read as 0.0 rather than being omitted, so the index of the list is always
+    the minute. That does conflate "no data" with "no pressure", which is the
+    one place this core does so; Omega only ever reads minutes it has already
+    established are present.
+
+    Game state is taken from the scoreline as it stood at each minute where
+    the feed recorded one, falling back to the score passed in.
+    """
+    if up_to_minute < 0:
+        return []
+
+    w = weights or WeightSet.defaults()
+    out = [0.0] * (up_to_minute + 1)
+
+    for minute in range(up_to_minute + 1):
+        if timeline.snapshot_at(minute) is None:
+            continue
+
+        window = resolve_window(
+            timeline,
+            window_minutes,
+            clamp=WindowClamp.PERIOD_START,
+            fallback_lookback=FALLBACK_LOOKBACK_MINUTES,
+            require_full_span=False,
+            at_minute=minute,
+        )
+        if window is None:
+            continue
+
+        recorded = window.end
+        goals = recorded.team(side).goals
+        opponent_goals = recorded.team(side.opponent).goals
+        default_goals = home_goals if side is Side.HOME else away_goals
+        default_opponent = away_goals if side is Side.HOME else home_goals
+
+        out[minute] = _team_pressure(
+            window,
+            None,
+            side,
+            goals=goals if goals is not None else default_goals,
+            opponent_goals=opponent_goals if opponent_goals is not None else default_opponent,
+            minute=minute,
+            weights=w,
+        ).pressure
+
+    return out
+
+
 def _team_pressure(
     window: ActivityWindow,
     burst_window: ActivityWindow | None,
