@@ -45,6 +45,7 @@ class TeamStats:
     shots_on_target: int = 0
     shots_off_target: int = 0
     corners: int = 0
+    fouls: int = 0
     possession: float = 0.0
 
     @property
@@ -113,6 +114,7 @@ def _team_stats(raw_minute: Mapping[str, Any], side: Side) -> TeamStats:
         shots_on_target=counter("shots_on_target"),
         shots_off_target=counter("shots_off_target"),
         corners=counter("corners"),
+        fouls=counter("fouls"),
         possession=possession,
     )
 
@@ -163,6 +165,20 @@ class MatchTimeline:
 
     def snapshot_at(self, minute: int) -> MinuteSnapshot | None:
         return self.minutes.get(minute)
+
+    def snapshot_at_or_before(self, minute: int, *, lookback: int = 5) -> MinuteSnapshot | None:
+        """The snapshot at `minute`, or the most recent one within `lookback`.
+
+        The scanner polls on a cadence and drops frames, so an exact minute is
+        often missing. Since counters are cumulative, a slightly stale snapshot
+        is a usable stand-in. Used by Strategy 3, which reads both ends of its
+        window by minute rather than resolving a window over recorded minutes.
+        """
+        for candidate in range(minute, max(0, minute - lookback) - 1, -1):
+            found = self.minutes.get(candidate)
+            if found is not None:
+                return found
+        return None
 
     @property
     def current(self) -> MinuteSnapshot | None:

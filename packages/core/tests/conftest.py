@@ -21,6 +21,7 @@ def raw_minute(
         "shots_on_target",
         "shots_off_target",
         "corners",
+        "fouls",
         "possession",
     )
     return {stat: {"home": h.get(stat, 0), "away": a.get(stat, 0)} for stat in stats}
