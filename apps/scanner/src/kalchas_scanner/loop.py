@@ -13,7 +13,7 @@ from kalchas_core.weights import WeightSet
 from kalchas_football import FootballAPIClient, LiveMatch
 
 from kalchas_scanner.enrich import api_events_to_ssot, api_statistics_to_list
-from kalchas_scanner.outbox import AlertSink, StdoutAlertSink
+from kalchas_scanner.outbox import AlertSink, default_sink
 from kalchas_scanner.store import MinuteStore
 
 logger = logging.getLogger("kalchas.scanner")
@@ -34,7 +34,7 @@ class Scanner:
     cooldown: CooldownBook = field(default_factory=CooldownBook)
     weights: WeightSet = field(default_factory=WeightSet.defaults)
     config: ScannerConfig = field(default_factory=ScannerConfig)
-    sink: AlertSink = field(default_factory=StdoutAlertSink)
+    sink: AlertSink = field(default_factory=default_sink)
 
     def process_match(self, match: LiveMatch) -> list[dict]:
         if match.minute < self.config.min_minute:
