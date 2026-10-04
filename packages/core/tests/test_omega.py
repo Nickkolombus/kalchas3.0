@@ -19,6 +19,7 @@ from kalchas_core.strategies.omega import (
     OmegaSettings,
     OmegaState,
     TeamOmega,
+    alert_theta_degrees,
     classify,
     degrees_to_slope,
     evaluate,
@@ -80,11 +81,24 @@ class TestAngleConversion:
     def test_zero_slope_is_zero_degrees(self) -> None:
         assert slope_to_degrees(0.0, DEFAULT_ANGLE_SCALE) == 0.0
 
-    def test_the_default_threshold_is_about_twenty_degrees(self) -> None:
-        """The linear default was chosen to match the angle it replaced."""
+    def test_the_default_threshold_is_about_thirty_degrees(self) -> None:
+        """Fire bar is 30° on the flattened scale (35°+ stays rare)."""
         assert slope_to_degrees(DEFAULT_MIN_ACCELERATION, DEFAULT_ANGLE_SCALE) == pytest.approx(
-            20.0, abs=0.05
+            30.0, abs=0.2
         )
+
+    def test_a_former_fifty_three_degree_tilt_now_sits_under_thirty_five(self) -> None:
+        """Kettering-class accel ~0.664 was 53° at k=0.5; now well under 35°."""
+        former = slope_to_degrees(0.664, DEFAULT_ANGLE_SCALE)
+        assert former < 35.0
+        assert former == pytest.approx(23.9, abs=0.3)
+
+    def test_half_linear_omega_is_about_eighteen_degrees(self) -> None:
+        assert alert_theta_degrees(0.5) == pytest.approx(18.43, abs=0.05)
+        assert alert_theta_degrees(0.866) == pytest.approx(30.0, abs=0.2)
+
+    def test_alert_display_prefers_engine_theta(self) -> None:
+        assert alert_theta_degrees(0.5, theta=21.4) == pytest.approx(21.4)
 
     def test_angles_stay_bounded_however_steep_the_slope(self) -> None:
         assert abs(slope_to_degrees(1e9, DEFAULT_ANGLE_SCALE)) < 90.0
@@ -137,7 +151,7 @@ class TestSettings:
     def test_an_angle_threshold_converts_to_a_slope(self) -> None:
         """Saved settings predate the linear thresholds, so both shapes work."""
         settings = OmegaSettings.from_stored(theta_threshold=20.0, angle_scale=DEFAULT_ANGLE_SCALE)
-        assert settings.min_acceleration == pytest.approx(DEFAULT_MIN_ACCELERATION, abs=0.01)
+        assert settings.min_acceleration == pytest.approx(0.546, abs=0.01)
 
     def test_a_linear_threshold_wins_over_an_angle(self) -> None:
         settings = OmegaSettings.from_stored(min_acceleration=0.9, theta_threshold=45.0)
@@ -160,8 +174,10 @@ class TestSettings:
 
     def test_the_angle_properties_round_trip_the_thresholds(self) -> None:
         settings = OmegaSettings()
-        assert settings.theta_threshold == pytest.approx(20.0, abs=0.05)
-        assert settings.alpha_floor == 0.0
+        assert settings.theta_threshold == pytest.approx(30.0, abs=0.2)
+        assert settings.alpha_floor == pytest.approx(
+            slope_to_degrees(settings.min_baseline_slope, settings.angle_scale)
+        )
 
     def test_the_minimum_minute_covers_both_windows(self) -> None:
         settings = OmegaSettings(slow_window=10, derivative_window=3)
@@ -233,15 +249,47 @@ class TestTriggerGate:
             fast_slope=0.0,
             slow_slope=baseline,
             fast_level=0.0,
+            shots=2,
             state=OmegaState.CONFIRMED_SURGE,
         )
 
-    def test_all_three_conditions_are_required(self) -> None:
+    def test_all_four_conditions_are_required(self) -> None:
         settings = OmegaSettings(min_acceleration=0.2, min_baseline_slope=0.0, min_level=20.0)
         assert self._reading(0.3, 0.1, 30.0).meets(settings)
         assert not self._reading(0.1, 0.1, 30.0).meets(settings), "acceleration too low"
         assert not self._reading(0.3, -0.1, 30.0).meets(settings), "baseline falling"
         assert not self._reading(0.3, 0.1, 10.0).meets(settings), "level too low"
+        shots_fail = TeamOmega(
+            acceleration=0.3,
+            baseline_slope=0.1,
+            level=30.0,
+            theta=0.0,
+            alpha=0.0,
+            fast_slope=0.0,
+            slow_slope=0.1,
+            fast_level=0.0,
+            shots=0,
+            state=OmegaState.CONFIRMED_SURGE,
+        )
+        assert not shots_fail.meets(settings), "no shots in the fast window"
+
+    def test_dangerous_attacks_alone_do_not_fire(self) -> None:
+        def da_only(minute: int = 40) -> MatchTimeline:
+            minutes: dict[int, dict] = {}
+            da = 0
+            for m in range(1, minute + 1):
+                da += 3
+                minutes[m] = {
+                    "home": {"dangerous_attacks": da},
+                    "away": {},
+                }
+            return timeline_from(minutes, current_minute=minute)
+
+        result = evaluate(da_only(), settings=DEFAULTS)
+        assert result is not None
+        assert result.home is not None
+        assert result.home.shots == 0
+        assert not result.home.meets(DEFAULTS)
 
     def test_acceleration_must_exceed_rather_than_meet_the_threshold(self) -> None:
         settings = OmegaSettings(min_acceleration=0.2, min_baseline_slope=0.0, min_level=0.0)

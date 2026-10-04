@@ -17,6 +17,9 @@ from typing import Final
 
 # (needle, slot). First hit wins; order matches 2.2's `_ALERT_HINTS`.
 ALERT_NAME_HINTS: Final[tuple[tuple[str, int], ...]] = (
+    # slot 1 — public name is Unrealised goals / UrG; code key stays rule_of_three
+    ("unrealised goals", 1),
+    ("unrealized goals", 1),
     # slot 2 — InPlay Pressure / Pressure Index display variants
     ("pressure index", 2),
     ("inplay pressure", 2),
@@ -50,6 +53,7 @@ class StrategyRule:
     infinite_ttl: bool = False
     team_specific: bool = False
     enabled: bool = True
+    expire_at_half_end: bool = False
 
 
 # Hardcoded fallback when no strategy name matches anything. Not team-specific.
@@ -66,7 +70,7 @@ FALLBACK_RULE: Final = StrategyRule(
 
 # Offline / seed defaults. Postgres ``strategy_rules`` overrides at runtime.
 DEFAULT_RULES: Final[tuple[StrategyRule, ...]] = (
-    StrategyRule(1, "Rule of 3", 999, 0, True, True),
+    StrategyRule(1, "Rule of 3", 999, 0, True, True),  # internal; public label is UrG
     StrategyRule(2, "InPlay Pressure", 20, 2, False, False),
     StrategyRule(3, "League Bar", 20, 2, False, False),
     StrategyRule(4, "Δ(5min)", 20, 2, False, False),

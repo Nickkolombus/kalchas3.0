@@ -52,7 +52,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
-from kalchas_core.match import MatchTimeline, Side
+from kalchas_core.match import MatchTimeline, Side, WindowClamp, resolve_window
 from kalchas_core.strategies.pressure_index import pressure_series
 from kalchas_core.weights import WeightSet
 
@@ -61,17 +61,21 @@ STRATEGY_KEY = "omega"
 DEFAULT_FAST_WINDOW: Final = 5
 DEFAULT_SLOW_WINDOW: Final = 10
 DEFAULT_DERIVATIVE_WINDOW: Final = 3
-DEFAULT_ANGLE_SCALE: Final = 0.5
-"""Chosen so ~20 degrees still maps to a meaningful normalised accel (~0.18)."""
+DEFAULT_ANGLE_SCALE: Final = 1.5
+"""Chosen so a busy 27' spell that used to print ~53° sits near 24°, under 35°."""
 
-DEFAULT_MIN_ACCELERATION: Final = 0.182
-"""Roughly 20 degrees at the default angle scale (normalised PI/min²)."""
+DEFAULT_MIN_ACCELERATION: Final = 0.866
+"""30 degrees at the default angle scale (k * tan(30°))."""
 
-DEFAULT_MIN_BASELINE_SLOPE: Final = 0.0
-DEFAULT_MIN_LEVEL: Final = 0.0
+DEFAULT_MIN_BASELINE_SLOPE: Final = 0.08
+DEFAULT_MIN_LEVEL: Final = 40.0
+DEFAULT_MIN_SHOTS: Final = 1
+"""At least one SOT or SOFF in the fast window. DA-only pressure does not fire."""
 
-DEFAULT_THETA_THRESHOLD: Final = 20.0
+DEFAULT_THETA_THRESHOLD: Final = 30.0
 DEFAULT_ALPHA_FLOOR: Final = 0.0
+STALE_ANGLE_SCALE: Final = 0.5
+STALE_MIN_ACCELERATION: Final = 0.363
 
 FLAT_BAND_DEGREES: Final = 5.0
 
@@ -84,6 +88,7 @@ ANGLE_SCALE_BOUNDS: Final = (0.1, 50.0)
 MIN_ACCELERATION_BOUNDS: Final = (0.0, 10.0)
 MIN_BASELINE_BOUNDS: Final = (-5.0, 5.0)
 MIN_LEVEL_BOUNDS: Final = (0.0, 100.0)
+MIN_SHOTS_BOUNDS: Final = (0, 10)
 
 _ACCELERATION_PRECISION: Final = 3
 _LEVEL_PRECISION: Final = 1
@@ -102,6 +107,26 @@ def degrees_to_slope(degrees: float, scale: float) -> float:
 def slope_to_degrees(slope: float, scale: float) -> float:
     """Express a pressure-per-minute slope as an angle."""
     return math.degrees(math.atan(slope / max(scale, 1e-9)))
+
+
+def alert_theta_degrees(
+    linear_omega: float,
+    k_scale: float = DEFAULT_ANGLE_SCALE,
+    *,
+    theta: float | None = None,
+) -> float:
+    """θ° for Recent signals / Telegram.
+
+    Prefer the engine's already-converted ``theta`` when the scanner stored it.
+    Otherwise convert stored linear ω with the same atan helper the board uses.
+    Example at default k_scale 1.5: ω 0.866 → 30°.
+    """
+    if theta is not None:
+        try:
+            return float(theta)
+        except (TypeError, ValueError):
+            pass
+    return slope_to_degrees(float(linear_omega), k_scale)
 
 
 class OmegaState(StrEnum):
@@ -152,6 +177,7 @@ class OmegaSettings:
     min_acceleration: float = DEFAULT_MIN_ACCELERATION
     min_baseline_slope: float = DEFAULT_MIN_BASELINE_SLOPE
     min_level: float = DEFAULT_MIN_LEVEL
+    min_shots: int = DEFAULT_MIN_SHOTS
     angle_scale: float = DEFAULT_ANGLE_SCALE
     fast_window: int = DEFAULT_FAST_WINDOW
     slow_window: int = DEFAULT_SLOW_WINDOW
@@ -177,6 +203,7 @@ class OmegaSettings:
         min_acceleration: float | None = None,
         min_baseline_slope: float | None = None,
         min_level: float | None = None,
+        min_shots: int | None = None,
         angle_scale: float | None = None,
         fast_window: int | None = None,
         slow_window: int | None = None,
@@ -200,14 +227,16 @@ class OmegaSettings:
         scale = _clamp(angle_scale or DEFAULT_ANGLE_SCALE, ANGLE_SCALE_BOUNDS)
 
         if min_acceleration is None:
-            min_acceleration = degrees_to_slope(
-                theta_threshold if theta_threshold is not None else DEFAULT_THETA_THRESHOLD,
-                scale,
+            min_acceleration = (
+                degrees_to_slope(theta_threshold, scale)
+                if theta_threshold is not None
+                else DEFAULT_MIN_ACCELERATION
             )
         if min_baseline_slope is None:
-            min_baseline_slope = degrees_to_slope(
-                alpha_floor if alpha_floor is not None else DEFAULT_ALPHA_FLOOR,
-                scale,
+            min_baseline_slope = (
+                degrees_to_slope(alpha_floor, scale)
+                if alpha_floor is not None
+                else DEFAULT_MIN_BASELINE_SLOPE
             )
 
         return cls(
@@ -215,6 +244,12 @@ class OmegaSettings:
             min_baseline_slope=_clamp(min_baseline_slope, MIN_BASELINE_BOUNDS),
             min_level=_clamp(
                 min_level if min_level is not None else DEFAULT_MIN_LEVEL, MIN_LEVEL_BOUNDS
+            ),
+            min_shots=int(
+                _clamp(
+                    float(min_shots if min_shots is not None else DEFAULT_MIN_SHOTS),
+                    (float(MIN_SHOTS_BOUNDS[0]), float(MIN_SHOTS_BOUNDS[1])),
+                )
             ),
             angle_scale=scale,
             fast_window=fast,
@@ -239,18 +274,21 @@ class TeamOmega:
     fast_slope: float
     slow_slope: float
     fast_level: float
+    shots: int
     state: OmegaState
 
     def meets(self, settings: OmegaSettings) -> bool:
-        """Accelerating, on a rising trend, from a high enough base.
+        """Accelerating, on a rising trend, from a high enough base, with shots.
 
-        All three are required. Acceleration alone is a spike; acceleration on
-        a rising baseline is a surge.
+        All four are required. Acceleration alone is a spike; acceleration on
+        a rising baseline is a surge. Shots (SOT or SOFF in the fast window)
+        keep DA-only pressure from ringing Omega.
         """
         return (
             self.acceleration > settings.min_acceleration
             and self.baseline_slope > settings.min_baseline_slope
             and self.level >= settings.min_level
+            and self.shots >= settings.min_shots
         )
 
 
@@ -329,6 +367,14 @@ def _evaluate_side(
 
     theta = slope_to_degrees(acceleration, settings.angle_scale)
     alpha = slope_to_degrees(slow_rate, settings.angle_scale)
+    activity = resolve_window(
+        timeline,
+        settings.fast_window,
+        clamp=WindowClamp.PERIOD_START,
+        require_full_span=False,
+        at_minute=minute,
+    )
+    shots = activity.deltas(side).shots if activity is not None else 0
 
     return TeamOmega(
         acceleration=round(acceleration, _ACCELERATION_PRECISION),
@@ -339,6 +385,7 @@ def _evaluate_side(
         fast_slope=round(fast_slope, _ACCELERATION_PRECISION),
         slow_slope=round(slow_slope, _ACCELERATION_PRECISION),
         fast_level=round(fast[minute], _LEVEL_PRECISION),
+        shots=int(shots),
         state=classify(theta, alpha, weights.get(STRATEGY_KEY, "flat_band")),
     )
 
@@ -362,8 +409,19 @@ def evaluate(
     Returns None when the match is too young for the slow window to be
     differentiated, or when neither team yields a reading.
     """
-    active = settings or OmegaSettings()
     w = weights or WeightSet.defaults()
+    if settings is None:
+        settings = OmegaSettings.from_stored(
+            min_acceleration=w.get(STRATEGY_KEY, "min_accel"),
+            min_baseline_slope=w.get(STRATEGY_KEY, "min_baseline_slope"),
+            min_level=w.get(STRATEGY_KEY, "pi_level_min"),
+            min_shots=int(w.get(STRATEGY_KEY, "min_shots")),
+            angle_scale=w.get(STRATEGY_KEY, "k_scale"),
+            fast_window=int(w.get(STRATEGY_KEY, "fast_window")),
+            slow_window=int(w.get(STRATEGY_KEY, "slow_window")),
+            derivative_window=int(w.get(STRATEGY_KEY, "deriv_window")),
+        )
+    active = settings
 
     recorded = [m for m in timeline.available_minutes if 0 <= m <= timeline.current_minute]
     if not recorded:

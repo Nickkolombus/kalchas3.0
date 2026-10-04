@@ -6,6 +6,7 @@ from kalchas_core.events import (
     clean_goal_events,
     compute_tslg_status,
     convert_ssot_events,
+    count_cards_by_side,
     tally_red_cards,
 )
 
@@ -196,3 +197,15 @@ def test_tslg_caps_phantom_home_event() -> None:
     assert status["display"] == "— - 4'"
     assert status["cooldown_active"] is True
     assert status["last_goal"] == {"side": "away", "minute": 13, "team": "Bulleen"}
+
+
+def test_count_cards_by_side_splits_yellow_and_red() -> None:
+    yellow, red = count_cards_by_side(
+        [
+            {"event_type": "card", "side": "home", "detail": "Yellow Card"},
+            {"event_type": "card", "side": "away", "detail": "Red Card"},
+            {"event_type": "goal", "side": "home", "detail": "1-0"},
+        ]
+    )
+    assert yellow == {"home": 1, "away": 0}
+    assert red == {"home": 0, "away": 1}

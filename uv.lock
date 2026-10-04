@@ -488,6 +488,7 @@ source = { editable = "apps/api" }
 dependencies = [
     { name = "fastapi" },
     { name = "kalchas-core" },
+    { name = "kalchas-db" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -495,6 +496,7 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "kalchas-core", editable = "packages/core" },
+    { name = "kalchas-db", editable = "packages/db" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
 
@@ -577,6 +579,7 @@ dependencies = [
     { name = "kalchas-core" },
     { name = "kalchas-db" },
     { name = "kalchas-football" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -584,6 +587,7 @@ requires-dist = [
     { name = "kalchas-core", editable = "packages/core" },
     { name = "kalchas-db", editable = "packages/db" },
     { name = "kalchas-football", editable = "packages/football" },
+    { name = "websockets", specifier = ">=17.1" },
 ]
 
 [[package]]

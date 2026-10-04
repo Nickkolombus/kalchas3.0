@@ -3,9 +3,9 @@
 Display name: **League Bar**. Internal key stays ``delta_goal`` for stability.
 
 The chain estimates short-horizon goal probability from attacking pressure,
-compares it to the league (or odds) prior, and reports whether the team is
-**below**, **normal**, or **above** that bar (lift ``P / P0``). A 0-20 threat
-score still drives alerts when evidence clears the gate.
+compares it to the **league** scoring rate, and reports whether the team is
+**below**, **normal**, or **above** that bar (lift ``P / P0``). Kickoff odds
+may nudge P0 by 15%; they no longer replace the competition rate.
 
 1. Count attacking events for one team over the last 5 minutes, and over the
    5 minutes before that.
@@ -14,9 +14,10 @@ score still drives alerts when evidence clears the gate.
 3. Compress with `log(1 + E)` and blend the current window with the previous
    one, giving a pressure index `PI`. Squash to a 0-100 pressure score `PS`.
 4. Convert `PI` into a probability of scoring in the next 5 minutes, and blend
-   it against the competition's prior `P0`. Confidence in the live signal
-   (`lambda`) rises with how much has actually happened in the last 10 minutes,
-   so a quiet match stays near its prior.
+   it against the competition's prior `P0` (league goals/game, with a small
+   odds nudge). Confidence in the live signal (`lambda`) rises with how much
+   has actually happened in the last 10 minutes, so a quiet match stays near
+   its prior.
 5. Divide by the prior to get lift `L` -- how much more likely a goal is than
    it would be by default. Map `L` onto League Bar: below / normal / above.
 6. Map lift onto a signed League Bar score in ``[-10, +10]`` (0 = on the
@@ -103,8 +104,10 @@ PRESSURE_TO_GOAL_SLOPE: Final = 0.8
 
 ODDS_PRIOR_INTERCEPT: Final = -2.8
 ODDS_PRIOR_SLOPE: Final = 0.9
-"""Maps a bookmaker odds gap to a prior, replacing the competition average
-when odds are available."""
+"""Maps a bookmaker odds gap to a prior. Used only as a 15% nudge on P0."""
+
+LEAGUE_PRIOR_SHARE: Final = 0.85
+"""Share of P0 that comes from the competition scoring rate. The rest is odds."""
 
 PROBABILITY_CEILING: Final = 0.12
 LIFT_CEILING: Final = 2.5
@@ -182,13 +185,14 @@ LEAGUE_GOALS_PER_GAME: Final[dict[str, float]] = {
     "256": 2.78,  # Poland - Ekstraklasa
     "99": 2.60,  # Czech Republic - First League
     "135": 2.55,  # Denmark - Superliga
-    "340": 2.35,  # Croatia - HNL
+    "340": 2.90,  # Wales - FAW Championship (apifootball id; sibling of Cymru Premier)
     "365": 2.50,  # Serbia - Super Liga
     "283": 2.60,  # Romania - Liga 1
     "225": 2.65,  # Norway - Eliteserien
     "308": 2.75,  # Sweden - Allsvenskan
     "109": 2.45,  # Ukraine - Premier League
-    "282": 2.90,  # Russia - Premier League
+    "124": 2.66,  # Croatia - HNL (Wikipedia 2025-26: 479/180)
+    "282": 2.43,  # Scotland - Championship (Wikipedia 2025-26: 438/180)
     # South America
     "73": 2.25,  # Brazil - Serie A
     "44": 2.35,  # Argentina - Primera Division
@@ -210,11 +214,12 @@ LEAGUE_GOALS_PER_GAME: Final[dict[str, float]] = {
     "267": 2.50,  # Qatar - Stars League
     # Africa
     "342": 2.25,  # South Africa - Premier Soccer League
-    "156": 2.30,  # Egypt - Premier League
+    "141": 2.30,  # Egypt - Premier League
+    "156": 3.18,  # Estonia - Meistriliiga (Wikipedia 2025: 572/180)
     # Oceania
     "45": 3.10,  # Australia - A-League
     # Second divisions
-    "153": 2.75,  # England - Championship
+    "153": 2.61,  # England - Championship (Wikipedia 2025-26: 1438/552)
     "301": 2.45,  # Spain - La Liga 2
     "176": 3.05,  # Germany - 2. Bundesliga
     "208": 2.70,  # Italy - Serie B
@@ -228,19 +233,117 @@ LEAGUE_GOALS_PER_GAME: Final[dict[str, float]] = {
     "19": 2.55,  # Copa America
     "183": 2.45,  # Copa Libertadores
     "184": 2.50,  # Copa Sudamericana
+    # Nordic / British / Ireland / Wales (apiv3.apifootball.com coverage ids)
+    "14": 2.91,  # Sweden - Damallsvenskan (Wikipedia 2026: 407/140)
+    "49": 3.10,  # Australia - A-League Men
+    "56": 2.82,  # Austria - Bundesliga
+    "136": 2.88,  # Denmark - 2. Division (soccerstats 164/57)
+    "138": 2.78,  # Denmark - 1. Division
+    "140": 2.50,  # Ecuador - Liga Pro
+    "145": 2.57,  # England - League Two (predictamatch 2025-26: 1434/557)
+    "151": 2.92,  # England - National League (soccerstats 2025-26: 1610/552)
+    "154": 2.62,  # England - League One (predictamatch 2025-26: 1462/557)
+    "164": 2.60,  # France - Ligue 2
+    "171": 3.05,  # Germany - 2. Bundesliga
+    "178": 2.40,  # Greece - Super League 1
+    "191": 3.00,  # Hungary - NB I (Wikipedia 2025-26: 594/198)
+    "192": 3.86,  # Iceland - Besta deild
+    "198": 2.76,  # Ireland - First Division
+    "200": 2.77,  # Ireland - Premier Division
+    "245": 2.90,  # Netherlands - Eerste Divisie (near Eredivisie)
+    "251": 2.70,  # Northern Ireland - Premiership
+    "253": 2.65,  # Norway - Eliteserien
+    "259": 2.78,  # Poland - Ekstraklasa
+    "272": 2.60,  # Romania - Liga I
+    "279": 2.50,  # Scotland - Premiership
+    "305": 2.90,  # Sweden - Superettan (soccerstats 580/200)
+    "307": 2.94,  # Sweden - Allsvenskan
+    "341": 2.90,  # Wales - Cymru Premier (Wikipedia 2025-26: 556/192)
+    "352": 2.58,  # Finland - Veikkausliiga
+    "395": 3.61,  # Iceland - 1. Deild
+    "625": 3.20,  # Austria - Frauenliga
 }
+
+# When league_id is missing or unknown, match country + competition name.
+# Labels are folded (lowercase, no punctuation).
+LEAGUE_GOALS_BY_LABEL: Final[dict[tuple[str, str], float]] = {
+    ("wales", "premier league"): 2.90,
+    ("wales", "cymru premier"): 2.90,
+    ("wales", "faw championship"): 2.90,
+    ("england", "premier league"): 2.85,
+    ("england", "championship"): 2.61,
+    ("england", "league one"): 2.62,
+    ("england", "league two"): 2.57,
+    ("england", "national league"): 2.92,
+    ("scotland", "premiership"): 2.50,
+    ("scotland", "championship"): 2.43,
+    ("hungary", "nb i"): 3.00,
+    ("hungary", "nb 1"): 3.00,
+    ("estonia", "meistriliiga"): 3.18,
+    ("denmark", "superliga"): 2.55,
+    ("denmark", "1. division"): 2.78,
+    ("denmark", "1st division"): 2.78,
+    ("denmark", "2. division"): 2.88,
+    ("denmark", "2nd division"): 2.88,
+    ("sweden", "allsvenskan"): 2.94,
+    ("sweden", "superettan"): 2.90,
+    ("sweden", "damallsvenskan"): 2.91,
+    ("ireland", "premier division"): 2.77,
+    ("republic of ireland", "premier division"): 2.77,
+    ("ireland", "first division"): 2.76,
+    ("iceland", "besta deild"): 3.86,
+    ("finland", "veikkausliiga"): 2.58,
+    ("austria", "bundesliga"): 2.82,
+    ("austria", "frauenliga"): 3.20,
+    ("australia", "a-league"): 3.10,
+    ("australia", "a-league men"): 3.10,
+    ("northern ireland", "premiership"): 2.70,
+    ("croatia", "hnl"): 2.66,
+    ("croatia", "1. hnl"): 2.66,
+}
+
+
+def _fold_label(value: str | None) -> str:
+    text = (value or "").casefold().replace("&", " and ")
+    out = []
+    for ch in text:
+        out.append(ch if ch.isalnum() or ch.isspace() or ch in ".-" else " ")
+    return " ".join("".join(out).split())
+
+
+def goals_per_game_for(
+    league_id: str | int | None,
+    *,
+    league_name: str | None = None,
+    country_name: str | None = None,
+) -> float:
+    """Competition goals/game for League Bar P0. Id first, then country+name."""
+    if league_id is not None and str(league_id) in LEAGUE_GOALS_PER_GAME:
+        return LEAGUE_GOALS_PER_GAME[str(league_id)]
+    label = (_fold_label(country_name), _fold_label(league_name))
+    if label[0] and label[1] and label in LEAGUE_GOALS_BY_LABEL:
+        return LEAGUE_GOALS_BY_LABEL[label]
+    return GLOBAL_AVERAGE_GOALS_PER_GAME
+
 
 _MINUTES_PER_HALF_WINDOW_COUNT: Final = 18
 """A 90-minute match holds eighteen 5-minute windows."""
 
 
-def league_prior(league_id: str | int | None) -> float:
+def league_prior(
+    league_id: str | int | None,
+    *,
+    league_name: str | None = None,
+    country_name: str | None = None,
+) -> float:
     """Chance of one team scoring in any given 5-minute window.
 
     Derived from the competition's goals per game: halved to get one team's
     share, then spread across the eighteen windows in a match.
     """
-    goals_per_game = LEAGUE_GOALS_PER_GAME.get(str(league_id), GLOBAL_AVERAGE_GOALS_PER_GAME)
+    goals_per_game = goals_per_game_for(
+        league_id, league_name=league_name, country_name=country_name
+    )
     return (goals_per_game / 2.0) / _MINUTES_PER_HALF_WINDOW_COUNT
 
 
@@ -729,6 +832,8 @@ def evaluate(
     home_score: int = 0,
     away_score: int = 0,
     league_id: str | int | None = None,
+    league_name: str | None = None,
+    country_name: str | None = None,
     home_odds: float | None = None,
     away_odds: float | None = None,
     threshold: float = DEFAULT_ALERT_THRESHOLD,
@@ -741,11 +846,14 @@ def evaluate(
     payload rather than nothing so the live dashboard had something to show.
     Callers should alert on `triggering_team`, not on getting a result.
 
-    Pass `home_odds` and `away_odds` to derive the prior from the bookmakers'
-    view instead of the competition average.
+    P0 is the competition scoring rate. Kickoff odds may nudge it by
+    ``1 - LEAGUE_PRIOR_SHARE``; they do not replace the league bar.
     """
     w = weights or WeightSet.defaults()
     context = MatchContext.build(timeline.current_minute, home_score, away_score)
+    base_prior = league_prior(
+        league_id, league_name=league_name, country_name=country_name
+    )
 
     if timeline.current_minute < MINIMUM_MINUTE:
         empty = TeamThreat(
@@ -754,7 +862,7 @@ def evaluate(
             pressure_index=0.0,
             pressure_score=0.0,
             confidence=0.0,
-            prior=league_prior(league_id),
+            prior=base_prior,
             probability=0.0,
             lift=1.0,
             league_bar=LeagueBar.NORMAL,
@@ -767,12 +875,13 @@ def evaluate(
 
     def prior_for(side: Side) -> float:
         if home_odds and away_odds:
-            return (
+            odds_p = (
                 _odds_prior(home_odds, away_odds)
                 if side is Side.HOME
                 else _odds_prior(away_odds, home_odds)
             )
-        return league_prior(league_id)
+            return LEAGUE_PRIOR_SHARE * base_prior + (1.0 - LEAGUE_PRIOR_SHARE) * odds_p
+        return base_prior
 
     return DeltaGoalResult(
         home=_evaluate_team(

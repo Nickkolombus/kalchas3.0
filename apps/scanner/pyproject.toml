@@ -7,6 +7,7 @@ dependencies = [
     "kalchas-core",
     "kalchas-football",
     "kalchas-db",
+    "websockets>=17.1",
 ]
 
 

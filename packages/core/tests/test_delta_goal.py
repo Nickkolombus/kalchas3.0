@@ -24,6 +24,7 @@ from kalchas_core.strategies.delta_goal import (
     LEAGUE_BAR_NORMAL_LOW,
     LEAGUE_BASELINES,
     LEAGUE_GOALS_PER_GAME,
+    LEAGUE_PRIOR_SHARE,
     MAX_THREAT_SCORE,
     MINIMUM_MINUTE,
     AttackingPatterns,
@@ -32,9 +33,11 @@ from kalchas_core.strategies.delta_goal import (
     MatchContext,
     Tier,
     WindowEvents,
+    _odds_prior,
     baseline_for,
     detect_patterns,
     evaluate,
+    goals_per_game_for,
     league_bar_for,
     league_bar_score,
     league_prior,
@@ -485,24 +488,70 @@ class TestDangerousAttacksCanClearEvidenceViaSustainedAttack:
 
 
 class TestOddsPrior:
-    def test_odds_replace_the_competition_prior(self) -> None:
+    def test_odds_only_nudge_the_league_prior(self) -> None:
         timeline = busy(60)
         from_league = evaluate(timeline, league_id="152")
         from_odds = evaluate(timeline, league_id="152", home_odds=1.4, away_odds=7.0)
+        league_p0 = league_prior("152")
+        mixed = (
+            LEAGUE_PRIOR_SHARE * league_p0
+            + (1.0 - LEAGUE_PRIOR_SHARE) * _odds_prior(1.4, 7.0)
+        )
+        assert from_odds.home.prior == pytest.approx(mixed)
         assert from_odds.home.prior != from_league.home.prior
+        assert abs(from_odds.home.prior - league_p0) < abs(
+            _odds_prior(1.4, 7.0) - league_p0
+        )
 
-    def test_the_favourite_starts_from_a_higher_prior(self) -> None:
-        result = evaluate(busy(60), home_odds=1.4, away_odds=7.0)
+    def test_the_favourite_still_starts_slightly_higher(self) -> None:
+        result = evaluate(busy(60), league_id="152", home_odds=1.4, away_odds=7.0)
         assert result.home.prior > result.away.prior
 
     def test_even_odds_give_both_teams_the_same_prior(self) -> None:
         result = evaluate(busy(60), home_odds=2.5, away_odds=2.5)
         assert result.home.prior == pytest.approx(result.away.prior)
 
-    def test_one_missing_side_of_the_market_falls_back_to_the_league(self) -> None:
+    def test_one_missing_side_of_the_market_uses_the_league_only(self) -> None:
         timeline = busy(60)
         partial = evaluate(timeline, league_id="152", home_odds=1.4)
         assert partial.home.prior == pytest.approx(league_prior("152"))
+
+    def test_wales_premier_is_not_the_global_fallback(self) -> None:
+        assert league_prior("341") != league_prior(None)
+        assert goals_per_game_for(
+            None, league_name="Premier League", country_name="Wales"
+        ) == pytest.approx(2.90)
+
+    def test_premier_league_name_requires_country(self) -> None:
+        wales = goals_per_game_for(
+            None, league_name="Premier League", country_name="Wales"
+        )
+        england = goals_per_game_for(
+            None, league_name="Premier League", country_name="England"
+        )
+        unnamed = goals_per_game_for(None, league_name="Premier League")
+        assert wales == pytest.approx(2.90)
+        assert england == pytest.approx(2.85)
+        assert unnamed == pytest.approx(GLOBAL_AVERAGE_GOALS_PER_GAME)
+
+    def test_an_underdog_does_not_replace_the_league_bar(self) -> None:
+        """Briton Ferry case: 4.20 home odds must stay near the league P0."""
+        league_p0 = league_prior(
+            "341", league_name="Premier League", country_name="Wales"
+        )
+        mixed = evaluate(
+            busy(60),
+            league_id="341",
+            league_name="Premier League",
+            country_name="Wales",
+            home_odds=4.2,
+            away_odds=1.65,
+        ).home.prior
+        assert mixed == pytest.approx(
+            LEAGUE_PRIOR_SHARE * league_p0
+            + (1.0 - LEAGUE_PRIOR_SHARE) * _odds_prior(4.2, 1.65)
+        )
+        assert mixed > 0.06
 
 
 class TestWeightTuning:

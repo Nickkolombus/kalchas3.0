@@ -7,6 +7,8 @@ import logging
 
 from telegram import Bot
 
+from kalchas_bot.format import format_alert_html
+
 logger = logging.getLogger("kalchas.bot.delivery")
 
 
@@ -22,12 +24,13 @@ async def deliver_loop(bot: Bot, chat_id: str, *, poll_sec: float = 2.0) -> None
             async with pool.acquire() as conn:
                 rows = await claim_pending(conn)
             for row in rows:
-                text = (
-                    f"*{row['home_team']}* vs *{row['away_team']}* ({row['minute']}')\n"
-                    f"{row['strategy_key']} · {row['team'] or 'match'} · {row['value']:.2f}"
-                )
+                text = format_alert_html(row)
                 try:
-                    await bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=text,
+                        parse_mode="HTML",
+                    )
                     async with pool.acquire() as conn:
                         await mark_sent(conn, int(row["id"]))
                 except Exception as exc:

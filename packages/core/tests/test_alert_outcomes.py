@@ -57,6 +57,10 @@ class TestMatchRule:
         assert match_rule(["Ω Surge"], DEFAULT_RULES).strategy_slot == 6
         assert match_rule(["Nephos Delta"], DEFAULT_RULES).strategy_slot == 6
 
+    def test_unrealised_goals_maps_to_slot_1(self) -> None:
+        assert match_rule(["Unrealised goals"], DEFAULT_RULES).strategy_slot == 1
+        assert match_rule(["UrG · Unrealised goals"], DEFAULT_RULES).strategy_slot == 1
+
     def test_unknown_name_falls_back(self) -> None:
         assert match_rule(["Completely Unknown"], DEFAULT_RULES) == FALLBACK_RULE
 
@@ -172,6 +176,28 @@ class TestOnExpiration:
 
     def test_infinite_ttl_never_expires(self, evaluator: AlertOutcomeEvaluator) -> None:
         assert evaluator.on_expiration(10, 90, strategy_names=["Rule of 3"]) is None
+
+    def test_expire_at_half_end_fires_on_ht(self) -> None:
+        rule = StrategyRule(4, "Δ(5min)", success_window_minutes=40, expire_at_half_end=True)
+        ev = AlertOutcomeEvaluator(rules=(rule,))
+        decision = ev.on_expiration(20, 45, strategy_names=["Δ(5min)"], status_short="HT")
+        assert decision is not None
+        assert decision.new_state is AlertState.FAILED_EXPIRED
+
+    def test_expire_at_half_end_does_not_fire_in_same_half(self) -> None:
+        rule = StrategyRule(4, "Δ(5min)", success_window_minutes=40, expire_at_half_end=True)
+        ev = AlertOutcomeEvaluator(rules=(rule,))
+        assert ev.on_expiration(20, 38, strategy_names=["Δ(5min)"], status_short="1H") is None
+        assert ev.on_expiration(9, 47, strategy_names=["Δ(5min)"], status_short="1H") is None
+
+    def test_expire_at_half_end_overrides_infinite_ttl_at_ht(self) -> None:
+        rule = StrategyRule(
+            1, "Rule of 3", success_window_minutes=999, infinite_ttl=True, expire_at_half_end=True
+        )
+        ev = AlertOutcomeEvaluator(rules=(rule,))
+        decision = ev.on_expiration(10, 45, strategy_names=["Rule of 3"], status_short="HT")
+        assert decision is not None
+        assert decision.new_state is AlertState.FAILED_EXPIRED
 
     def test_counter_scored_at_expiry(self, evaluator: AlertOutcomeEvaluator) -> None:
         decision = evaluator.on_expiration(

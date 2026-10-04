@@ -22,6 +22,7 @@ from kalchas_core.alert_outcomes.rules import (
 )
 from kalchas_core.alert_outcomes.score import parse_score
 from kalchas_core.alert_outcomes.states import AlertState, OutcomeDecision
+from kalchas_core.match_status import MatchPhase, infer_phase
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +73,7 @@ class AlertOutcomeEvaluator:
         scored_team: str | None = None,
         trigger_team: str | None = None,
         strategy_names: Sequence[str] | None = None,
+        status_short: str | None = None,
     ) -> OutcomeDecision | None:
         """Decide when a goal is scored. `None` means stay PENDING."""
         if alert_score == goal_score:
@@ -93,6 +95,12 @@ class AlertOutcomeEvaluator:
             return None
 
         delay = goal_minute - alert_minute
+
+        if rule.expire_at_half_end and period_rank(goal_minute, status_short) > period_rank(
+            alert_minute
+        ):
+            reason = f"Goal at {goal_minute}' after the alert's half ended (Alert {alert_minute}')"
+            return OutcomeDecision(AlertState.FAILED_TOO_LATE, reason)
 
         if infinite_ttl:
             strategy_label = strategy_names[0] if strategy_names else "Strategy"
@@ -128,9 +136,16 @@ class AlertOutcomeEvaluator:
         trigger_team: str | None = None,
         opponent_goal_minute: int | None = None,
         opponent_goal_team: str | None = None,
+        status_short: str | None = None,
     ) -> OutcomeDecision | None:
         """Decide during a live match whether the window has closed."""
         rule = self.rule_for(strategy_names)
+        if rule.expire_at_half_end and current_half_has_ended(alert_minute, status_short):
+            reason = (
+                f"Expired at end of half: alert at {alert_minute}', "
+                f"now {current_minute}' ({status_short or 'unknown'})"
+            )
+            return OutcomeDecision(AlertState.FAILED_EXPIRED, reason)
         if rule.infinite_ttl:
             return None
 
@@ -391,3 +406,51 @@ def half_from_minute(minute: int) -> str:
     if minute <= 105:
         return "Extra time 1st"
     return "Extra time 2nd"
+
+
+def period_rank(minute: int, status_short: str | None = None) -> int:
+    """Playing period. 1H added time stays period 1 while status is still 1H."""
+    phase = infer_phase(status_short=status_short or "")
+    if phase is MatchPhase.FIRST_HALF:
+        return 1
+    if phase is MatchPhase.HALF_TIME:
+        return 1
+    if phase is MatchPhase.SECOND_HALF:
+        return 1 if minute <= 45 else 2
+    if phase is MatchPhase.EXTRA_TIME_FIRST:
+        return 3
+    if phase is MatchPhase.EXTRA_TIME_BREAK:
+        return 3
+    if phase is MatchPhase.EXTRA_TIME_SECOND:
+        return 4
+    if minute <= 45:
+        return 1
+    if minute <= 90:
+        return 2
+    if minute <= 105:
+        return 3
+    return 4
+
+
+def current_half_has_ended(alert_minute: int, status_short: str | None) -> bool:
+    """True when the half the alert was in is over (HT, later period, or finished)."""
+    phase = infer_phase(status_short=status_short or "")
+    rank = period_rank(alert_minute)
+    if phase is MatchPhase.HALF_TIME:
+        return True
+    if phase is MatchPhase.SECOND_HALF:
+        return rank <= 1
+    if phase is MatchPhase.EXTRA_TIME_FIRST:
+        return rank <= 2
+    if phase is MatchPhase.EXTRA_TIME_BREAK:
+        return rank <= 3
+    if phase is MatchPhase.EXTRA_TIME_SECOND:
+        return rank <= 3
+    if phase in (
+        MatchPhase.FINISHED,
+        MatchPhase.PENALTIES,
+        MatchPhase.CANCELLED,
+        MatchPhase.POSTPONED,
+    ):
+        return True
+    return False

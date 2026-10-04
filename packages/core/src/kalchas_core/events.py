@@ -66,6 +66,31 @@ def convert_ssot_events(
     return goal_events, card_events
 
 
+def count_cards_by_side(
+    events: Iterable[dict[str, Any]] | None,
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Yellow and red counts by ``home``/``away`` side.
+
+    A card whose detail contains ``red`` counts as a red. Every other card
+    counts as a yellow. Used by the live board and by extra Fire conditions.
+    """
+    yellow = {"home": 0, "away": 0}
+    red = {"home": 0, "away": 0}
+    for event in events or []:
+        etype = str(event.get("event_type") or event.get("type") or "").strip().lower()
+        if etype not in {"card"}:
+            continue
+        side = str(event.get("side") or "").strip().lower()
+        if side not in yellow:
+            continue
+        detail = str(event.get("detail") or "").lower()
+        if "red" in detail:
+            red[side] += 1
+        else:
+            yellow[side] += 1
+    return yellow, red
+
+
 def tally_red_cards(
     card_events: Iterable[dict[str, Any]],
     home_team_name: str,

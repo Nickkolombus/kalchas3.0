@@ -36,6 +36,8 @@ from kalchas_core.weights.registry import (
     STRATEGY_INFO,
     StrategyInfo,
     WeightSpec,
+    display_name_for,
+    short_label_for,
     spec_for,
     strategy_names,
 )
@@ -48,6 +50,8 @@ __all__ = [
     "UnknownCoefficientError",
     "WeightSet",
     "WeightSpec",
+    "display_name_for",
+    "short_label_for",
     "spec_for",
     "strategy_names",
 ]
@@ -55,6 +59,35 @@ __all__ = [
 
 class UnknownCoefficientError(KeyError):
     """Raised when asking for a coefficient that is not in the registry."""
+
+
+def _drop_stale_omega_scale(
+    overrides: Mapping[str, Mapping[str, float]],
+) -> Mapping[str, Mapping[str, float]]:
+    """Ignore the pre-recalibration display scale (k=0.5).
+
+    Admin rows saved under k=0.5 printed 50°+ on ordinary busy spells. Drop
+    that scale and its companion min_accel so new defaults apply (k=1.5,
+    fire at 30°). Other Omega gates (baseline, PI, windows) stay.
+    """
+    omega = overrides.get("omega")
+    if not isinstance(omega, Mapping):
+        return overrides
+    try:
+        scale = float(omega["k_scale"]) if "k_scale" in omega else None
+    except (TypeError, ValueError):
+        return overrides
+    if scale is None or abs(scale - 0.5) > 1e-6:
+        return overrides
+    cleaned = dict(overrides)
+    omega_clean = {
+        key: value for key, value in omega.items() if key not in {"k_scale", "min_accel"}
+    }
+    if omega_clean:
+        cleaned["omega"] = omega_clean
+    else:
+        cleaned.pop("omega", None)
+    return cleaned
 
 
 def _freeze(overrides: Mapping[str, Mapping[str, float]]) -> Mapping[str, Mapping[str, float]]:
@@ -65,6 +98,7 @@ def _freeze(overrides: Mapping[str, Mapping[str, float]]) -> Mapping[str, Mappin
     release, so a coefficient retired in code should not break startup.
     Out-of-range values are clamped to the registered bounds.
     """
+    overrides = _drop_stale_omega_scale(overrides)
     frozen: dict[str, Mapping[str, float]] = {}
     for strategy, values in overrides.items():
         if strategy not in REGISTRY or not isinstance(values, Mapping):
@@ -151,6 +185,7 @@ class WeightSet:
                 "max": spec.max_val,
                 "step": spec.step,
                 "description": spec.description,
+                "suggested": spec.suggested or str(spec.default),
             }
             for spec in REGISTRY[strategy]
         ]

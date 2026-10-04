@@ -1,0 +1,10 @@
+# Shared image; process selected by KALCHAS_ROLE on each Railway service.
+# Set KALCHAS_ROLE=kalchas-api | kalchas-scanner | kalchas-bot
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "sh -c 'if [ \"$KALCHAS_ROLE\" = \"kalchas-api\" ]; then kalchas-migrate upgrade head; fi; exec \"$KALCHAS_ROLE\"'"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

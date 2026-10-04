@@ -110,6 +110,38 @@ class TestPresets:
         weights = WeightSet.from_preset("npei", "Accuracy-biased")
         assert weights.get("npei", "w2_shot_accuracy") == 0.55
 
+    def test_omega_presets_cover_the_operator_named_sets(self) -> None:
+        names = set(BUILTIN_PRESETS["omega"])
+        assert names == {
+            "Default (~30°)",
+            "Sensitive",
+            "Confirmed surges only",
+            "Quiet / picky",
+        }
+        confirmed = WeightSet.from_preset("omega", "Confirmed surges only")
+        assert confirmed.get("omega", "min_accel") == 0.866
+        assert confirmed.get("omega", "min_baseline_slope") == 0.05
+        assert confirmed.get("omega", "pi_level_min") == 45.0
+        assert confirmed.get("omega", "min_shots") == 1.0
+
+    def test_stale_omega_scale_pair_is_dropped(self) -> None:
+        weights = WeightSet.from_overrides(
+            {"omega": {"k_scale": 0.5, "min_accel": 0.363, "pi_level_min": 40.0}}
+        )
+        assert weights.get("omega", "k_scale") == 1.5
+        assert weights.get("omega", "min_accel") == 0.866
+        assert weights.get("omega", "pi_level_min") == 40.0
+
+    def test_stale_k_scale_drops_old_min_accel_too(self) -> None:
+        weights = WeightSet.from_overrides({"omega": {"k_scale": 0.5, "min_accel": 0.42}})
+        assert weights.get("omega", "k_scale") == 1.5
+        assert weights.get("omega", "min_accel") == 0.866
+
+    def test_custom_omega_scale_is_kept(self) -> None:
+        weights = WeightSet.from_overrides({"omega": {"k_scale": 2.0, "min_accel": 0.9}})
+        assert weights.get("omega", "k_scale") == 2.0
+        assert weights.get("omega", "min_accel") == 0.9
+
     def test_unknown_preset_raises(self) -> None:
         with pytest.raises(UnknownCoefficientError):
             WeightSet.from_preset("npei", "no such preset")
@@ -131,7 +163,14 @@ class TestRegistryIntegrity:
 
     @pytest.mark.parametrize("strategy", strategy_names())
     def test_every_strategy_has_display_copy(self, strategy: str) -> None:
-        assert strategy in STRATEGY_INFO
+        info = STRATEGY_INFO[strategy]
+        assert info.name
+        assert info.short
+
+    def test_rule_of_three_public_name_is_unrealised_goals(self) -> None:
+        info = STRATEGY_INFO["rule_of_three"]
+        assert info.name == "Unrealised goals"
+        assert info.short == "UrG"
 
     def test_describe_shapes_a_row_per_coefficient(self) -> None:
         rows = WeightSet.defaults().describe("npei")
@@ -145,4 +184,5 @@ class TestRegistryIntegrity:
             "max",
             "step",
             "description",
+            "suggested",
         }

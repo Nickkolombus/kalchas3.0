@@ -5,6 +5,45 @@ from __future__ import annotations
 from typing import Any
 
 
+_MINUTE_DRIFT = 1
+
+
+def _event_identity(event: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        str(event.get("event_type") or ""),
+        str(event.get("side") or "").strip().lower(),
+        str(event.get("player_name") or "").strip().lower(),
+        str(event.get("detail") or ""),
+    )
+
+
+def collapse_ssot_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep one row when the live list repeats the same event a minute later.
+
+    Provider frames often correct 64' → 65' without dropping the old time.
+    Identity is type + side + player + detail; minutes within 1 collapse to
+    the later clock.
+    """
+    kept: list[dict[str, Any]] = []
+    for event in events:
+        ident = _event_identity(event)
+        minute = int(event.get("minute") or 0)
+        twin: int | None = None
+        for index, existing in enumerate(kept):
+            if _event_identity(existing) != ident:
+                continue
+            if abs(int(existing.get("minute") or 0) - minute) > _MINUTE_DRIFT:
+                continue
+            twin = index
+            break
+        if twin is None:
+            kept.append(dict(event))
+            continue
+        if minute >= int(kept[twin].get("minute") or 0):
+            kept[twin] = dict(event)
+    return kept
+
+
 def _parse_minute(time_str: Any) -> int:
     text = str(time_str or "0").strip()
     if "+" in text:
@@ -23,6 +62,23 @@ def api_statistics_to_list(response: object) -> object:
     if isinstance(response, list):
         return response
     return {"home_team": {}, "away_team": {}}
+
+
+def possession_from_stats(stats: object) -> tuple[int, int]:
+    """(home, away) possession from a home_team/away_team dict; 50/50 when absent."""
+    if not isinstance(stats, dict):
+        return 50, 50
+    home = (stats.get("home_team") or {}).get("ball_possession")
+    away = (stats.get("away_team") or {}).get("ball_possession")
+    if not home and not away:
+        return 50, 50
+    home_i = int(home or 0)
+    away_i = int(away or 0)
+    if home_i and not away_i:
+        away_i = max(0, 100 - home_i)
+    elif away_i and not home_i:
+        home_i = max(0, 100 - away_i)
+    return home_i, away_i
 
 
 def api_events_to_ssot(
@@ -44,7 +100,7 @@ def api_events_to_ssot(
         if not events:
             return []
         if isinstance(events[0], dict) and "event_type" in events[0]:
-            return list(events)
+            return collapse_ssot_events(list(events))
         return []
 
     if not isinstance(events, dict):
@@ -98,7 +154,12 @@ def api_events_to_ssot(
         else:
             continue
         card_type = str(card.get("card") or "").lower()
-        detail = "Red Card" if "red" in card_type else "Yellow Card"
+        if "yellowred" in card_type or "2nd" in card_type or "second yellow" in card_type:
+            detail = "Second Yellow"
+        elif "red" in card_type:
+            detail = "Red Card"
+        else:
+            detail = "Yellow Card"
         out.append(
             {
                 "event_type": "card",
@@ -110,4 +171,4 @@ def api_events_to_ssot(
                 "team_id": home_team_id if side == "home" else away_team_id,
             }
         )
-    return out
+    return collapse_ssot_events(out)

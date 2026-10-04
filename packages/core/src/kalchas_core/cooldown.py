@@ -5,8 +5,9 @@ admin-settings lookups stay in the app layer. Core owns the decision tree:
 
 1. Global TSLG mute (any goal within ``goal_cooldown_minutes``)
 2. Red-card mute for the trigger team
-3. Per-strategy window with optional value-delta bypass
-4. Same-minute and reservation blocks
+3. Team stack: one non-Omega speaking turn per side
+4. Per-strategy window with optional value-delta bypass
+5. Same-minute and reservation blocks
 """
 
 from __future__ import annotations
@@ -20,12 +21,13 @@ Clock = Callable[[], datetime]
 
 
 DEFAULT_BASE_COOLDOWN = 10
+DEFAULT_OMEGA_COOLDOWN = 15
+DEFAULT_REARM_DROP_RATIO = 0.5
+DEFAULT_TEAM_STACK_MINUTES = 10
 DEFAULT_BYPASS_DELTA: Mapping[int, float] = {
     1: 0.5,
     2: 10.0,
     3: 4.0,
-    4: 1.0,
-    6: 1.5,
     7: 5.0,
 }
 
@@ -37,9 +39,20 @@ class CooldownRules:
     team_specific: bool = True
     value_delta_threshold: float | None = None
     mute_on_red_card: bool = True
+    rearm_after_drop: bool = False
+    rearm_drop_ratio: float = DEFAULT_REARM_DROP_RATIO
 
     @staticmethod
     def for_slot(strategy_slot: int) -> CooldownRules:
+        if strategy_slot in {4, 6}:
+            return CooldownRules(
+                strategy_slot=strategy_slot,
+                base_cooldown_minutes=(
+                    DEFAULT_OMEGA_COOLDOWN if strategy_slot == 6 else DEFAULT_BASE_COOLDOWN
+                ),
+                value_delta_threshold=None,
+                rearm_after_drop=True,
+            )
         return CooldownRules(
             strategy_slot=strategy_slot,
             base_cooldown_minutes=DEFAULT_BASE_COOLDOWN,
@@ -82,6 +95,7 @@ class CooldownState:
     last_alert_value: float
     last_alert_time: datetime
     reserved_until: datetime | None = None
+    waiting_for_drop: bool = False
 
     def is_reserved(self, now: datetime) -> bool:
         return self.reserved_until is not None and now < self.reserved_until
@@ -147,6 +161,7 @@ class CooldownBook:
     """In-memory cooldown ledger. Callers serialise access if multi-threaded."""
 
     goal_cooldown_minutes: int = 10
+    team_stack_minutes: int = DEFAULT_TEAM_STACK_MINUTES
     reservation_seconds: int = 10
     rules: dict[int, CooldownRules] = field(default_factory=dict)
     _state: dict[str, CooldownState] = field(default_factory=dict)
@@ -156,6 +171,33 @@ class CooldownBook:
         if strategy_slot not in self.rules:
             self.rules[strategy_slot] = CooldownRules.for_slot(strategy_slot)
         return self.rules[strategy_slot]
+
+    def _team_stack_block(
+        self,
+        match_id: str,
+        strategy_slot: int,
+        current_minute: int,
+        team: str | None,
+    ) -> CooldownDecision | None:
+        """One speaking turn per team. Omega can still interrupt."""
+        if strategy_slot == 6 or not team or self.team_stack_minutes <= 0:
+            return None
+        for state in self._state.values():
+            if state.match_id != match_id:
+                continue
+            if (state.team or "") != team:
+                continue
+            if state.strategy_slot == strategy_slot:
+                continue
+            waited = current_minute - state.last_alert_minute
+            if 0 <= waited < self.team_stack_minutes:
+                return CooldownDecision.block(
+                    f"Team already alerted at {state.last_alert_minute}' "
+                    f"(S{state.strategy_slot})",
+                    "TEAM_STACK",
+                    state.last_alert_minute + self.team_stack_minutes,
+                )
+        return None
 
     def decide(
         self,
@@ -193,6 +235,10 @@ class CooldownBook:
                     "RED_CARD_MUTE",
                 )
 
+        stacked = self._team_stack_block(mid, strategy_slot, current_minute, team)
+        if stacked is not None:
+            return stacked
+
         key = cooldown_key(mid, strategy_slot, team)
         state = self._state.get(key)
         if state:
@@ -202,6 +248,14 @@ class CooldownBook:
                 return CooldownDecision.block(
                     f"Already triggered at {current_minute}'", "SAME_MINUTE"
                 )
+            if rules.rearm_after_drop and state.waiting_for_drop:
+                reset_at = state.last_alert_value * rules.rearm_drop_ratio
+                if strategy_value > reset_at:
+                    return CooldownDecision.block(
+                        f"Same surge still active ({strategy_value:.2f} > {reset_at:.2f})",
+                        "STILL_SURGING",
+                    )
+                state.waiting_for_drop = False
             minutes_since = current_minute - state.last_alert_minute
             if minutes_since < rules.base_cooldown_minutes:
                 if rules.value_delta_threshold is not None:
@@ -232,6 +286,7 @@ class CooldownBook:
                 last_alert_value=strategy_value,
                 last_alert_time=now,
                 reserved_until=now + timedelta(seconds=self.reservation_seconds),
+                waiting_for_drop=rules.rearm_after_drop,
             )
         return CooldownDecision.allow(
             key, f"Strategy {strategy_slot} allowed (Value: {strategy_value:.2f})"

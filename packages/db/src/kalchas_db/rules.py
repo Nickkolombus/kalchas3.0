@@ -11,7 +11,8 @@ from kalchas_db.sync import sync_engine
 LIST_RULES = text(
     """
     SELECT strategy_slot, strategy_name, success_window_minutes,
-           expiration_buffer_minutes, infinite_ttl, team_specific, enabled
+           expiration_buffer_minutes, infinite_ttl, team_specific, enabled,
+           expire_at_half_end
     FROM strategy_rules
     ORDER BY strategy_slot
     """
@@ -38,8 +39,12 @@ def list_strategy_rules(dsn: str) -> list[dict[str, Any]]:
 def set_team_specific(dsn: str, slot: int, team_specific: bool) -> dict[str, Any] | None:
     eng = sync_engine(dsn)
     with eng.begin() as conn:
-        row = conn.execute(
-            UPDATE_TEAM_SPECIFIC,
-            {"slot": slot, "team_specific": team_specific},
-        ).mappings().first()
+        row = (
+            conn.execute(
+                UPDATE_TEAM_SPECIFIC,
+                {"slot": slot, "team_specific": team_specific},
+            )
+            .mappings()
+            .first()
+        )
         return dict(row) if row else None

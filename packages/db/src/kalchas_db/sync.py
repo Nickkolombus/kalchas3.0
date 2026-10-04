@@ -32,7 +32,13 @@ def sync_engine(dsn: str) -> Engine:
             url = "postgresql://" + url[len("postgres://") :]
         if "+asyncpg" in url:
             url = url.replace("+asyncpg", "")
-        _engine = create_engine(url, pool_pre_ping=True, pool_size=2, max_overflow=0)
+        _engine = create_engine(
+            url,
+            pool_pre_ping=True,
+            pool_size=8,
+            max_overflow=8,
+            pool_timeout=10,
+        )
     return _engine
 
 

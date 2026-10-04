@@ -71,11 +71,12 @@ cd apps/web && npm install && npm run dev
 | `DATABASE_URL` | migrate, api, scanner, bot |
 | `API_FOOTBALL_KEY` | scanner (apiv3.apifootball.com) |
 | `FOOTBALL_API_BASE` | scanner (default `https://apiv3.apifootball.com/`) |
-| `FOOTBALL_REQUESTS_PER_HOUR` | scanner (default 180 — free-tier friendly) |
+| `FOOTBALL_REQUESTS_PER_HOUR` | scanner (default 1000 — per API-Football endpoint) |
 | `SCANNER_INTERVAL_SEC` | scanner (default 60) |
 | `SCANNER_ONCE` | scanner (one cycle then exit) |
 | `TELEGRAM_TOKEN` | bot |
 | `TELEGRAM_CHAT_ID` | bot delivery worker |
+| `ADMIN_PASSWORD` | api — gates `kalchas.live/admin` |
 | `API_HOST` / `API_PORT` | api (default 127.0.0.1:8000) |
 
 ## Relationship to Kalchas 2.2

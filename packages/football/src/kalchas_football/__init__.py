@@ -1,10 +1,43 @@
 """Football API adapter package."""
 
-from kalchas_football.client import FootballAPIClient, LiveMatch, RateLimiter, live_match_from_event
+from kalchas_football.client import (
+    FootballAPIClient,
+    LiveMatch,
+    RateLimitBudgetExceeded,
+    RateLimiter,
+    advance_stoppage_clock,
+    apifootball_badge_url,
+    comment_elapsed_from_live_comments,
+    compose_odds_record,
+    hold_playing_period,
+    https_asset_url,
+    lineup_from_event,
+    live_match_from_event,
+    merge_odds_records,
+    odds_1x2_from_live_comments,
+    odds_1x2_from_provider_rows,
+    parse_h2h_meetings,
+    statistics_from_event,
+    substitutions_from_event,
+)
 
 __all__ = [
     "FootballAPIClient",
     "LiveMatch",
+    "RateLimitBudgetExceeded",
     "RateLimiter",
+    "advance_stoppage_clock",
+    "apifootball_badge_url",
+    "comment_elapsed_from_live_comments",
+    "compose_odds_record",
+    "hold_playing_period",
+    "https_asset_url",
+    "lineup_from_event",
     "live_match_from_event",
+    "merge_odds_records",
+    "odds_1x2_from_live_comments",
+    "odds_1x2_from_provider_rows",
+    "parse_h2h_meetings",
+    "statistics_from_event",
+    "substitutions_from_event",
 ]

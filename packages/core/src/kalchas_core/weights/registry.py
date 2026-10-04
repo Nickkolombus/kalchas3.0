@@ -28,6 +28,7 @@ class WeightSpec:
     max_val: float
     step: float
     description: str = ""
+    suggested: str = ""
 
     def clamp(self, value: float) -> float:
         """Constrain a proposed value to this coefficient's registered bounds."""
@@ -40,6 +41,7 @@ class StrategyInfo:
 
     slot: str
     name: str
+    short: str
     equation: str
     blurb: str
 
@@ -48,7 +50,8 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
     {
         "rule_of_three": StrategyInfo(
             slot="1",
-            name="Rule of Three",
+            name="Unrealised goals",
+            short="UrG",
             equation=(
                 "UG = (SOT·sot_weight·(quality_base + quality_slope·SOT/(SOT+SOFFT))"
                 " + SOFFT·sofft_weight − Goals)\n"
@@ -66,6 +69,7 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
         "pressure_index": StrategyInfo(
             slot="2",
             name="Pressure Index",
+            short="Δ10′",
             equation=(
                 "PI = sqrt(SOT_Δ)·sot_points + sqrt(SOFFT_Δ)·sofft_points"
                 " + sqrt(Corner_Δ)·corner_points + sqrt(DA_Δ)·da_points\n"
@@ -82,21 +86,23 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
         "delta_goal": StrategyInfo(
             slot="3",
             name="League Bar",
+            short="Bar",
             equation=(
                 "Lift L = P_goal(5m) / P0_league\n"
                 "Bar score = clamp(10·(L − 1), −10, +10)   # 0 = on the league bar\n"
                 "Band: below L<0.85, normal 0.85–1.15, above L>1.15"
             ),
             blurb=(
-                "League Bar: short-horizon scoring chance versus the league prior. "
-                "Score is usually near 0 (on the bar); positive is above, negative "
-                "below, clamped to ±10. Alerts when the score clears the threshold "
-                "and evidence passes the gate."
+                "League Bar: short-horizon scoring chance versus the league's "
+                "goals-per-game rate. Kickoff odds may nudge that prior by 15%; "
+                "they do not replace it. Score is usually near 0 (on the bar); "
+                "positive is above, negative below, clamped to +/-10."
             ),
         ),
         "delta_5min": StrategyInfo(
             slot="4",
             name="Delta 5min Pressure",
+            short="Δ5′",
             equation=(
                 "Δ5 = (SOT_Δ5 · sot_weight) + (DA_Δ5 · da_weight)\n"
                 "Gate: DA_Δ5 ≥ min_da_delta and (SOT_Δ5 ≥ min_sot_delta"
@@ -113,6 +119,7 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
         "npei": StrategyInfo(
             slot="5",
             name="NPEI (Net Pressure Efficiency)",
+            short="NPEI",
             equation=(
                 "R1=ΔD/ΔA, R2=ΔT/ΔS, R3=ΔS/ΔA (5m window)\n"
                 "NPEI = 100·(w1·R1 + w2·R2 + w3·R3); ratios below min activity "
@@ -128,22 +135,26 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
         "omega": StrategyInfo(
             slot="6",
             name="Omega (Ω Surge)",
+            short="Ω",
             equation=(
                 "ω = (D5'/W_fast) − (D10'/W_slow),  baseline = D10'/W_slow,  level = PI₁₀\n"
                 "Trigger (per team): ω > min_accel AND baseline > min_baseline_slope"
-                " AND PI₁₀ ≥ pi_level_min\n"
+                " AND PI₁₀ ≥ pi_level_min AND shots_fast ≥ min_shots\n"
                 "θ, α = display angles via atan(·/k_scale)"
             ),
             blurb=(
                 "Per-team pressure acceleration: fast-window rate minus slow-window "
-                "rate (each slope divided by its window), gated by a rising baseline "
-                "and minimum PI level. θ/α are display-only; the engine fires on "
-                "linear normalised PI/min thresholds."
+                "rate (each slope divided by its window), gated by a rising baseline, "
+                "a PI floor, and at least one shot in the fast window. Tune those "
+                "gates here - the Thresholds tab Fire slider is unused. θ/α are "
+                "display angles via atan(ω / k_scale). Default scale makes 35°+ rare; "
+                "fire is 30°."
             ),
         ),
         "kscore": StrategyInfo(
             slot="7",
             name="K-Score",
+            short="K",
             equation=(
                 "votes: momentum=σ(Δ5/ms), pressure=PI/100, rule3=(RO3+0.3)/1.3,\n"
                 "       omega=σ(accel/0.8)·(0.45+0.55·σ(base/0.4))·clamp(level/55,0.2,1)\n"
@@ -569,39 +580,65 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
         "omega": _specs(
             WeightSpec(
                 "min_accel",
-                "Min accel ω (norm. PI/min)",
-                0.182,
+                "Min acceleration ω",
+                0.866,
                 0.0,
                 5.0,
                 0.01,
-                "Window-normalised fast-minus-slow rate required to fire (per team).",
+                "Engine fire gate (TeamOmega.meets): window-normalised fast-minus-slow "
+                "rate must be strictly above this. Default 0.866 ≈ 30° at k_scale 1.5 "
+                "(θ = atan(ω / k_scale) × 180/π). Raise to ignore weak tilts; lower "
+                "to catch earlier surges. Not the unused Fire slider on Thresholds.",
+                "0.866 (~30°)",
             ),
             WeightSpec(
                 "min_baseline_slope",
-                "Min baseline slope (norm. PI/min)",
-                0.0,
+                "Min baseline slope",
+                0.08,
                 -1.0,
                 2.0,
                 0.01,
-                "Normalised slow-window rate floor — baseline must be rising.",
+                "Engine gate: normalised slow-window rate must be strictly above this "
+                "so the surge sits on a rising trend, not a spike inside a fade. "
+                "Default 0.08 requires a confirmed climb. Negative allows earlier "
+                "(noisier) signals.",
+                "0.08 (confirmed climb)",
             ),
             WeightSpec(
                 "pi_level_min",
                 "Min PI₁₀ level",
-                0.0,
+                40.0,
                 0.0,
                 80.0,
                 1.0,
-                "Slow-window pressure level floor (0–100) per team.",
+                "Engine gate: slow-window Pressure Index (0–100) floor per team. "
+                "Default 40 requires real pressure before Omega can fire. "
+                "0 is no floor - a surge from nothing still qualifies.",
+                "40",
+            ),
+            WeightSpec(
+                "min_shots",
+                "Min shots in fast window",
+                1.0,
+                0.0,
+                5.0,
+                1.0,
+                "Engine gate: SOT + SOFF in the fast PI window. Default 1 blocks "
+                "dangerous-attack-only pressure. 0 turns the shot gate off.",
+                "1",
             ),
             WeightSpec(
                 "k_scale",
                 "Display k (arctan scale)",
-                0.5,
+                1.5,
                 0.1,
                 50.0,
                 0.1,
-                "Maps normalised PI/min to θ/α degrees for display only.",
+                "Maps linear ω to θ/α degrees for the board and alerts: "
+                "θ = atan(ω / k_scale) × 180/π. Does not change whether Omega "
+                "fires (that is min_accel). Larger k flattens the same ω so 35°+ "
+                "stays rare. Default 1.5.",
+                "1.5",
             ),
             WeightSpec(
                 "fast_window",
@@ -610,7 +647,9 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 2.0,
                 15.0,
                 1.0,
-                "Window used for the fast Pressure Index line.",
+                "Minutes of Pressure Index used for the fast line. Shorter is "
+                "twitchier; longer smooths noise. Must stay below the slow window.",
+                "5",
             ),
             WeightSpec(
                 "slow_window",
@@ -619,7 +658,9 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 5.0,
                 25.0,
                 1.0,
-                "Window used for the slow Pressure Index baseline.",
+                "Minutes of Pressure Index used for the baseline. The match is too "
+                "young to evaluate until slow_window + deriv_window minutes have elapsed.",
+                "10",
             ),
             WeightSpec(
                 "deriv_window",
@@ -628,7 +669,9 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 1.0,
                 8.0,
                 1.0,
-                "Finite-difference width for computing slopes — wider = less noise.",
+                "Finite-difference width when computing slopes. Wider = less noise, "
+                "slower to react.",
+                "3",
             ),
             WeightSpec(
                 "flat_band",
@@ -637,7 +680,9 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 0.0,
                 20.0,
                 1.0,
-                "|θ| and |α| below this both classify as 'flat' (display).",
+                "Display/classify only — not a fire gate. |θ| and |α| below this "
+                "are labelled 'flat' on diagnostics.",
+                "5°",
             ),
         ),
         "kscore": _specs(
@@ -661,12 +706,12 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
             ),
             WeightSpec(
                 "trust_rule3",
-                "Trust: Rule of Three",
+                "Trust: Unrealised goals",
                 0.8,
                 0.0,
                 3.0,
                 0.1,
-                "Logit weight on the Rule of Three consultant vote.",
+                "Logit weight on the Unrealised goals consultant vote.",
             ),
             WeightSpec(
                 "trust_omega",
@@ -818,16 +863,24 @@ BUILTIN_PRESETS: Mapping[str, Mapping[str, Mapping[str, float]]] = MappingProxyT
             },
         },
         "omega": {
-            "Balanced (default)": {},
-            "Earlier signals": {
-                "min_accel": 0.12,
-                "min_baseline_slope": -0.05,
+            "Default (~30°)": {},
+            "Sensitive": {
+                "min_accel": 0.546,
+                "min_baseline_slope": 0.0,
                 "pi_level_min": 0.0,
+                "min_shots": 0.0,
             },
             "Confirmed surges only": {
-                "min_accel": 0.3,
+                "min_accel": 0.866,
                 "min_baseline_slope": 0.05,
                 "pi_level_min": 45.0,
+                "min_shots": 1.0,
+            },
+            "Quiet / picky": {
+                "min_accel": 1.05,
+                "min_baseline_slope": 0.10,
+                "pi_level_min": 55.0,
+                "min_shots": 2.0,
             },
         },
         "kscore": {
@@ -857,3 +910,15 @@ def spec_for(strategy: str, key: str) -> WeightSpec | None:
 
 def strategy_names() -> tuple[str, ...]:
     return tuple(REGISTRY.keys())
+
+
+def display_name_for(strategy_key: str) -> str:
+    """Public name (Unrealised goals, K-Score, …). Falls back to the code key."""
+    info = STRATEGY_INFO.get(strategy_key)
+    return info.name if info else strategy_key.replace("_", " ")
+
+
+def short_label_for(strategy_key: str) -> str:
+    """Board-style short label (UrG, Δ10′, K, …)."""
+    info = STRATEGY_INFO.get(strategy_key)
+    return info.short if info else strategy_key
