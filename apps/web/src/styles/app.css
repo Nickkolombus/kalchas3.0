@@ -980,11 +980,11 @@ body {
 
 .team-label.is-short-fav,
 .signal-team.is-short-fav {
-  color: #f6eecd;
+  color: #f7e9c8;
   text-shadow:
-    0 0 4px rgba(255, 220, 130, 0.28),
-    0 0 10px rgba(255, 196, 80, 0.2),
-    0 0 18px rgba(255, 180, 50, 0.1);
+    0 0 4px rgba(255, 220, 130, 0.38),
+    0 0 10px rgba(255, 196, 80, 0.26),
+    0 0 18px rgba(255, 180, 50, 0.14);
 }
 
 .badge-wrap {
