@@ -222,6 +222,14 @@ def test_live_includes_events_cards_and_recent_alerts(monkeypatch) -> None:
                 "delivery_status": "sent",
                 "strategy_slot": 2,
                 "created_at": datetime.now(UTC),
+                "payload": {
+                    "odds": {
+                        "kickoff": {"home": 1.29, "draw": 6.0, "away": 11.0},
+                        "home": 1.29,
+                        "draw": 6.0,
+                        "away": 11.0,
+                    }
+                },
             }
         ],
     )
@@ -236,6 +244,8 @@ def test_live_includes_events_cards_and_recent_alerts(monkeypatch) -> None:
     assert body["recent_alerts"][0]["current_score"] == "1-0"
     assert body["recent_alerts"][0]["minute"] == 35
     assert body["recent_alerts"][0]["current_minute"] == 36
+    assert body["recent_alerts"][0]["kickoff_home"] == 1.29
+    assert body["recent_alerts"][0]["kickoff_away"] == 11.0
     assert "delivery_status" not in body["recent_alerts"][0]
     assert "failed" not in str(body["recent_alerts"]).lower()
 

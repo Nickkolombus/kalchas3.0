@@ -17,6 +17,7 @@ from kalchas_core import __version__ as core_version
 from kalchas_core.alert_outcomes import DEFAULT_RULES, evaluator_from_rule_rows, match_is_terminal
 from kalchas_core.events import count_cards_by_side
 from kalchas_core.match import MatchTimeline
+from kalchas_core.odds import kickoff_home_away
 from kalchas_core.runner import board_snapshot, home_away_odds, live_home_away_odds
 from kalchas_core.strategies.omega import DEFAULT_ANGLE_SCALE, alert_theta_degrees
 from kalchas_core.weights import WeightSet, strategy_names
@@ -290,6 +291,8 @@ class RecentAlertOut(BaseModel):
     current_score: str | None = None
     current_minute: int | None = None
     current_status: str | None = None
+    kickoff_home: float | None = None
+    kickoff_away: float | None = None
 
 
 def _team_logo(persisted: Any, team_id: int | None, team_name: str) -> str | None:
@@ -360,6 +363,19 @@ def _odds_out(raw: Any) -> OddsOut | None:
         kickoff=kickoff,
         live=live,
     )
+
+
+def _alert_kickoff_odds(
+    row: dict[str, Any], live_match: LiveMatchRow | None
+) -> tuple[float | None, float | None]:
+    payload = _parse_jsonb(row.get("payload"))
+    odds_raw = payload.get("odds") if payload else None
+    ko_home, ko_away = kickoff_home_away(odds_raw)
+    if ko_home is not None or ko_away is not None:
+        return ko_home, ko_away
+    if live_match is None or live_match.odds is None:
+        return None, None
+    return kickoff_home_away(live_match.odds.model_dump())
 
 
 def _public_feed_state(*, connected: bool, has_error: bool) -> str:
@@ -696,6 +712,7 @@ def _build_live_response() -> LiveResponse:
             except Exception:
                 logger.exception("public signal failed for alert %s", row.get("id"))
                 continue
+            kickoff_home, kickoff_away = _alert_kickoff_odds(row, live_match)
             recent_alerts.append(
                 RecentAlertOut(
                     id=int(row["id"]),
@@ -722,6 +739,8 @@ def _build_live_response() -> LiveResponse:
                     current_score=str(current_score) if current_score else None,
                     current_minute=int(current_minute) if current_minute is not None else None,
                     current_status=str(status_short) if status_short else None,
+                    kickoff_home=kickoff_home,
+                    kickoff_away=kickoff_away,
                 )
             )
     except Exception as exc:

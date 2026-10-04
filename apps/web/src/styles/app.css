@@ -226,6 +226,10 @@ body {
   text-overflow: ellipsis;
 }
 
+.signal-team {
+  color: inherit;
+}
+
 .signal-progress {
   margin-top: 0.06rem;
   color: var(--accent);
@@ -972,6 +976,15 @@ body {
   white-space: nowrap;
   line-height: 1;
   font-family: var(--font-body);
+}
+
+.team-label.is-short-fav,
+.signal-team.is-short-fav {
+  color: #f6eecd;
+  text-shadow:
+    0 0 4px rgba(255, 220, 130, 0.28),
+    0 0 10px rgba(255, 196, 80, 0.2),
+    0 0 18px rgba(255, 180, 50, 0.1);
 }
 
 .badge-wrap {

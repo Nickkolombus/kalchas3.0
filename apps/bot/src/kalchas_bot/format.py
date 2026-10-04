@@ -12,6 +12,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from kalchas_core.odds import is_short_price, kickoff_home_away
 from kalchas_core.strategies.omega import DEFAULT_ANGLE_SCALE, alert_theta_degrees
 from kalchas_core.weights import display_name_for, short_label_for
 
@@ -35,7 +36,7 @@ def format_alert_html(row: Mapping[str, Any]) -> str:
     lines = [title]
     if league:
         lines.append(f"<i>{league}</i>")
-    lines.append(f"<b>{home}</b>  {score}  <b>{away}</b>")
+    lines.append(_versus_html(home, away, score, payload))
     meta = " · ".join(part for part in (minute, trigger, value) if part)
     if meta:
         lines.append(meta)
@@ -49,6 +50,16 @@ def format_alert_html(row: Mapping[str, Any]) -> str:
     if tslg:
         lines.append(f"TSLG: {tslg}")
     return "\n".join(lines)
+
+
+def _versus_html(
+    home: str, away: str, score: str, payload: Mapping[str, Any]
+) -> str:
+    """Bold only the side whose kickoff decimal is under 1.68."""
+    ko_home, ko_away = kickoff_home_away(payload.get("odds"))
+    home_html = f"<b>{home}</b>" if is_short_price(ko_home) else home
+    away_html = f"<b>{away}</b>" if is_short_price(ko_away) else away
+    return f"{home_html}  {score}  {away_html}"
 
 
 def _payload(raw: object) -> Mapping[str, Any]:

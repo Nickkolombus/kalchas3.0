@@ -10,6 +10,8 @@ from __future__ import annotations
 from typing import Any
 
 FAVOURITE_ODDS_THRESHOLD = 1.78
+# Display-only: board glow / Telegram bold. Not the 1.78 formula favourite.
+SHORT_PRICE_THRESHOLD = 1.68
 
 
 def detect_favourite_side(
@@ -48,6 +50,25 @@ def extract_1x2_odds(payload: Any) -> dict[str, float | None] | None:
         if odds and odds.get("home") is not None and odds.get("away") is not None:
             return odds
     return None
+
+
+def is_short_price(
+    odd: float | None,
+    *,
+    threshold: float = SHORT_PRICE_THRESHOLD,
+) -> bool:
+    """True when a decimal 1X2 price is strictly under the short-price line."""
+    price = _safe_float(odd)
+    return price is not None and 1.0 < price < threshold
+
+
+def kickoff_home_away(odds: Any) -> tuple[float | None, float | None]:
+    """Kickoff home/away decimals. Nested ``kickoff`` wins; sides are independent."""
+    if not isinstance(odds, dict):
+        return None, None
+    nested = odds.get("kickoff")
+    source = nested if isinstance(nested, dict) else odds
+    return _safe_float(source.get("home")), _safe_float(source.get("away"))
 
 
 def detect_favourite_from_payload(

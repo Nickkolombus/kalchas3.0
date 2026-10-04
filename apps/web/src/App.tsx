@@ -93,6 +93,8 @@ type RecentAlert = {
   current_score?: string | null;
   current_minute?: number | null;
   current_status?: string | null;
+  kickoff_home?: number | null;
+  kickoff_away?: number | null;
 };
 type SweetSpot = {
   ht1_start: number;
@@ -139,6 +141,7 @@ type SortDir = "asc" | "desc";
 
 const POLL_MS = 15_000;
 const FAV_KEY = "kalchas.favorites.v1";
+const SHORT_KO = 1.68;
 const DEFAULT_SWEET_SPOT: SweetSpot = {
   ht1_start: 28,
   ht1_end: 44,
@@ -286,6 +289,22 @@ const STAT_COLS: { key: string; label: string }[] = [
   { key: "yellow_cards", label: "YC" },
   { key: "red_cards", label: "RC" },
 ];
+
+function isShortKo(price?: number | null): boolean {
+  return typeof price === "number" && Number.isFinite(price) && price > 1 && price < SHORT_KO;
+}
+
+function kickoffHomeAway(odds?: OddsFlat | null): { home?: number; away?: number } {
+  if (!odds) return {};
+  const nested = odds.kickoff;
+  const line =
+    nested && (nested.home != null || nested.away != null) ? nested : odds;
+  return { home: line.home, away: line.away };
+}
+
+function favClass(price?: number | null): string {
+  return isShortKo(price) ? " is-short-fav" : "";
+}
 
 function fmtCell(v: number | undefined | null, digits = 1): string {
   if (v === undefined || v === null || Number.isNaN(v)) return "—";
@@ -600,15 +619,16 @@ function TeamStack({ match }: { match: LiveMatch }) {
   const awayLogo =
     match.away_team_logo ||
     apifootballBadgeUrl(match.away_team_id, match.away_team);
+  const ko = kickoffHomeAway(match.odds);
   return (
     <div className="team-stack">
       <div className="team-line">
         <TeamBadge name={match.home_team} src={homeLogo} />
-        <span className="team-label">{match.home_team}</span>
+        <span className={`team-label${favClass(ko.home)}`}>{match.home_team}</span>
       </div>
       <div className="team-line">
         <TeamBadge name={match.away_team} src={awayLogo} />
-        <span className="team-label">{match.away_team}</span>
+        <span className={`team-label${favClass(ko.away)}`}>{match.away_team}</span>
       </div>
     </div>
   );
@@ -1107,9 +1127,11 @@ function SignalPunch({ alert }: { alert: RecentAlert }) {
 function SignalRow({
   alerts,
   onOpen,
+  liveOdds,
 }: {
   alerts: RecentAlert[];
   onOpen: (matchId: string) => void;
+  liveOdds?: OddsFlat | null;
 }) {
   const primary = alerts[0];
   const oldest = alerts[alerts.length - 1];
@@ -1134,6 +1156,9 @@ function SignalRow({
     current_minute: primary.current_minute ?? oldest.current_minute,
     current_status: primary.current_status || oldest.current_status,
   });
+  const liveKo = kickoffHomeAway(liveOdds);
+  const homeKo = primary.kickoff_home ?? liveKo.home;
+  const awayKo = primary.kickoff_away ?? liveKo.away;
   return (
     <article
       className={`signal signal--${tone}`}
@@ -1142,7 +1167,13 @@ function SignalRow({
       <div className="signal-main">
         <div className="signal-headline">
           <span className="signal-teams">
-            {primary.home_team || "Home"} vs {primary.away_team || "Away"}
+            <span className={`signal-team${favClass(homeKo)}`}>
+              {primary.home_team || "Home"}
+            </span>
+            {" vs "}
+            <span className={`signal-team${favClass(awayKo)}`}>
+              {primary.away_team || "Away"}
+            </span>
           </span>
         </div>
         <div className="signal-progress">{progress}</div>
@@ -1373,6 +1404,11 @@ export function App() {
 
   const selected = display.find((m) => m.match_id === selectedId) ?? null;
   const displayedAlerts = groupRecentAlerts(recentAlerts);
+  const oddsByMatch = useMemo(() => {
+    const map = new Map<string, OddsFlat | null | undefined>();
+    for (const match of matches) map.set(match.match_id, match.odds);
+    return map;
+  }, [matches]);
 
   const reportedState =
     feedStatus?.state ??
@@ -1496,6 +1532,7 @@ export function App() {
                   key={alerts[0].match_id}
                   alerts={alerts}
                   onOpen={setSelectedId}
+                  liveOdds={oddsByMatch.get(alerts[0].match_id)}
                 />
               ))}
             </div>

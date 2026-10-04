@@ -50,7 +50,7 @@ WHERE id = $1
 LIST_RECENT = text(
     """
     SELECT id, match_id, strategy_slot, strategy_key, team, value, minute,
-           score, home_team, away_team, delivery_status, created_at
+           score, home_team, away_team, payload, delivery_status, created_at
     FROM alerts
     ORDER BY created_at DESC
     LIMIT :limit

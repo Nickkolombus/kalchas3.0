@@ -32,8 +32,9 @@ def test_unrealised_goals_card() -> None:
     )
     assert "<b>UrG</b> · Unrealised goals" in text
     assert "<i>Africa Cup</i>" in text
-    assert "<b>Lesotho</b>" in text
-    assert "<b>Morocco</b>" in text
+    assert "<b>Lesotho</b>" not in text
+    assert "<b>Morocco</b>" not in text
+    assert "Lesotho  0–0  Morocco" in text
     assert "0–0" in text
     assert "64′" in text
     assert "<code>1.4</code>" in text
@@ -160,3 +161,46 @@ def test_scanner_outbox_payload_shape() -> None:
     assert "SOT: 2–1" in text
     assert "KO 2.10 / 3.20 / 3.40" in text
     assert "Possession: 61%–39%" in text
+    assert "<b>Lesotho</b>" not in text
+    assert "<b>Morocco</b>" not in text
+
+
+def test_short_ko_home_is_bold() -> None:
+    text = format_alert_html(
+        {
+            "home_team": "ADR Jicaral",
+            "away_team": "Cofutpa",
+            "minute": 49,
+            "score": "2-0",
+            "strategy_key": "delta_5min",
+            "team": "home",
+            "value": 7.5,
+            "payload": {
+                "odds": {
+                    "kickoff": {"home": 1.29, "draw": 6.0, "away": 11.0},
+                    "home": 1.29,
+                    "draw": 6.0,
+                    "away": 11.0,
+                }
+            },
+        }
+    )
+    assert "<b>ADR Jicaral</b>  2–0  Cofutpa" in text
+    assert "<b>Cofutpa</b>" not in text
+
+
+def test_short_ko_away_is_bold() -> None:
+    text = format_alert_html(
+        {
+            "home_team": "Home",
+            "away_team": "Away",
+            "minute": 20,
+            "score": "0-1",
+            "strategy_key": "delta_5min",
+            "team": "away",
+            "value": 3.1,
+            "payload": {"odds": {"home": 5.5, "draw": 4.0, "away": 1.50}},
+        }
+    )
+    assert "Home  0–1  <b>Away</b>" in text
+    assert "<b>Home</b>" not in text

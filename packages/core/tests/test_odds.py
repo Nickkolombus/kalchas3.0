@@ -7,6 +7,8 @@ from kalchas_core.odds import (
     detect_favourite_from_payload,
     detect_favourite_side,
     extract_1x2_odds,
+    is_short_price,
+    kickoff_home_away,
 )
 
 
@@ -88,3 +90,24 @@ def test_extract_1x2_odds_direct_bookmaker() -> None:
 def test_extract_1x2_odds_empty() -> None:
     assert extract_1x2_odds([]) is None
     assert extract_1x2_odds(None) is None
+
+
+def test_is_short_price_strictly_under_168() -> None:
+    assert is_short_price(1.29) is True
+    assert is_short_price(1.67) is True
+    assert is_short_price(1.68) is False
+    assert is_short_price(1.78) is False
+    assert is_short_price(1.0) is False
+    assert is_short_price(None) is False
+
+
+def test_kickoff_home_away_prefers_nested() -> None:
+    assert kickoff_home_away(
+        {
+            "home": 2.1,
+            "away": 3.4,
+            "kickoff": {"home": 1.29, "draw": 6.0, "away": 11.0},
+        }
+    ) == (1.29, 11.0)
+    assert kickoff_home_away({"home": 1.50, "away": 6.0}) == (1.50, 6.0)
+    assert kickoff_home_away(None) == (None, None)
