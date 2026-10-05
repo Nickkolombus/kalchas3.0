@@ -88,6 +88,31 @@ def test_closed_window_settles_expired() -> None:
     assert snap["decision"] == "expired"
 
 
+def test_frozen_feed_settles_expired() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime.now(UTC)
+    snap = outcome_snapshot(
+        {
+            "id": 15,
+            "strategy_slot": 4,
+            "strategy_key": "delta_5min",
+            "team": "away",
+            "minute": 70,
+            "score": "3-1",
+            "payload": {},
+            "created_at": now - timedelta(minutes=612),
+        },
+        current_minute=70,
+        current_score="3-1",
+        status_short="2H",
+        goals=[],
+        evaluator=AlertOutcomeEvaluator(),
+    )
+    assert snap is not None
+    assert snap["state"] == PUBLIC_EXPIRED
+
+
 def test_admin_checkbox_off_confirms_any_goal() -> None:
     from kalchas_core.alert_outcomes import StrategyRule
 

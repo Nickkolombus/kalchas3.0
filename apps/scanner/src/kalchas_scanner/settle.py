@@ -5,6 +5,7 @@ Write-once. The live strip still recomputes; this snapshot does not.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from kalchas_core.alert_outcomes import (
@@ -56,6 +57,8 @@ def outcome_snapshot(
         status_short=status_short,
         goals=goals,
         evaluator=evaluator,
+        created_at=alert.get("created_at"),
+        now=datetime.now(UTC),
     )
     if state not in _SETTLED:
         return None

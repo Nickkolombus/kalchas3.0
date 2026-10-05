@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from kalchas_core.alert_outcomes import (
-    PUBLIC_MONITORING,
     AlertOutcomeEvaluator,
     GoalEvent,
     PublicSignal,
@@ -23,8 +23,6 @@ def public_alert_signal(
     evaluator: AlertOutcomeEvaluator,
 ) -> PublicSignal:
     """Match-facing strip fields. Delivery failures stay out of the public strip."""
-    if current_minute is None:
-        return PublicSignal(PUBLIC_MONITORING)
     slot = row.get("strategy_slot")
     return score_public_signal(
         alert_minute=int(row["minute"]),
@@ -37,6 +35,8 @@ def public_alert_signal(
         status_short=status_short,
         goals=goals,
         evaluator=evaluator,
+        created_at=row.get("created_at"),
+        now=datetime.now(UTC),
     )
 
 

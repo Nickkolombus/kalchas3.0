@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from kalchas_api.app import app
@@ -551,6 +551,86 @@ def test_live_expires_when_window_closes_without_goal(monkeypatch) -> None:
                 "away_team": "Away",
                 "delivery_status": "sent",
                 "created_at": datetime.now(UTC),
+            }
+        ],
+    )
+    body = TestClient(app).get("/api/live").json()
+    assert body["recent_alerts"][0]["state"] == "Expired"
+    assert body["recent_alerts"][0]["kind"] == "no_goal"
+
+
+def test_live_vanished_match_alert_expires(monkeypatch) -> None:
+    _stub_live(
+        monkeypatch,
+        match={
+            "match_id": "live",
+            "home_team": "A",
+            "away_team": "B",
+            "minute": 20,
+            "home_score": 0,
+            "away_score": 0,
+            "league_name": "League",
+            "status_short": "1H",
+            "home_team_id": 1,
+            "away_team_id": 2,
+            "home_stats": {},
+            "away_stats": {},
+        },
+        events=[],
+        alerts=[
+            {
+                "id": 21,
+                "match_id": "gone",
+                "strategy_key": "delta_5min",
+                "strategy_slot": 4,
+                "team": "away",
+                "value": 7.0,
+                "minute": 48,
+                "score": "1-0",
+                "home_team": "Inca",
+                "away_team": "Aruba",
+                "delivery_status": "sent",
+                "created_at": datetime.now(UTC) - timedelta(minutes=519),
+            }
+        ],
+    )
+    body = TestClient(app).get("/api/live").json()
+    assert body["recent_alerts"][0]["state"] == "Expired"
+    assert body["recent_alerts"][0]["kind"] == "no_goal"
+
+
+def test_live_frozen_clock_alert_expires(monkeypatch) -> None:
+    _stub_live(
+        monkeypatch,
+        match={
+            "match_id": "m1",
+            "home_team": "Bucaramanga",
+            "away_team": "Junior",
+            "minute": 70,
+            "home_score": 3,
+            "away_score": 1,
+            "league_name": "League",
+            "status_short": "2H",
+            "home_team_id": 1,
+            "away_team_id": 2,
+            "home_stats": {},
+            "away_stats": {},
+        },
+        events=[],
+        alerts=[
+            {
+                "id": 22,
+                "match_id": "m1",
+                "strategy_key": "omega",
+                "strategy_slot": 6,
+                "team": "away",
+                "value": 0.2,
+                "minute": 70,
+                "score": "3-1",
+                "home_team": "Bucaramanga",
+                "away_team": "Junior",
+                "delivery_status": "sent",
+                "created_at": datetime.now(UTC) - timedelta(minutes=612),
             }
         ],
     )

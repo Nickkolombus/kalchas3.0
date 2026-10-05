@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from kalchas_core.alert_outcomes.evaluator import (
@@ -31,6 +32,10 @@ KIND_NO_GOAL = "no_goal"
 KIND_COUNTER = "counter_scored"
 KIND_TOO_LATE = "too_late"
 KIND_HALF_ENDED = "half_ended"
+
+# Frozen feed / deleted match: wall time moved, match clock did not.
+FROZEN_WALL_MINUTES = 90
+FROZEN_CLOCK_SLACK_MINUTES = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +172,8 @@ def evaluate_public_signal(
     status_short: str | None,
     goals: Sequence[GoalEvent],
     evaluator: AlertOutcomeEvaluator | None = None,
+    created_at: datetime | str | None = None,
+    now: datetime | None = None,
 ) -> str:
     """Score one alert against persisted goals / clock. No I/O."""
     return score_public_signal(
@@ -180,6 +187,8 @@ def evaluate_public_signal(
         status_short=status_short,
         goals=goals,
         evaluator=evaluator,
+        created_at=created_at,
+        now=now,
     ).state
 
 
@@ -195,11 +204,13 @@ def score_public_signal(
     status_short: str | None,
     goals: Sequence[GoalEvent],
     evaluator: AlertOutcomeEvaluator | None = None,
+    created_at: datetime | str | None = None,
+    now: datetime | None = None,
 ) -> PublicSignal:
     """Same scoring as ``evaluate_public_signal``, with punchline fields."""
     clock = effective_clock(alert_minute, current_minute, status_short)
     if clock is None:
-        return PublicSignal(PUBLIC_MONITORING, KIND_MONITORING)
+        return PublicSignal(PUBLIC_EXPIRED, KIND_NO_GOAL)
 
     ev = evaluator or AlertOutcomeEvaluator()
     rule = rule_for_alert(
@@ -328,7 +339,41 @@ def score_public_signal(
             opponent_minute=opp_minute,
             goal_minute=opp_minute,
         )
+    if _feed_is_frozen(alert_minute, clock, created_at, now):
+        return PublicSignal(PUBLIC_EXPIRED, KIND_NO_GOAL)
     return PublicSignal(PUBLIC_MONITORING, KIND_MONITORING)
+
+
+def _created_age_minutes(created_at: datetime | str | None, now: datetime | None) -> float | None:
+    if created_at is None or now is None:
+        return None
+    if isinstance(created_at, datetime):
+        then = created_at
+    else:
+        text = str(created_at).strip()
+        if not text:
+            return None
+        try:
+            then = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=UTC)
+    instant = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    return max(0.0, (instant - then).total_seconds() / 60.0)
+
+
+def _feed_is_frozen(
+    alert_minute: int,
+    clock: int,
+    created_at: datetime | str | None,
+    now: datetime | None,
+) -> bool:
+    age = _created_age_minutes(created_at, now)
+    if age is None:
+        return False
+    delay = int(clock) - int(alert_minute)
+    return age >= FROZEN_WALL_MINUTES and delay < FROZEN_CLOCK_SLACK_MINUTES
 
 
 def _side(raw: str | None) -> str | None:
