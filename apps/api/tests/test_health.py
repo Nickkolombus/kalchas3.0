@@ -599,6 +599,46 @@ def test_live_vanished_match_alert_expires(monkeypatch) -> None:
     assert body["recent_alerts"][0]["kind"] == "no_goal"
 
 
+def test_live_brief_coverage_gap_stays_monitoring(monkeypatch) -> None:
+    _stub_live(
+        monkeypatch,
+        match={
+            "match_id": "live",
+            "home_team": "A",
+            "away_team": "B",
+            "minute": 20,
+            "home_score": 0,
+            "away_score": 0,
+            "league_name": "League",
+            "status_short": "1H",
+            "home_team_id": 1,
+            "away_team_id": 2,
+            "home_stats": {},
+            "away_stats": {},
+        },
+        events=[],
+        alerts=[
+            {
+                "id": 23,
+                "match_id": "blip",
+                "strategy_key": "delta_5min",
+                "strategy_slot": 4,
+                "team": "away",
+                "value": 7.0,
+                "minute": 48,
+                "score": "1-0",
+                "home_team": "Inca",
+                "away_team": "Aruba",
+                "delivery_status": "sent",
+                "created_at": datetime.now(UTC) - timedelta(minutes=5),
+            }
+        ],
+    )
+    body = TestClient(app).get("/api/live").json()
+    assert body["recent_alerts"][0]["state"] == "Monitoring"
+    assert body["recent_alerts"][0]["kind"] == "monitoring"
+
+
 def test_live_frozen_clock_alert_expires(monkeypatch) -> None:
     _stub_live(
         monkeypatch,

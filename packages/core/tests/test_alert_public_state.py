@@ -113,8 +113,96 @@ class TestEvaluatePublicSignal:
             == PUBLIC_EXPIRED
         )
 
-    def test_missing_clock_is_expired(self) -> None:
-        assert _score(current_minute=None) == PUBLIC_EXPIRED
+    def test_missing_clock_stays_monitoring_during_coverage_gap(self) -> None:
+        now = datetime(2026, 10, 5, 13, 50, tzinfo=UTC)
+        assert (
+            evaluate_public_signal(
+                alert_minute=48,
+                alert_score="1-0",
+                strategy_slot=4,
+                strategy_key="delta_5min",
+                trigger_team="away",
+                current_minute=None,
+                current_score=None,
+                status_short=None,
+                goals=(),
+                created_at=now - timedelta(minutes=5),
+                now=now,
+            )
+            == PUBLIC_MONITORING
+        )
+
+    def test_missing_clock_without_timestamps_stays_monitoring(self) -> None:
+        assert _score(current_minute=None) == PUBLIC_MONITORING
+
+    def test_missing_clock_stale_alert_is_expired(self) -> None:
+        now = datetime(2026, 10, 5, 13, 50, tzinfo=UTC)
+        assert (
+            evaluate_public_signal(
+                alert_minute=48,
+                alert_score="1-0",
+                strategy_slot=4,
+                strategy_key="delta_5min",
+                trigger_team="away",
+                current_minute=None,
+                current_score=None,
+                status_short=None,
+                goals=(),
+                created_at=now - timedelta(minutes=519),
+                now=now,
+            )
+            == PUBLIC_EXPIRED
+        )
+
+    def test_returning_match_rescores_after_gap(self) -> None:
+        now = datetime(2026, 10, 5, 13, 50, tzinfo=UTC)
+        fired = now - timedelta(minutes=8)
+        gap = evaluate_public_signal(
+            alert_minute=40,
+            alert_score="1-0",
+            strategy_slot=4,
+            strategy_key="delta_5min",
+            trigger_team="away",
+            current_minute=None,
+            current_score=None,
+            status_short=None,
+            goals=(),
+            created_at=fired,
+            now=now,
+        )
+        back = evaluate_public_signal(
+            alert_minute=40,
+            alert_score="1-0",
+            strategy_slot=4,
+            strategy_key="delta_5min",
+            trigger_team="away",
+            current_minute=48,
+            current_score="1-0",
+            status_short="2H",
+            goals=(),
+            created_at=fired,
+            now=now,
+        )
+        assert gap == PUBLIC_MONITORING
+        assert back == PUBLIC_MONITORING
+
+    def test_returning_match_can_confirm_after_gap(self) -> None:
+        now = datetime(2026, 10, 5, 13, 50, tzinfo=UTC)
+        fired = now - timedelta(minutes=8)
+        back = evaluate_public_signal(
+            alert_minute=40,
+            alert_score="1-0",
+            strategy_slot=4,
+            strategy_key="delta_5min",
+            trigger_team="away",
+            current_minute=48,
+            current_score="1-1",
+            status_short="2H",
+            goals=[GoalEvent(minute=47, side="away")],
+            created_at=fired,
+            now=now,
+        )
+        assert back == PUBLIC_CONFIRMED
 
     def test_frozen_feed_closes_after_90_wall_minutes(self) -> None:
         now = datetime(2026, 10, 5, 13, 50, tzinfo=UTC)

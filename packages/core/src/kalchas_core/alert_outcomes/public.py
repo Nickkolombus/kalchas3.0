@@ -33,7 +33,8 @@ KIND_COUNTER = "counter_scored"
 KIND_TOO_LATE = "too_late"
 KIND_HALF_ENDED = "half_ended"
 
-# Frozen feed / deleted match: wall time moved, match clock did not.
+# Frozen feed: wall time moved, match clock did not.
+# A missing board row is a coverage gap until this same wall age; then it is gone.
 FROZEN_WALL_MINUTES = 90
 FROZEN_CLOCK_SLACK_MINUTES = 5
 
@@ -210,7 +211,10 @@ def score_public_signal(
     """Same scoring as ``evaluate_public_signal``, with punchline fields."""
     clock = effective_clock(alert_minute, current_minute, status_short)
     if clock is None:
-        return PublicSignal(PUBLIC_EXPIRED, KIND_NO_GOAL)
+        # Provider dropouts must stay Monitoring so a returning match can rescore.
+        if _missing_match_is_stale(created_at, now):
+            return PublicSignal(PUBLIC_EXPIRED, KIND_NO_GOAL)
+        return PublicSignal(PUBLIC_MONITORING, KIND_MONITORING)
 
     ev = evaluator or AlertOutcomeEvaluator()
     rule = rule_for_alert(
@@ -361,6 +365,14 @@ def _created_age_minutes(created_at: datetime | str | None, now: datetime | None
         then = then.replace(tzinfo=UTC)
     instant = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
     return max(0.0, (instant - then).total_seconds() / 60.0)
+
+
+def _missing_match_is_stale(
+    created_at: datetime | str | None,
+    now: datetime | None,
+) -> bool:
+    age = _created_age_minutes(created_at, now)
+    return age is not None and age >= FROZEN_WALL_MINUTES
 
 
 def _feed_is_frozen(
