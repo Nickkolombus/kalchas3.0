@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { HoverTip } from "./HoverTip";
+import {
+  HoverLedger,
+  HoverTip,
+  hoverBarPct,
+  hoverLead,
+  type HoverScale,
+} from "./HoverTip";
 
 type SideValue = { home: number; away: number };
 type TeamCell = { value: number; triggered?: boolean };
@@ -164,23 +170,31 @@ const STRAT_ROWS: {
   tip: string;
   suffix?: string;
   signed?: boolean;
+  tone: string;
+  scale: HoverScale;
 }[] = [
   {
     key: "rule_of_three",
     label: "Unrealised goals",
     digits: 1,
+    tone: "urg",
+    scale: { min: -1, max: 3 },
     tip: "Shots say they should have scored more. Around 1 is worth a look. Negative means the score is already ahead of the chances.",
   },
   {
     key: "delta_5min",
     label: "5-minute spike",
     digits: 1,
+    tone: "d5",
+    scale: { min: 0, max: 12 },
     tip: "A burst in the last 5 minutes. 4 is common. 8+ is a real wave.",
   },
   {
     key: "pressure_index",
     label: "Sustained pressure",
     digits: 0,
+    tone: "d10",
+    scale: { min: 0, max: 100 },
     tip: "Pressure over about 10 minutes, out of 100. 70 is a surge. 90+ is a siege.",
   },
   {
@@ -188,25 +202,33 @@ const STRAT_ROWS: {
     label: "League Bar",
     digits: 1,
     signed: true,
+    tone: "lbar",
+    scale: { min: -10, max: 10 },
     tip: "Are they more likely to score than a typical side in this league, right now. 0 is average. +6 is clearly above.",
   },
   {
     key: "npei",
     label: "Efficiency",
     digits: 0,
-    tip: "How well attacks become shots, out of 100. High means clinical, not just busy.",
+    tone: "phi",
+    scale: { min: 0, max: 100 },
+    tip: "How well attacks become shots, out of 100. A higher number means more shots from the same attacks.",
   },
   {
     key: "omega",
     label: "Omega",
     digits: 0,
     suffix: "°",
+    tone: "omega",
+    scale: { min: -15, max: 40 },
     tip: "How steeply pressure is building, in degrees. 20° is building. 30° fires. 35°+ is rare. Negative means it is flattening.",
   },
   {
     key: "kscore",
     label: "K-Score",
     digits: 0,
+    tone: "k",
+    scale: { min: 0, max: 100 },
     tip: "Blend of the other signals, out of 100. 60+ is a picked match.",
   },
 ];
@@ -337,6 +359,10 @@ function DualBar({
   tip,
   suffix,
   signed = false,
+  homeName,
+  awayName,
+  tone,
+  scale,
 }: {
   label: string;
   home: number;
@@ -347,11 +373,41 @@ function DualBar({
   tip?: string;
   suffix?: string;
   signed?: boolean;
+  homeName?: string;
+  awayName?: string;
+  tone?: string;
+  scale?: HoverScale;
 }) {
   const { homePct, awayPct } = dualBarFillPcts(home, away);
   const extras = { suffix, signed };
+  const lead = hoverLead(
+    { value: home, triggered: homeTriggered },
+    { value: away, triggered: awayTriggered },
+  );
+  const title =
+    homeName && awayName ? `${label} - ${homeName} vs ${awayName}` : label;
   const labelNode = tip ? (
-    <HoverTip title={label} body={<p>{tip}</p>}>
+    <HoverTip
+      title={title}
+      cardClass={tone ? `hover-tone-${tone}` : undefined}
+      body={
+        homeName && awayName ? (
+          <HoverLedger
+            tip={tip}
+            homeName={homeName}
+            awayName={awayName}
+            homeValue={fmtSignal(home, digits, extras)}
+            awayValue={fmtSignal(away, digits, extras)}
+            homeLead={lead.home}
+            awayLead={lead.away}
+            homePct={hoverBarPct(home, scale)}
+            awayPct={hoverBarPct(away, scale)}
+          />
+        ) : (
+          <p>{tip}</p>
+        )
+      }
+    >
       <span>{label}</span>
     </HoverTip>
   ) : (
@@ -1612,6 +1668,10 @@ export function MatchOverlay({
                       tip={row.tip}
                       suffix={row.suffix}
                       signed={row.signed}
+                      homeName={panel.home_team}
+                      awayName={panel.away_team}
+                      tone={row.tone}
+                      scale={row.scale}
                     />
                   );
                 })}

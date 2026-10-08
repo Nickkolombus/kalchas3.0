@@ -10,14 +10,103 @@ import { createPortal } from "react-dom";
 
 const HOVER_SHOW_DELAY_MS = 420;
 
+export type HoverScale = { min: number; max: number };
+
+export function hoverLead(
+  home?: { value?: number; triggered?: boolean },
+  away?: { value?: number; triggered?: boolean },
+): { home: boolean; away: boolean } {
+  if (home?.triggered || away?.triggered) {
+    return { home: Boolean(home?.triggered), away: Boolean(away?.triggered) };
+  }
+  const hv = home?.value;
+  const av = away?.value;
+  if (hv == null || av == null || Number.isNaN(hv) || Number.isNaN(av) || hv === av) {
+    return { home: false, away: false };
+  }
+  return { home: hv > av, away: av > hv };
+}
+
+export function hoverBarPct(
+  value: number | undefined | null,
+  scale?: HoverScale,
+): number | null {
+  if (scale == null || value == null || Number.isNaN(value)) return null;
+  const span = scale.max - scale.min;
+  if (span <= 0) return null;
+  return Math.min(100, Math.max(0, ((value - scale.min) / span) * 100));
+}
+
+function HoverRow({
+  name,
+  value,
+  lead,
+  pct,
+}: {
+  name: string;
+  value: string;
+  lead?: boolean;
+  pct?: number | null;
+}) {
+  return (
+    <div className="hover-row">
+      <span className={`hover-dot${lead ? " is-lead" : ""}`} />
+      <span className="hover-row-name">{name}</span>
+      <span className="hover-row-val">{value}</span>
+      {pct != null ? (
+        <div className="hover-mini" aria-hidden>
+          <i style={{ width: `${pct}%` }} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function HoverLedger({
+  tip,
+  homeName,
+  awayName,
+  homeValue,
+  awayValue,
+  homeLead,
+  awayLead,
+  homePct,
+  awayPct,
+  extra,
+}: {
+  tip: string;
+  homeName: string;
+  awayName: string;
+  homeValue: string;
+  awayValue: string;
+  homeLead?: boolean;
+  awayLead?: boolean;
+  homePct?: number | null;
+  awayPct?: number | null;
+  extra?: ReactNode;
+}) {
+  return (
+    <>
+      <p>{tip}</p>
+      {extra}
+      <div className="hover-ledger">
+        <HoverRow name={homeName} value={homeValue} lead={homeLead} pct={homePct} />
+        <HoverRow name={awayName} value={awayValue} lead={awayLead} pct={awayPct} />
+      </div>
+    </>
+  );
+}
+
 export function HoverTip({
   title,
   body,
   children,
+  cardClass,
 }: {
   title: string;
   body: ReactNode;
   children: ReactNode;
+  cardClass?: string;
 }) {
   const anchorRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -80,7 +169,7 @@ export function HoverTip({
         ? createPortal(
             <div
               ref={cardRef}
-              className={`hover-card${placed ? " is-in" : ""}`}
+              className={`hover-card${placed ? " is-in" : ""}${cardClass ? ` ${cardClass}` : ""}`}
               role="tooltip"
               style={{
                 top: coords.top,

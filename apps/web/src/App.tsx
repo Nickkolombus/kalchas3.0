@@ -6,7 +6,7 @@ import {
   useState,
   type MouseEvent,
 } from "react";
-import { HoverTip } from "./HoverTip";
+import { HoverLedger, HoverTip, hoverBarPct, hoverLead, type HoverScale } from "./HoverTip";
 import { MatchOverlay } from "./MatchPanel";
 import kalchasMark from "./assets/kalchas-mark.png";
 
@@ -226,6 +226,7 @@ const STRAT_COLS: {
   suffix?: string;
   signed?: boolean;
   tone: string;
+  scale: HoverScale;
 }[] = [
   {
     key: "rule_of_three",
@@ -233,6 +234,7 @@ const STRAT_COLS: {
     name: "Unrealised goals",
     digits: 1,
     tone: "urg",
+    scale: { min: -1, max: 3 },
     tip: "Shots say they should have scored more. Around 1 is worth a look. Negative means the score is already ahead of the chances.",
   },
   {
@@ -241,6 +243,7 @@ const STRAT_COLS: {
     name: "5-minute spike",
     digits: 1,
     tone: "d5",
+    scale: { min: 0, max: 12 },
     tip: "A burst in the last 5 minutes. 4 is common. 8+ is a real wave.",
   },
   {
@@ -249,6 +252,7 @@ const STRAT_COLS: {
     name: "Sustained pressure",
     digits: 0,
     tone: "d10",
+    scale: { min: 0, max: 100 },
     tip: "Pressure over about 10 minutes, out of 100. 70 is a surge. 90+ is a siege.",
   },
   {
@@ -258,6 +262,7 @@ const STRAT_COLS: {
     digits: 1,
     signed: true,
     tone: "lbar",
+    scale: { min: -10, max: 10 },
     tip: "Are they more likely to score than a typical side in this league, right now. 0 is average. +6 is clearly above.",
   },
   {
@@ -266,7 +271,8 @@ const STRAT_COLS: {
     name: "Efficiency",
     digits: 0,
     tone: "phi",
-    tip: "How well attacks become shots, out of 100. High means clinical, not just busy.",
+    scale: { min: 0, max: 100 },
+    tip: "How well attacks become shots, out of 100. A higher number means more shots from the same attacks.",
   },
   {
     key: "omega",
@@ -275,9 +281,12 @@ const STRAT_COLS: {
     digits: 0,
     suffix: "°",
     tone: "omega",
+    scale: { min: -15, max: 40 },
     tip: "How steeply pressure is building, in degrees. 20° is building. 30° fires. 35°+ is rare. Negative means it is flattening.",
   },
 ];
+
+const K_SCALE: HoverScale = { min: 0, max: 100 };
 
 const STAT_COLS: { key: string; label: string }[] = [
   { key: "shots_on_target", label: "SOT" },
@@ -515,6 +524,7 @@ function SortTh({
   className,
   hintTitle,
   hintBody,
+  hoverTone,
 }: {
   label: string;
   sortKey: SortKey;
@@ -524,6 +534,7 @@ function SortTh({
   className?: string;
   hintTitle?: string;
   hintBody?: string;
+  hoverTone?: string;
 }) {
   const active = activeKey === sortKey;
   const inner = (
@@ -540,7 +551,11 @@ function SortTh({
       onClick={() => onSort(sortKey)}
     >
       {hintBody ? (
-        <HoverTip title={hintTitle || label} body={<p>{hintBody}</p>}>
+        <HoverTip
+          title={hintTitle || label}
+          body={<p>{hintBody}</p>}
+          cardClass={hoverTone ? `hover-tone-${hoverTone}` : undefined}
+        >
           {inner}
         </HoverTip>
       ) : (
@@ -646,22 +661,24 @@ function StratCell({
   const home = block?.teams?.home;
   const away = block?.teams?.away;
   const extras = { suffix: col.suffix, signed: col.signed };
+  const lead = hoverLead(home, away);
   return (
     <td className={`col-strat col-tone-${col.tone}`}>
       <HoverTip
         title={`${col.name} - ${match.home_team} vs ${match.away_team}`}
+        cardClass={`hover-tone-${col.tone}`}
         body={
-          <>
-            <p>{col.tip}</p>
-            <p>
-              <strong>H</strong> {fmtStrat(home?.value, col.digits, extras)}
-              {home?.triggered ? " · triggered" : ""}
-            </p>
-            <p>
-              <strong>A</strong> {fmtStrat(away?.value, col.digits, extras)}
-              {away?.triggered ? " · triggered" : ""}
-            </p>
-          </>
+          <HoverLedger
+            tip={col.tip}
+            homeName={match.home_team}
+            awayName={match.away_team}
+            homeValue={fmtStrat(home?.value, col.digits, extras)}
+            awayValue={fmtStrat(away?.value, col.digits, extras)}
+            homeLead={lead.home}
+            awayLead={lead.away}
+            homePct={hoverBarPct(home?.value, col.scale)}
+            awayPct={hoverBarPct(away?.value, col.scale)}
+          />
         }
       >
         <div className="band">
@@ -877,25 +894,29 @@ function OddsCell({ odds }: { odds?: OddsFlat | null }) {
 function KCell({ match }: { match: LiveMatch }) {
   const score = matchK(match);
   const k = match.strategy_status?.kscore;
+  const lead = hoverLead(k?.teams?.home, k?.teams?.away);
   return (
     <td className="col-k col-strat col-tone-k">
       <HoverTip
-        title={`K·idx - ${match.home_team} vs ${match.away_team}`}
+        title={`K Index - ${match.home_team} vs ${match.away_team}`}
+        cardClass="hover-tone-k"
         body={
-          <>
-            <p>Blend of the other signals, out of 100. 60+ is a picked match.</p>
-            <p>
-              <strong>Match</strong> {score < 5 ? "—" : score}
-            </p>
-            <p>
-              <strong>H</strong> {fmtCell(k?.teams?.home?.value, 0)}
-              {k?.teams?.home?.triggered ? " · triggered" : ""}
-            </p>
-            <p>
-              <strong>A</strong> {fmtCell(k?.teams?.away?.value, 0)}
-              {k?.teams?.away?.triggered ? " · triggered" : ""}
-            </p>
-          </>
+          <HoverLedger
+            tip="Blend of the other signals, out of 100. 60+ is a picked match."
+            extra={
+              <p className="hover-match-k">
+                Match {score < 5 ? "—" : score}
+              </p>
+            }
+            homeName={match.home_team}
+            awayName={match.away_team}
+            homeValue={fmtCell(k?.teams?.home?.value, 0)}
+            awayValue={fmtCell(k?.teams?.away?.value, 0)}
+            homeLead={lead.home}
+            awayLead={lead.away}
+            homePct={hoverBarPct(k?.teams?.home?.value, K_SCALE)}
+            awayPct={hoverBarPct(k?.teams?.away?.value, K_SCALE)}
+          />
         }
       >
         <div className="band band-center">
@@ -915,21 +936,18 @@ function TslgCell({ match }: { match: LiveMatch }) {
   return (
     <td className="col-tslg col-strat col-tone-tslg">
       <HoverTip
-        title={`TSLG - minutes since last goal`}
+        title={`TSLG - ${match.home_team} vs ${match.away_team}`}
+        cardClass="hover-tone-tslg"
         body={
-          <>
-            <p>Minutes since that team last scored. Alerts stay quiet for 10 minutes after a goal.</p>
-            <p>
-              <strong>H</strong>{" "}
-              {t.home == null ? "—" : `${t.home}'`}
-              {homeCd ? " · cooldown" : ""}
-            </p>
-            <p>
-              <strong>A</strong>{" "}
-              {t.away == null ? "—" : `${t.away}'`}
-              {awayCd ? " · cooldown" : ""}
-            </p>
-          </>
+          <HoverLedger
+            tip="Minutes since that team last scored. Alerts stay quiet for 10 minutes after a goal."
+            homeName={match.home_team}
+            awayName={match.away_team}
+            homeValue={t.home == null ? "—" : `${t.home}'`}
+            awayValue={t.away == null ? "—" : `${t.away}'`}
+            homeLead={homeCd}
+            awayLead={awayCd}
+          />
         }
       >
         <div className="band">
@@ -1609,8 +1627,9 @@ export function App() {
                 dir={sortDir}
                 onSort={onSort}
                 className="col-k col-strat col-tone-k"
-                hintTitle="K·idx"
+                hintTitle="K Index"
                 hintBody="Blend of the other signals, out of 100. 60+ is a picked match."
+                hoverTone="k"
               />
               {STRAT_COLS.map((c) => (
                 <SortTh
@@ -1623,6 +1642,7 @@ export function App() {
                   className={`col-strat col-tone-${c.tone}`}
                   hintTitle={c.name}
                   hintBody={c.tip}
+                  hoverTone={c.tone}
                 />
               ))}
               <SortTh
@@ -1634,6 +1654,7 @@ export function App() {
                 className="col-tslg col-strat col-tone-tslg"
                 hintTitle="TSLG"
                 hintBody="Minutes since that team last scored. Alerts stay quiet for 10 minutes after a goal."
+                hoverTone="tslg"
               />
               {STAT_COLS.map((c, index) => (
                 <SortTh
