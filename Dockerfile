@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 FROM public.ecr.aws/docker/library/node:22-bookworm-slim AS web
 WORKDIR /web
 COPY apps/web/package.json ./
