@@ -183,11 +183,11 @@ const STRAT_ROWS: {
   },
   {
     key: "delta_5min",
-    label: "5-minute spike",
+    label: "5-minute pressure",
     digits: 1,
     tone: "d5",
     scale: { min: 0, max: 12 },
-    tip: "A burst in the last 5 minutes. 4 is common. 8+ is a real wave.",
+    tip: "Pressure in the last 5 minutes. 4 is common. 8+ is a real wave.",
   },
   {
     key: "pressure_index",

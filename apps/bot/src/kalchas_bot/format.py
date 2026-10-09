@@ -1,8 +1,7 @@
-"""HTML Telegram alert body from an outbox row.
+"""HTML Telegram alert caption from an outbox row.
 
-2.2 also rendered Playwright versus-banners. Those were expensive. The
-scanner now persists the same live stats 2.2 put in the text card — league,
-1X2, SOT, attacks, possession, cards, TSLG — with no extra HTTP.
+Crests go on the photo. This module is caption-only: strategy, firing team,
+clock, last-5-minute counts for Δ5, H2H when the sample is at least 5.
 """
 
 from __future__ import annotations
@@ -12,54 +11,169 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from kalchas_core.odds import is_short_price, kickoff_home_away
+from kalchas_core.h2h import DEFAULT_MIN_SAMPLE
 from kalchas_core.strategies.omega import DEFAULT_ANGLE_SCALE, alert_theta_degrees
-from kalchas_core.weights import display_name_for, short_label_for
+from kalchas_core.weights import short_label_for
+
+ALERT_NAMES: dict[str, str] = {
+    "rule_of_three": "Unrealised goals",
+    "delta_5min": "5-minute pressure",
+    "pressure_index": "Sustained pressure",
+    "delta_goal": "League Bar",
+    "npei": "Efficiency",
+    "omega": "Omega",
+    "kscore": "K-Score",
+}
+
+# Same ceilings as the board hover scale max.
+ALERT_CEILING: dict[str, tuple[float, int, str]] = {
+    "rule_of_three": (3.0, 1, ""),
+    "delta_5min": (12.0, 1, ""),
+    "pressure_index": (100.0, 0, ""),
+    "delta_goal": (10.0, 1, ""),
+    "npei": (100.0, 0, ""),
+    "omega": (40.0, 0, "°"),
+    "kscore": (100.0, 0, ""),
+}
 
 
-def format_alert_html(row: Mapping[str, Any]) -> str:
-    """Telegram HTML parse_mode body. Team names are escaped."""
+def format_alert_html(row: Mapping[str, Any], *, with_score: bool = False) -> str:
+    """Telegram HTML parse_mode caption. Team names are escaped."""
     payload = _payload(row.get("payload"))
     home = _esc(row.get("home_team"))
     away = _esc(row.get("away_team"))
     key = str(row.get("strategy_key") or "")
     short = _esc(short_label_for(key))
-    name = _esc(display_name_for(key))
-    score = _esc(_score(row.get("score")))
-    minute = _minute(row.get("minute"))
-    trigger = _trigger(row, home, away)
-    value = _value(row.get("value"), key=key, payload=payload)
+    name = _esc(ALERT_NAMES.get(key) or short)
     league = _esc(payload.get("league") or "")
-    tslg = _esc(_tslg(payload))
+    minute = _minute(row.get("minute"))
 
-    title = f"<b>{short}</b> · {name}" if short != name else f"<b>{name}</b>"
-    lines = [title]
+    lines = [_title_line(short, name, row, key, payload)]
+    lines.append(_versus_line(row, home, away, minute, with_score=with_score))
     if league:
         lines.append(f"<i>{league}</i>")
-    lines.append(_versus_html(home, away, score, payload))
-    meta = " · ".join(part for part in (minute, trigger, value) if part)
-    if meta:
-        lines.append(meta)
-    odds = _odds_line(payload.get("odds"))
-    if odds:
-        lines.append(odds)
-    stats = _stats_lines(payload)
+
+    stats = _stat_block(key, payload, row.get("minute"))
     if stats:
         lines.append("")
         lines.extend(stats)
-    if tslg:
-        lines.append(f"TSLG: {tslg}")
+
+    h2h = _h2h_line(payload, home, away)
+    if h2h:
+        lines.append("")
+        lines.append(h2h)
     return "\n".join(lines)
 
 
-def _versus_html(
-    home: str, away: str, score: str, payload: Mapping[str, Any]
+def _title_line(
+    short: str,
+    name: str,
+    row: Mapping[str, Any],
+    key: str,
+    payload: Mapping[str, Any],
 ) -> str:
-    """Bold only the side whose kickoff decimal is under 1.68."""
-    ko_home, ko_away = kickoff_home_away(payload.get("odds"))
-    home_html = f"<b>{home}</b>" if is_short_price(ko_home) else home
-    away_html = f"<b>{away}</b>" if is_short_price(ko_away) else away
-    return f"{home_html}  {score}  {away_html}"
+    shown = _value_over_ceiling(row.get("value"), key=key, payload=payload)
+    if short == name:
+        return f"<b>{short}</b>: {shown}" if shown else f"<b>{short}</b>"
+    if shown:
+        return f"<b>{short}</b> ({name}): {shown}"
+    return f"<b>{short}</b> ({name})"
+
+
+def _versus_line(
+    row: Mapping[str, Any],
+    home: str,
+    away: str,
+    minute: str,
+    *,
+    with_score: bool,
+) -> str:
+    side = str(row.get("team") or "").lower()
+    home_html = f"<b>{home}</b>" if side == "home" else home
+    away_html = f"<b>{away}</b>" if side == "away" else away
+    parts = [f"{home_html} vs {away_html}"]
+    if with_score:
+        score = _score(row.get("score"))
+        if score:
+            parts.append(score)
+    if minute:
+        parts.append(minute)
+    return " · ".join(parts)
+
+
+def _stat_block(key: str, payload: Mapping[str, Any], minute: object) -> list[str]:
+    if key == "delta_5min":
+        window = payload.get("last_5min")
+        if not isinstance(window, Mapping):
+            return []
+        start = _minute_int(window.get("start"))
+        end = _minute_int(window.get("end"))
+        if end is None:
+            end = _minute_int(minute)
+        if start is not None and end is not None:
+            heading = f"<b>Last 5 mins ({start}-{end}′):</b>"
+        else:
+            heading = "<b>Last 5 mins:</b>"
+        rows = _stat_rows(window)
+        return [heading, *rows] if rows else []
+    rows = _stat_rows(payload)
+    return rows
+
+
+def _stat_rows(block: Mapping[str, Any]) -> list[str]:
+    rows: list[str] = []
+    for key, label, percent in (
+        ("sot", "SOT", False),
+        ("sofft", "SOFFT", False),
+        ("da", "DA", False),
+        ("corners", "Corners", False),
+        ("possession", "Possession", True),
+    ):
+        line = _pair_line(block.get(key), label, percent=percent)
+        if line:
+            rows.append(line)
+    return rows
+
+
+def _pair_line(raw: object, label: str, *, percent: bool) -> str:
+    if not isinstance(raw, Mapping):
+        return ""
+    try:
+        home = int(raw.get("home") or 0)
+        away = int(raw.get("away") or 0)
+    except (TypeError, ValueError):
+        return ""
+    if home == 0 and away == 0:
+        return ""
+    return f"{label}: {_bold_bigger(home, away, percent=percent)}"
+
+
+def _bold_bigger(home: int, away: int, *, percent: bool) -> str:
+    home_s = f"{home}%" if percent else str(home)
+    away_s = f"{away}%" if percent else str(away)
+    if home > away:
+        return f"<b>{home_s}</b> - {away_s}"
+    if away > home:
+        return f"{home_s} - <b>{away_s}</b>"
+    return f"{home_s} - {away_s}"
+
+
+def _h2h_line(payload: Mapping[str, Any], home: str, away: str) -> str:
+    raw = payload.get("h2h")
+    if not isinstance(raw, Mapping):
+        return ""
+    try:
+        sample = int(raw.get("sample") or 0)
+        home_avg = float(raw.get("home_avg"))
+        away_avg = float(raw.get("away_avg"))
+    except (TypeError, ValueError):
+        return ""
+    if sample < DEFAULT_MIN_SAMPLE:
+        return ""
+    return (
+        f"{home} average {home_avg:.1f} goals per meeting vs {away} {away_avg:.1f}, "
+        f"last {sample}."
+    )
 
 
 def _payload(raw: object) -> Mapping[str, Any]:
@@ -80,135 +194,66 @@ def _esc(value: object) -> str:
 def _score(raw: object) -> str:
     text = str(raw or "").strip()
     if not text:
-        return "–"
-    return text.replace("-", "–")
+        return ""
+    return text.replace("–", "-")
+
+
+def _minute_int(raw: object) -> int | None:
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _plain_minute(raw: object) -> str:
+    value = _minute_int(raw)
+    if value is None:
+        return f"{raw}′" if raw not in (None, "") else ""
+    return f"{value}′"
 
 
 def _minute(raw: object) -> str:
-    if raw is None or raw == "":
-        return ""
-    try:
-        return f"{int(raw)}′"
-    except (TypeError, ValueError):
-        return f"{raw}′"
+    return _plain_minute(raw)
 
 
-def _trigger(row: Mapping[str, Any], home: str, away: str) -> str:
-    side = str(row.get("team") or "").lower()
-    if side == "home":
-        return home
-    if side == "away":
-        return away
-    if side in ("", "match", "none"):
-        return "match"
-    return _esc(side)
-
-
-def _value(raw: object, *, key: str = "", payload: Mapping[str, Any] | None = None) -> str:
+def _value_over_ceiling(
+    raw: object, *, key: str, payload: Mapping[str, Any]
+) -> str:
     if raw is None or raw == "":
         return ""
     try:
         numeric = float(raw)
     except (TypeError, ValueError):
         return ""
+    ceiling, digits, suffix = ALERT_CEILING.get(key, (None, 1, ""))
     if key == "omega":
         k_scale = DEFAULT_ANGLE_SCALE
         theta: float | None = None
-        if isinstance(payload, Mapping):
-            raw_k = payload.get("k_scale")
-            if raw_k is not None:
-                try:
-                    k_scale = float(raw_k)
-                except (TypeError, ValueError):
-                    pass
-            raw_th = payload.get("theta")
-            if raw_th is not None:
-                try:
-                    theta = float(raw_th)
-                except (TypeError, ValueError):
-                    theta = None
-        deg = alert_theta_degrees(numeric, k_scale, theta=theta)
-        return f"<code>{deg:.0f}°</code>"
-    return f"<code>{numeric:.1f}</code>"
-
-
-def _tslg(payload: Mapping[str, Any]) -> str:
-    display = payload.get("tslg")
-    if display is None:
-        return ""
-    if isinstance(display, Mapping):
-        display = display.get("display")
-    return str(display or "").strip()
-
-
-def _pair(payload: Mapping[str, Any], key: str) -> str:
-    raw = payload.get(key)
-    if not isinstance(raw, Mapping):
-        return ""
-    try:
-        home = int(raw.get("home") or 0)
-        away = int(raw.get("away") or 0)
-    except (TypeError, ValueError):
-        return ""
-    return f"{home}–{away}"
-
-
-def _odds_triple(block: object, prefix: str) -> str:
-    if not isinstance(block, Mapping):
-        return ""
-    try:
-        home = float(block["home"])
-        away = float(block["away"])
-    except (KeyError, TypeError, ValueError):
-        return ""
-    draw_raw = block.get("draw")
-    try:
-        draw = f"{float(draw_raw):.2f}" if draw_raw is not None else "-"
-    except (TypeError, ValueError):
-        draw = "-"
-    return f"{prefix} {home:.2f} / {draw} / {away:.2f}"
-
-
-def _odds_line(raw: object) -> str:
-    if not isinstance(raw, Mapping):
-        return ""
-    kickoff = raw.get("kickoff") if isinstance(raw.get("kickoff"), Mapping) else raw
-    lines = [part for part in (_odds_triple(kickoff, "KO"), _odds_triple(raw.get("live"), "Live")) if part]
-    return "\n".join(lines)
-
-
-def _stats_lines(payload: Mapping[str, Any]) -> list[str]:
-    sot = _pair(payload, "sot")
-    sofft = _pair(payload, "sofft")
-    corners = _pair(payload, "corners")
-    attacks = _pair(payload, "attacks")
-    da = _pair(payload, "da")
-    poss = _pair(payload, "possession")
-    yc = _pair(payload, "yc")
-    rc = _pair(payload, "rc")
-    if not any((sot, sofft, corners, attacks, da, poss, yc, rc)):
-        return []
-    lines: list[str] = []
-    if sot:
-        lines.append(f"SOT: {sot}")
-    if sofft:
-        lines.append(f"SoffT: {sofft}")
-    if corners:
-        lines.append(f"Corners: {corners}")
-    if attacks:
-        lines.append(f"Atk.: {attacks}")
-    if da:
-        lines.append(f"D.Atk.: {da}")
-    if poss:
-        lines.append(f"Possession: {poss.replace('–', '%–')}%")
-    cards = "  ".join(
-        part
-        for part in (
-            f"YC: {yc}" if yc and yc != "0–0" else "",
-            f"RC: {rc}" if rc and rc != "0–0" else "",
-        )
-        if part
-    )
-    if cards:
-        lines.append(cards)
-    return lines
+        raw_k = payload.get("k_scale")
+        if raw_k is not None:
+            try:
+                k_scale = float(raw_k)
+            except (TypeError, ValueError):
+                pass
+        raw_th = payload.get("theta")
+        if raw_th is not None:
+            try:
+                theta = float(raw_th)
+            except (TypeError, ValueError):
+                theta = None
+        numeric = alert_theta_degrees(numeric, k_scale, theta=theta)
+        digits = 0
+        suffix = "°"
+        if ceiling is None:
+            ceiling = 40.0
+    if digits <= 0:
+        shown = f"{numeric:.0f}{suffix}"
+        cap = f"{ceiling:.0f}{suffix}" if ceiling is not None else ""
+    else:
+        shown = f"{numeric:.{digits}f}{suffix}"
+        cap = f"{ceiling:.{digits}f}{suffix}" if ceiling is not None else ""
+    if cap:
+        return f"{shown} / {cap}"
+    return shown

@@ -7,6 +7,7 @@ import logging
 
 from telegram import Bot
 
+from kalchas_bot.banner import render_alert_photo
 from kalchas_bot.format import format_alert_html
 
 logger = logging.getLogger("kalchas.bot.delivery")
@@ -24,13 +25,8 @@ async def deliver_loop(bot: Bot, chat_id: str, *, poll_sec: float = 2.0) -> None
             async with pool.acquire() as conn:
                 rows = await claim_pending(conn)
             for row in rows:
-                text = format_alert_html(row)
                 try:
-                    await bot.send_message(
-                        chat_id=chat_id,
-                        text=text,
-                        parse_mode="HTML",
-                    )
+                    await _send_alert(bot, chat_id, row)
                     async with pool.acquire() as conn:
                         await mark_sent(conn, int(row["id"]))
                 except Exception as exc:
@@ -40,3 +36,22 @@ async def deliver_loop(bot: Bot, chat_id: str, *, poll_sec: float = 2.0) -> None
         except Exception:
             logger.exception("delivery cycle failed")
         await asyncio.sleep(poll_sec)
+
+
+async def _send_alert(bot: Bot, chat_id: str, row: object) -> None:
+    photo = await asyncio.to_thread(render_alert_photo, row)
+    if photo is not None:
+        caption = format_alert_html(row)
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=photo,
+            caption=caption,
+            parse_mode="HTML",
+        )
+        return
+    text = format_alert_html(row, with_score=True)
+    await bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        parse_mode="HTML",
+    )

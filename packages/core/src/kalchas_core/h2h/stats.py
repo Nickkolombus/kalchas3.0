@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 DEFAULT_MIN_SAMPLE: Final = 5
+DEFAULT_LAST: Final = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +127,22 @@ def empty_h2h(
         avg_goals=None,
         fixtures=(),
     )
+
+
+def h2h_meeting_averages(
+    stats: H2HStats,
+    *,
+    min_sample: int = DEFAULT_MIN_SAMPLE,
+) -> dict[str, float | int] | None:
+    """Goals per meeting for Telegram. None when the sample is under 5."""
+    n = int(stats.sample)
+    if n < min_sample or n <= 0:
+        return None
+    return {
+        "sample": n,
+        "home_avg": round(stats.team1.goals_total / n, 1),
+        "away_avg": round(stats.team2.goals_total / n, 1),
+    }
 
 
 def compute_h2h_stats(

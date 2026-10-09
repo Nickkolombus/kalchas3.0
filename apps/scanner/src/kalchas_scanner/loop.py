@@ -21,12 +21,14 @@ from kalchas_core.events import (
     count_cards_by_side,
     tally_red_cards,
 )
+from kalchas_core.h2h import DEFAULT_LAST, compute_h2h_stats, h2h_meeting_averages
 from kalchas_core.runner import (
     DEFAULT_THRESHOLDS,
     evaluate_match,
     home_away_odds,
     live_home_away_odds,
 )
+from kalchas_core.strategies.delta_5min import last_5min_block
 from kalchas_core.weights import WeightSet
 from kalchas_football import (
     FootballAPIClient,
@@ -123,6 +125,7 @@ class Scanner:
     _stats_http_used: int = 0
     _stats_http_window_at: float = 0.0
     _outcome_evaluator: AlertOutcomeEvaluator = field(default_factory=AlertOutcomeEvaluator)
+    _h2h_alert_by_pair: dict[tuple[int, int], dict | None] = field(default_factory=dict)
 
     def _hydrate_if_needed(self, match_id: str) -> None:
         if self.store.has(match_id):
@@ -262,6 +265,71 @@ class Scanner:
             kickoff=self._odds_by_match.get(match_id),
             live=self._live_odds_by_match.get(match_id),
         )
+
+    def _h2h_for_alert(self, match: LiveMatch) -> dict | None:
+        """Goals-per-meeting for Telegram. Skips samples under 5. Cache first."""
+        try:
+            home_id = int(match.home_team_id or 0)
+            away_id = int(match.away_team_id or 0)
+        except (TypeError, ValueError):
+            return None
+        if home_id <= 0 or away_id <= 0 or home_id == away_id:
+            return None
+        pair = (min(home_id, away_id), max(home_id, away_id))
+        overlay = self._h2h_from_panel_cache(home_id, away_id)
+        if overlay is not None:
+            self._h2h_alert_by_pair[pair] = overlay
+            return overlay
+        if pair in self._h2h_alert_by_pair:
+            return self._h2h_alert_by_pair[pair]
+        fetch = getattr(self.client, "get_head_to_head", None)
+        if not callable(fetch):
+            self._h2h_alert_by_pair[pair] = None
+            return None
+        try:
+            fixtures = fetch(home_id, away_id, last=DEFAULT_LAST)
+        except RateLimitBudgetExceeded:
+            return None
+        except Exception:
+            logger.exception("h2h fetch failed for %s", match.match_id)
+            return None
+        stats = compute_h2h_stats(
+            fixtures or [],
+            team1_id=home_id,
+            team2_id=away_id,
+            team1_name=match.home_team,
+            team2_name=match.away_team,
+        )
+        snippet = h2h_meeting_averages(stats)
+        self._h2h_alert_by_pair[pair] = snippet
+        return snippet
+
+    def _h2h_from_panel_cache(self, home_id: int, away_id: int) -> dict | None:
+        dsn = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+        if not dsn:
+            return None
+        try:
+            from kalchas_db.panel_cache import load_panel_cache, pair_cache_key
+
+            cached = load_panel_cache(dsn, pair_cache_key("h2h", home_id, away_id))
+        except Exception:  # noqa: BLE001 - missing table must not block alerts
+            return None
+        if not isinstance(cached, dict):
+            return None
+        try:
+            sample = int((cached.get("summary") or {}).get("sample") or 0)
+            patterns = cached.get("patterns") or {}
+            home_goals = float(patterns.get("home_goals"))
+            away_goals = float(patterns.get("away_goals"))
+        except (TypeError, ValueError):
+            return None
+        if sample < 5:
+            return None
+        return {
+            "sample": sample,
+            "home_avg": round(home_goals / sample, 1),
+            "away_avg": round(away_goals / sample, 1),
+        }
 
     def _claim_stats_http(self) -> bool:
         now = time.monotonic()
@@ -507,6 +575,16 @@ class Scanner:
             if cand.strategy_key == "omega":
                 payload["theta"] = detail.get("theta")
                 payload["k_scale"] = detail.get("k_scale")
+            if cand.strategy_key == "delta_5min":
+                last_5 = last_5min_block(timeline)
+                if last_5:
+                    payload["last_5min"] = last_5
+            h2h = self._h2h_for_alert(match)
+            if h2h:
+                payload["h2h"] = h2h
+            payload["home_logo"] = https_asset_url(match.home_team_logo) or None
+            payload["away_logo"] = https_asset_url(match.away_team_logo) or None
+            payload["status_short"] = match.status_short
             self.sink.emit(payload)
             self.cooldown.confirm(decision.cooldown_key)
             emitted.append(payload)

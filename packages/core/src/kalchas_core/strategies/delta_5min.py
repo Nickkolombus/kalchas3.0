@@ -22,12 +22,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
 from kalchas_core.match import (
     ActivityWindow,
     MatchTimeline,
     Side,
     TeamDeltas,
+    TeamStats,
     WindowClamp,
     resolve_window,
 )
@@ -245,3 +247,38 @@ def evaluate(
         window_start_minute=window.start_minute,
         window_end_minute=window.end_minute,
     )
+
+
+def _nonneg_delta(start: TeamStats, end: TeamStats, attr: str) -> int:
+    return max(0, int(getattr(end, attr) - getattr(start, attr)))
+
+
+def _side_counts(window: ActivityWindow, attr: str) -> dict[str, int]:
+    return {
+        "home": _nonneg_delta(window.start.home, window.end.home, attr),
+        "away": _nonneg_delta(window.start.away, window.end.away, attr),
+    }
+
+
+def last_5min_block(timeline: MatchTimeline) -> dict[str, Any] | None:
+    """SOT / SOFFT / DA / corners in the same 5-minute window Δ5 uses.
+
+    Possession is the share at the end of the window, not a 5-minute delta.
+    """
+    if timeline.current_minute < MINIMUM_MINUTE:
+        return None
+    window = resolve_window(timeline, WINDOW_MINUTES, clamp=WindowClamp.SHORT_AFTER_BREAK)
+    if window is None:
+        return None
+    return {
+        "start": window.start_minute,
+        "end": window.end_minute,
+        "sot": _side_counts(window, "shots_on_target"),
+        "sofft": _side_counts(window, "shots_off_target"),
+        "da": _side_counts(window, "dangerous_attacks"),
+        "corners": _side_counts(window, "corners"),
+        "possession": {
+            "home": int(window.end.home.possession),
+            "away": int(window.end.away.possession),
+        },
+    }

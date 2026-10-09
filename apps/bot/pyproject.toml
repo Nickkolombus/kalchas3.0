@@ -5,6 +5,7 @@ description = "Telegram delivery worker (single replica)."
 requires-python = ">=3.13"
 dependencies = [
     "python-telegram-bot>=21.0",
+    "pillow>=11.0",
     "kalchas-core",
     "kalchas-db",
 ]

@@ -101,7 +101,7 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
         ),
         "delta_5min": StrategyInfo(
             slot="4",
-            name="Delta 5min Pressure",
+            name="5-minute pressure",
             short="Δ5′",
             equation=(
                 "Δ5 = (SOT_Δ5 · sot_weight) + (DA_Δ5 · da_weight)\n"
@@ -109,7 +109,7 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
                 " or DA_Δ5 ≥ fallback_da_delta)"
             ),
             blurb=(
-                "Short-horizon pressure spike detector. Takes deltas over the last "
+                "Short-horizon pressure detector. Takes deltas over the last "
                 "5 minutes of shots on target and dangerous attacks, multiplies by "
                 "weights, and fires when the corroboration gate (minimum DA + SOT "
                 "activity) is met. Complements the Pressure Index by catching "

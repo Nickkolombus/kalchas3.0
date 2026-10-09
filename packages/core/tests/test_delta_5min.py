@@ -22,6 +22,7 @@ from kalchas_core.strategies.delta_5min import (
     POSSESSION_FALLBACK_WEIGHT,
     SecondarySignal,
     evaluate,
+    last_5min_block,
     passes_corroboration,
 )
 from kalchas_core.weights import WeightSet
@@ -274,3 +275,28 @@ class TestSecondarySignalChoice:
         result = evaluate(window(end=surge()), secondary_signal=SecondarySignal.SHOTS_OFF_TARGET)
         assert result is not None
         assert result.secondary_signal is SecondarySignal.SHOTS_OFF_TARGET
+
+
+class TestLast5MinBlock:
+    def test_counts_are_window_deltas_not_match_totals(self) -> None:
+        timeline = window(
+            start={"shots_on_target": 3, "shots_off_target": 2, "dangerous_attacks": 10, "corners": 1},
+            end={
+                "shots_on_target": 5,
+                "shots_off_target": 3,
+                "dangerous_attacks": 16,
+                "corners": 3,
+                "possession": 58,
+            },
+            away_end={"possession": 42},
+            minute=45,
+        )
+        block = last_5min_block(timeline)
+        assert block is not None
+        assert block["start"] == 40
+        assert block["end"] == 45
+        assert block["sot"] == {"home": 2, "away": 0}
+        assert block["sofft"] == {"home": 1, "away": 0}
+        assert block["da"] == {"home": 6, "away": 0}
+        assert block["corners"] == {"home": 2, "away": 0}
+        assert block["possession"] == {"home": 58, "away": 42}

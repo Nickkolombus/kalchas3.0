@@ -7,6 +7,7 @@ from kalchas_core.h2h import (
     compute_h2h_stats,
     compute_timing_counts,
     dedup_fixtures,
+    h2h_meeting_averages,
     normalize_fixture,
 )
 
@@ -61,6 +62,11 @@ class TestComputeH2H:
         assert stats.btts.count == 2
         assert stats.over_2_5.count == 2  # 2-0 no, 1-1 no, 0-3 yes, 2-1 yes, 0-0 no
         assert stats.avg_goals == 2.0
+        averages = h2h_meeting_averages(stats)
+        assert averages is not None
+        assert averages["sample"] == 5
+        assert averages["home_avg"] == round(stats.team1.goals_total / 5, 1)
+        assert averages["away_avg"] == round(stats.team2.goals_total / 5, 1)
 
     def test_insufficient_sample_still_computes_counts(self) -> None:
         fixtures = [meeting(1, 2, 1, 0), meeting(1, 2, 2, 2)]
@@ -69,6 +75,7 @@ class TestComputeH2H:
         assert stats.insufficient is True
         assert stats.reason == "insufficient_sample"
         assert stats.sample == 2
+        assert h2h_meeting_averages(stats) is None
 
     def test_mismatched_ids_skipped_from_wl(self) -> None:
         fixtures = [
