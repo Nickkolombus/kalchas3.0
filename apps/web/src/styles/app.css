@@ -951,6 +951,11 @@ body {
   text-align: left;
 }
 
+.col-match .hover-anchor {
+  display: block;
+  width: 100%;
+}
+
 .team-stack {
   display: grid;
   grid-template-rows: var(--row-line-h) var(--row-line-h);
@@ -1335,6 +1340,151 @@ body {
 .hover-tone-lbar .hover-mini > i { background: #7dd3fc; }
 .hover-tone-omega .hover-mini > i { background: #e8dcc8; }
 .hover-tone-k .hover-mini > i { background: #e4c56a; }
+
+.hover-card.hover-card-match {
+  min-width: 18rem;
+  max-width: 24rem;
+  padding: 0.85rem 0.95rem 0.9rem;
+  border-top-width: 1px;
+  text-align: center;
+}
+
+.hover-card-match .hover-body {
+  font-family: var(--font-body);
+  color: var(--text-2);
+}
+
+.match-hover {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.match-hover-league {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 0 auto;
+  max-width: 100%;
+  padding: 0.18rem 0.55rem;
+  border-radius: 99px;
+  background: rgba(242, 235, 224, 0.06);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.match-hover-league span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match-hover-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.55rem;
+  align-items: start;
+}
+
+.match-hover-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.badge-wrap.match-hover-crest {
+  width: 52px;
+  height: 52px;
+  flex-basis: 52px;
+  border-radius: 0.55rem;
+}
+
+.match-hover-name {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match-hover-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.12rem;
+  padding-top: 0.35rem;
+}
+
+.match-hover-score {
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.match-hover-clock {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.match-hover-h2h-title {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+.match-hover-h2h .muted {
+  margin: 0;
+  font-size: 0.7rem;
+}
+
+.match-hover-h2h-counts {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.45rem;
+  align-items: start;
+}
+
+.match-hover-h2h-counts > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.match-hover-h2h-counts strong {
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  color: var(--text);
+}
+
+.match-hover-h2h-counts strong.is-home {
+  color: var(--accent);
+}
+
+.match-hover-h2h-counts strong.is-away {
+  color: #6ea8ff;
+}
+
+.match-hover-h2h-counts span {
+  font-size: 0.62rem;
+  color: var(--muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .detail {
   margin-top: 1.25rem;

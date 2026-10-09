@@ -103,7 +103,7 @@ export function HoverTip({
   children,
   cardClass,
 }: {
-  title: string;
+  title?: string;
   body: ReactNode;
   children: ReactNode;
   cardClass?: string;
@@ -144,7 +144,12 @@ export function HoverTip({
       return;
     }
     place();
-  }, [open, place, title]);
+    const card = cardRef.current;
+    if (!card || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => place());
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [open, place, title, cardClass]);
 
   useEffect(() => () => clearTimer(), [clearTimer]);
 
@@ -177,7 +182,7 @@ export function HoverTip({
                 visibility: placed ? "visible" : "hidden",
               }}
             >
-              <div className="hover-title">{title}</div>
+              {title ? <div className="hover-title">{title}</div> : null}
               <div className="hover-body">{body}</div>
             </div>,
             document.body,

@@ -606,11 +606,30 @@ function LeagueCell({
   );
 }
 
-function TeamBadge({ name, src }: { name: string; src?: string | null }) {
+type HoverH2H = {
+  home_wins: number;
+  draws: number;
+  away_wins: number;
+  sample: number;
+};
+
+const hoverH2hCache = new Map<string, HoverH2H | "empty">();
+
+function TeamBadge({
+  name,
+  src,
+  className,
+}: {
+  name: string;
+  src?: string | null;
+  className?: string;
+}) {
   const [failed, setFailed] = useState(!src);
   const initial = (name || "?").charAt(0).toUpperCase();
   return (
-    <span className={`badge-wrap${failed || !src ? " is-fallback" : ""}`}>
+    <span
+      className={`badge-wrap${failed || !src ? " is-fallback" : ""}${className ? ` ${className}` : ""}`}
+    >
       {src && !failed ? (
         <img
           className="badge-img"
@@ -627,6 +646,139 @@ function TeamBadge({ name, src }: { name: string; src?: string | null }) {
   );
 }
 
+function MatchHoverBody({ match }: { match: LiveMatch }) {
+  const homeLogo =
+    match.home_team_logo ||
+    apifootballBadgeUrl(match.home_team_id, match.home_team);
+  const awayLogo =
+    match.away_team_logo ||
+    apifootballBadgeUrl(match.away_team_id, match.away_team);
+  const ko = kickoffHomeAway(match.odds);
+  const display = stoppageDisplayFromEvents(match.minute_display, match);
+  const face = clockFace(match.minute, match.status_short, display);
+  const flagSrc = match.country_logo || flagCdnUrl(match.country_code);
+  const [flagFailed, setFlagFailed] = useState(false);
+  const cached = hoverH2hCache.get(match.match_id);
+  const [h2h, setH2h] = useState<HoverH2H | "empty" | "loading">(
+    cached ?? "loading",
+  );
+
+  useEffect(() => {
+    const hit = hoverH2hCache.get(match.match_id);
+    if (hit) {
+      setH2h(hit);
+      return;
+    }
+    const controller = new AbortController();
+    setH2h("loading");
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/match/${encodeURIComponent(match.match_id)}/h2h`,
+          { signal: controller.signal },
+        );
+        if (!res.ok) {
+          if (!controller.signal.aborted) setH2h("empty");
+          return;
+        }
+        const body = (await res.json()) as {
+          data?: { summary?: HoverH2H };
+        };
+        const summary = body.data?.summary;
+        const next: HoverH2H | "empty" =
+          summary && Number(summary.sample) > 0
+            ? {
+                home_wins: Number(summary.home_wins) || 0,
+                draws: Number(summary.draws) || 0,
+                away_wins: Number(summary.away_wins) || 0,
+                sample: Number(summary.sample) || 0,
+              }
+            : "empty";
+        hoverH2hCache.set(match.match_id, next);
+        if (!controller.signal.aborted) setH2h(next);
+      } catch {
+        if (!controller.signal.aborted) setH2h("empty");
+      }
+    })();
+    return () => controller.abort();
+  }, [match.match_id]);
+
+  const h2hBlock =
+    h2h === "loading" ? (
+      <div className="match-hover-h2h">
+        <div className="match-hover-h2h-title">Head to head</div>
+        <p className="muted">Loading</p>
+      </div>
+    ) : h2h === "empty" ? (
+      <div className="match-hover-h2h">
+        <div className="match-hover-h2h-title">Head to head</div>
+        <p className="muted">No meetings yet</p>
+      </div>
+    ) : (
+      <div className="match-hover-h2h">
+        <div className="match-hover-h2h-title">
+          Head to head ({h2h.sample})
+        </div>
+        <div className="match-hover-h2h-counts">
+          <div>
+            <strong className="is-home">{h2h.home_wins}</strong>
+            <span>{match.home_team}</span>
+          </div>
+          <div>
+            <strong>{h2h.draws}</strong>
+            <span>Draw</span>
+          </div>
+          <div>
+            <strong className="is-away">{h2h.away_wins}</strong>
+            <span>{match.away_team}</span>
+          </div>
+        </div>
+      </div>
+    );
+
+  return (
+    <div className="match-hover">
+      {match.league || match.country_name ? (
+        <div className="match-hover-league">
+          {flagSrc && !flagFailed ? (
+            <img
+              className="flag-img"
+              src={flagSrc}
+              alt=""
+              onError={() => setFlagFailed(true)}
+            />
+          ) : flagEmoji(match.country_code) ? (
+            <span className="flag-fallback">{flagEmoji(match.country_code)}</span>
+          ) : null}
+          <span>{match.league || match.country_name}</span>
+        </div>
+      ) : null}
+      <div className="match-hover-header">
+        <div className="match-hover-side">
+          <TeamBadge name={match.home_team} src={homeLogo} className="match-hover-crest" />
+          <span className={`match-hover-name${favClass(ko.home)}`}>
+            {match.home_team}
+          </span>
+        </div>
+        <div className="match-hover-center">
+          <div className="match-hover-score">{match.score}</div>
+          <div className="match-hover-clock">
+            {face.label}
+            {face.phase ? ` · ${face.phase}` : ""}
+          </div>
+        </div>
+        <div className="match-hover-side">
+          <TeamBadge name={match.away_team} src={awayLogo} className="match-hover-crest" />
+          <span className={`match-hover-name${favClass(ko.away)}`}>
+            {match.away_team}
+          </span>
+        </div>
+      </div>
+      {h2hBlock}
+    </div>
+  );
+}
+
 function TeamStack({ match }: { match: LiveMatch }) {
   const homeLogo =
     match.home_team_logo ||
@@ -636,16 +788,18 @@ function TeamStack({ match }: { match: LiveMatch }) {
     apifootballBadgeUrl(match.away_team_id, match.away_team);
   const ko = kickoffHomeAway(match.odds);
   return (
-    <div className="team-stack">
-      <div className="team-line">
-        <TeamBadge name={match.home_team} src={homeLogo} />
-        <span className={`team-label${favClass(ko.home)}`}>{match.home_team}</span>
+    <HoverTip cardClass="hover-card-match" body={<MatchHoverBody match={match} />}>
+      <div className="team-stack">
+        <div className="team-line">
+          <TeamBadge name={match.home_team} src={homeLogo} />
+          <span className={`team-label${favClass(ko.home)}`}>{match.home_team}</span>
+        </div>
+        <div className="team-line">
+          <TeamBadge name={match.away_team} src={awayLogo} />
+          <span className={`team-label${favClass(ko.away)}`}>{match.away_team}</span>
+        </div>
       </div>
-      <div className="team-line">
-        <TeamBadge name={match.away_team} src={awayLogo} />
-        <span className={`team-label${favClass(ko.away)}`}>{match.away_team}</span>
-      </div>
-    </div>
+    </HoverTip>
   );
 }
 
