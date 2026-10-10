@@ -4,19 +4,18 @@ from __future__ import annotations
 
 from io import BytesIO
 
-from PIL import Image
+from kalchas_bot.banner import HEIGHT, WIDTH, _ellipsize, render_alert_photo
+from PIL import Image, ImageDraw, ImageFont
 
-from kalchas_bot.banner import HEIGHT, WIDTH, render_alert_photo
 
-
-def test_banner_renders_without_crests():
+def test_banner_is_sixteen_by_nine():
     buf = render_alert_photo(
         {
-            "home_team": "Patriotas",
-            "away_team": "Boca Juniors",
-            "minute": 45,
-            "score": "1-2",
-            "payload": {"league": "Primera B", "status_short": "1H"},
+            "home_team": "Vizela",
+            "away_team": "Sporting CP B",
+            "minute": 69,
+            "score": "0-2",
+            "payload": {"league": "Segunda Liga", "status_short": "2H"},
         }
     )
     assert buf is not None
@@ -24,4 +23,13 @@ def test_banner_renders_without_crests():
     assert buf.name == "alert.jpg"
     img = Image.open(BytesIO(buf.getvalue()))
     assert img.size == (WIDTH, HEIGHT)
-    assert img.size == (520, 168)
+    assert img.size == (800, 450)
+    assert WIDTH / HEIGHT == 16 / 9
+
+
+def test_long_names_ellipsize_to_the_column():
+    draw = ImageDraw.Draw(Image.new("RGB", (800, 450)))
+    font = ImageFont.load_default()
+    label = _ellipsize(draw, "Universitario de Vinto", font, 40)
+    assert label.endswith("...")
+    assert draw.textbbox((0, 0), label, font=font)[2] <= 40

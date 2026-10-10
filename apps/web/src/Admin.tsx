@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { AdminConditions, type ConditionCatalog, type ExtraCondition } from "./AdminConditions";
 import { AdminPreview } from "./AdminPreview";
 import { AdminResults } from "./AdminResults";
+import { AdminTips } from "./AdminTips";
 
 type WeightRow = {
   key: string;
@@ -53,7 +54,7 @@ const DEFAULT_SWEET_SPOT: SweetSpotConfig = {
   include_injury_time: false,
 };
 
-type Tab = "thresholds" | "rules" | "weights" | "results" | "various";
+type Tab = "thresholds" | "rules" | "weights" | "results" | "tips" | "various";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -418,6 +419,13 @@ export function AdminApp() {
         </button>
         <button
           type="button"
+          className={tab === "tips" ? "is-on" : ""}
+          onClick={() => setTab("tips")}
+        >
+          Tips feed
+        </button>
+        <button
+          type="button"
           className={tab === "various" ? "is-on" : ""}
           onClick={() => setTab("various")}
         >
@@ -475,6 +483,7 @@ export function AdminApp() {
             api={api}
           />
         ) : null}
+        {tab === "tips" ? <AdminTips api={api} /> : null}
         {tab === "various" ? (
           <>
             <article className="admin-tab-panel">

@@ -199,6 +199,24 @@
   align-items: center;
 }
 
+.admin-card-head a {
+  color: var(--accent);
+  font-size: 0.82rem;
+}
+
+.admin-card-head label {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.admin-results-table code {
+  font-size: 0.72rem;
+}
+
 .admin-hint {
   color: var(--muted);
   font-size: 0.78rem;

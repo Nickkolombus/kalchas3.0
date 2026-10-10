@@ -29,6 +29,8 @@ from kalchas_api.signals import (
     goals_from_events,
     public_alert_signal,
 )
+from kalchas_api.tips import admin_router as tips_admin_router
+from kalchas_api.tips import public_router as tips_public_router
 
 logger = logging.getLogger("kalchas.api")
 
@@ -1044,7 +1046,7 @@ def _mount_web_ui() -> None:
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback(full_path: str) -> FileResponse:
-        reserved = {"api", "health", "docs", "redoc", "openapi.json", "assets"}
+        reserved = {"api", "health", "docs", "redoc", "openapi.json", "assets", "tips.csv"}
         head = full_path.split("/", 1)[0]
         if head in reserved or full_path in reserved:
             raise HTTPException(status_code=404, detail="Not Found")
@@ -1059,4 +1061,6 @@ def _mount_web_ui() -> None:
 
 
 app.include_router(admin_router)
+app.include_router(tips_admin_router)
+app.include_router(tips_public_router)
 _mount_web_ui()
