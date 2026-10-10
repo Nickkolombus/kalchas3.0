@@ -110,6 +110,15 @@ def test_tips_csv_is_public(monkeypatch) -> None:
     assert res.text.strip().startswith("Provider,EventName,MarketType,SelectionName,BetType")
 
 
+def test_tips_window_accepts_half_hour() -> None:
+    from kalchas_api.tips import TipsWindowIn
+    from kalchas_db.tips_export import DEFAULT_WINDOW_SECONDS, MAX_WINDOW_SECONDS
+
+    assert TipsWindowIn(alert_window_seconds=1800).alert_window_seconds == 1800
+    assert DEFAULT_WINDOW_SECONDS == 1800
+    assert MAX_WINDOW_SECONDS == 3600
+
+
 def test_admin_tips_requires_session(monkeypatch) -> None:
     monkeypatch.setenv("ADMIN_PASSWORD", "s3cret")
     client = TestClient(app)

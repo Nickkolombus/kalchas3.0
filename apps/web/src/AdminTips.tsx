@@ -55,7 +55,7 @@ export function AdminTips({
   api: <T>(path: string, init?: RequestInit) => Promise<T>;
 }) {
   const [days, setDays] = useState(1);
-  const [windowSec, setWindowSec] = useState(30);
+  const [windowSec, setWindowSec] = useState(1800);
   const [body, setBody] = useState<TipsPayload | null>(null);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -142,8 +142,9 @@ export function AdminTips({
       <article className="admin-card">
         <h2>Inclusion window</h2>
         <p className="admin-hint">
-          An alert must still be Monitoring and newer than this many seconds to
-          appear. 2.2 default was 30.
+          A tip stays in the CSV while it is still Monitoring and younger than
+          this many seconds. 30 seconds was too short: alerts dropped out
+          before BFbot (and this page) could see them.
         </p>
         <div className="admin-fields">
           <label>
@@ -151,7 +152,7 @@ export function AdminTips({
             <input
               type="number"
               min={1}
-              max={60}
+              max={3600}
               value={windowSec}
               onChange={(event) => setWindowSec(Number(event.target.value))}
             />

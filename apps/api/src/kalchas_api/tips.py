@@ -27,7 +27,7 @@ admin_router = APIRouter(prefix="/api/admin", tags=["admin-tips"])
 
 
 class TipsWindowIn(BaseModel):
-    alert_window_seconds: int = Field(ge=1, le=60)
+    alert_window_seconds: int = Field(ge=1, le=3600)
 
 
 def _dsn() -> str | None:

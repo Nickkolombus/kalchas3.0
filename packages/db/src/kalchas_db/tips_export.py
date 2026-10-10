@@ -9,8 +9,8 @@ from sqlalchemy import text
 
 from kalchas_db.sync import sync_engine
 
-DEFAULT_WINDOW_SECONDS = 30
-MAX_WINDOW_SECONDS = 60
+DEFAULT_WINDOW_SECONDS = 1800
+MAX_WINDOW_SECONDS = 3600
 MAX_ALERT_AGE = timedelta(hours=4)
 
 GET_SETTINGS = text(
