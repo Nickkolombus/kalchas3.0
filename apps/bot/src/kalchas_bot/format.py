@@ -47,22 +47,39 @@ def format_alert_html(row: Mapping[str, Any], *, with_score: bool = False) -> st
     name = _esc(ALERT_NAMES.get(key) or short)
     league = _esc(payload.get("league") or "")
     minute = _minute(row.get("minute"))
+    side = _trigger_side(row, payload)
+    trigger = _trigger_name(side, home, away)
 
-    lines = [_title_line(short, name, row, key, payload)]
-    lines.append(_versus_line(row, home, away, minute, with_score=with_score))
+    lines = [_versus_line(side, home, away, minute, with_score=with_score, score=row.get("score"))]
     if league:
         lines.append(f"<i>{league}</i>")
+    lines.append(_title_line(short, name, row, key, payload, trigger=trigger))
 
     stats = _stat_block(key, payload, row.get("minute"))
     if stats:
         lines.append("")
         lines.extend(stats)
 
-    h2h = _h2h_lines(payload, home, away)
+    h2h = _h2h_lines(payload, home, away, side=side)
     if h2h:
         lines.append("")
         lines.extend(h2h)
     return "\n".join(lines)
+
+
+def _trigger_side(row: Mapping[str, Any], payload: Mapping[str, Any]) -> str:
+    side = str(row.get("team") or payload.get("team") or "").lower()
+    if side in ("home", "away"):
+        return side
+    return ""
+
+
+def _trigger_name(side: str, home: str, away: str) -> str:
+    if side == "home":
+        return home
+    if side == "away":
+        return away
+    return ""
 
 
 def _title_line(
@@ -71,31 +88,37 @@ def _title_line(
     row: Mapping[str, Any],
     key: str,
     payload: Mapping[str, Any],
+    *,
+    trigger: str,
 ) -> str:
     shown = _value_over_ceiling(row.get("value"), key=key, payload=payload)
     if short == name:
-        return f"<b>{short}</b>: {shown}" if shown else f"<b>{short}</b>"
-    if shown:
-        return f"<b>{short}</b> ({name}): {shown}"
-    return f"<b>{short}</b> ({name})"
+        head = f"<b>{short}</b>: {shown}" if shown else f"<b>{short}</b>"
+    elif shown:
+        head = f"<b>{short}</b> ({name}): {shown}"
+    else:
+        head = f"<b>{short}</b> ({name})"
+    if trigger:
+        return f"{head} for <b>{trigger}</b>"
+    return head
 
 
 def _versus_line(
-    row: Mapping[str, Any],
+    side: str,
     home: str,
     away: str,
     minute: str,
     *,
     with_score: bool,
+    score: object = None,
 ) -> str:
-    side = str(row.get("team") or "").lower()
     home_html = f"<b>{home}</b>" if side == "home" else home
     away_html = f"<b>{away}</b>" if side == "away" else away
     parts = [f"{home_html} vs {away_html}"]
     if with_score:
-        score = _score(row.get("score"))
-        if score:
-            parts.append(score)
+        scored = _score(score)
+        if scored:
+            parts.append(scored)
     if minute:
         parts.append(minute)
     return " · ".join(parts)
@@ -158,7 +181,9 @@ def _bold_bigger(home: int, away: int, *, percent: bool) -> str:
     return f"{home_s} - {away_s}"
 
 
-def _h2h_lines(payload: Mapping[str, Any], home: str, away: str) -> list[str]:
+def _h2h_lines(
+    payload: Mapping[str, Any], home: str, away: str, *, side: str
+) -> list[str]:
     raw = payload.get("h2h")
     if not isinstance(raw, Mapping):
         return []
@@ -170,17 +195,27 @@ def _h2h_lines(payload: Mapping[str, Any], home: str, away: str) -> list[str]:
         return []
     if sample < DEFAULT_MIN_SAMPLE:
         return []
+    if side == "away":
+        subject, other = away, home
+        subject_avg, other_avg = away_avg, home_avg
+    else:
+        subject, other = home, away
+        subject_avg, other_avg = home_avg, away_avg
     lines = [
-        f"· {home} average {home_avg:.1f} goals per meeting vs {away} {away_avg:.1f}, "
+        f"· {subject} average {subject_avg:.1f} goals per meeting vs {other} {other_avg:.1f}, "
         f"last {sample}."
     ]
     try:
-        wins = int(raw.get("home_wins"))
+        home_wins = int(raw.get("home_wins"))
         draws = int(raw.get("draws"))
-        losses = int(raw.get("away_wins"))
+        away_wins = int(raw.get("away_wins"))
     except (TypeError, ValueError):
         return lines
-    lines.append(f"· {wins}W-{draws}D-{losses}L for {home}.")
+    if side == "away":
+        wins, losses = away_wins, home_wins
+    else:
+        wins, losses = home_wins, away_wins
+    lines.append(f"· {wins}W-{draws}D-{losses}L for {subject}.")
     return lines
 
 

@@ -42,10 +42,11 @@ def _delta5_row(**overrides):
 
 def test_delta_5min_caption():
     text = format_alert_html(_delta5_row())
-    assert "<b>Δ5′</b> (5-minute pressure): 7.0 / 12.0" in text
+    assert text.index("<b>Patriotas</b> vs Boca Juniors") < text.index("<b>Δ5′</b>")
     assert "<b>Patriotas</b> vs Boca Juniors · 45′" in text
-    assert "[Patriotas]" not in text
     assert "<i>Primera B</i>" in text
+    assert "<b>Δ5′</b> (5-minute pressure): 7.0 / 12.0 for <b>Patriotas</b>" in text
+    assert "[Patriotas]" not in text
     assert "<b>Last 5 mins (40′-45′):</b>" in text
     assert "SOT: <b>2</b> - 0" in text
     assert "SOFFT: <b>1</b> - 0" in text
@@ -59,6 +60,23 @@ def test_delta_5min_caption():
     assert "KO " not in text
     assert "TSLG" not in text
     assert "1-2" not in text
+
+
+def test_h2h_and_title_use_away_triggerer():
+    text = format_alert_html(
+        _delta5_row(
+            home_team="Sittard",
+            away_team="Twente",
+            team="away",
+            value=9.0,
+        )
+    )
+    assert "Sittard vs <b>Twente</b> · 45′" in text
+    assert "<b>Δ5′</b> (5-minute pressure): 9.0 / 12.0 for <b>Twente</b>" in text
+    assert "· Twente average 0.3 goals per meeting vs Sittard 1.3, last 8." in text
+    assert "· 2W-1D-5L for Twente." in text
+    assert "for Sittard" not in text
+    assert "for Patriotas" not in text
 
 
 def test_photo_fallback_includes_score():
@@ -129,7 +147,7 @@ def test_html_escapes_team_names():
     )
     assert "A &lt;B&gt; &amp; C" in text
     assert "D &quot;E&quot;" in text
-    assert "<b>K</b> (K-Score): 55 / 100" in text
+    assert "<b>K</b> (K-Score): 55 / 100 for <b>A &lt;B&gt; &amp; C</b>" in text
     assert "<b>A &lt;B&gt; &amp; C</b> vs D &quot;E&quot; · 1′" in text
 
 
@@ -146,7 +164,7 @@ def test_omega_uses_degrees_over_ceiling():
             "payload": {"theta": 22.0, "k_scale": 0.5, "league": "Test"},
         }
     )
-    assert "<b>Ω</b> (Omega): 22°" in text
+    assert "<b>Ω</b> (Omega): 22° for <b>Home</b>" in text
     assert "/ 40" not in text
     assert "<b>Home</b> vs Away · 20′" in text
 
@@ -171,7 +189,7 @@ def test_match_totals_for_other_strategies():
             },
         }
     )
-    assert "<b>UrG</b> (Unrealised goals): 1.4" in text
+    assert "<b>UrG</b> (Unrealised goals): 1.4 for <b>Morocco</b>" in text
     assert "/ 3" not in text
     assert "Lesotho vs <b>Morocco</b> · 64′" in text
     assert "Last 5 mins" not in text
