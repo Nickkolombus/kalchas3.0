@@ -110,6 +110,39 @@ class TestPresets:
         weights = WeightSet.from_preset("npei", "Accuracy-biased")
         assert weights.get("npei", "w2_shot_accuracy") == 0.55
 
+    def test_pressure_index_defaults_are_the_doubled_scale(self) -> None:
+        weights = WeightSet.defaults()
+        assert weights.get("pressure_index", "sot_points") == 26.0
+        assert weights.get("pressure_index", "sofft_points") == 16.0
+        assert weights.get("pressure_index", "corner_points") == 10.0
+        assert weights.get("pressure_index", "da_points") == 4.0
+
+    def test_stale_pressure_index_factory_points_are_dropped(self) -> None:
+        weights = WeightSet.from_overrides(
+            {
+                "pressure_index": {
+                    "sot_points": 13.0,
+                    "sofft_points": 8.0,
+                    "corner_points": 5.0,
+                    "da_points": 2.0,
+                    "time_mult_0_30": 0.85,
+                }
+            }
+        )
+        assert weights.get("pressure_index", "sot_points") == 26.0
+        assert weights.get("pressure_index", "sofft_points") == 16.0
+        assert weights.get("pressure_index", "corner_points") == 10.0
+        assert weights.get("pressure_index", "da_points") == 4.0
+        assert weights.get("pressure_index", "time_mult_0_30") == 0.85
+
+    def test_custom_pressure_index_points_are_kept(self) -> None:
+        weights = WeightSet.from_overrides(
+            {"pressure_index": {"sot_points": 20.0, "da_points": 3.0}}
+        )
+        assert weights.get("pressure_index", "sot_points") == 20.0
+        assert weights.get("pressure_index", "da_points") == 3.0
+        assert weights.get("pressure_index", "sofft_points") == 16.0
+
     def test_omega_presets_cover_the_operator_named_sets(self) -> None:
         names = set(BUILTIN_PRESETS["omega"])
         assert names == {

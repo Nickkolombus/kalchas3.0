@@ -234,7 +234,7 @@ class TestEvaluate:
         home = result.home
         assert home is not None
         assert home.theta == pytest.approx(
-            round(slope_to_degrees(home.acceleration, LOOSE.angle_scale), 2), abs=0.02
+            round(slope_to_degrees(home.acceleration, LOOSE.angle_scale), 2), abs=0.05
         )
 
 

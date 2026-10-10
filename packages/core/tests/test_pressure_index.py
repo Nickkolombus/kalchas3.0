@@ -12,6 +12,8 @@ within 1e-9 on both teams.
 
 from __future__ import annotations
 
+import math
+
 import pytest
 from conftest import timeline_from
 from kalchas_core.match import MatchTimeline, Side, TeamDeltas
@@ -77,6 +79,21 @@ class TestRawPressure:
         one = raw_pressure(deltas(shots=1, shots_on_target=1), DEFAULTS)
         four = raw_pressure(deltas(shots=4, shots_on_target=4), DEFAULTS)
         assert four == pytest.approx(2 * one)
+
+    def test_a_busy_first_half_window_lands_near_seventy(self) -> None:
+        """Ferroviaria-style 2 SOT / 1 SOFF / 2 corners / 8 DA at 28', 0-0."""
+        raw = raw_pressure(
+            deltas(shots=3, shots_on_target=2, corners=2, dangerous_attacks=8),
+            DEFAULTS,
+        )
+        expected = (
+            math.sqrt(2) * 26.0
+            + math.sqrt(1) * 16.0
+            + math.sqrt(2) * 10.0
+            + math.sqrt(8) * 4.0
+        )
+        assert raw == pytest.approx(expected)
+        assert raw * time_multiplier(28, DEFAULTS) == pytest.approx(70.4, abs=0.2)
 
     def test_shots_off_target_are_derived_from_the_shot_totals(self) -> None:
         assert raw_pressure(deltas(shots=5, shots_on_target=2), DEFAULTS) == pytest.approx(

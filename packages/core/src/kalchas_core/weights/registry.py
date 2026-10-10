@@ -266,30 +266,30 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
             WeightSpec(
                 "sot_points",
                 "Shot on target points",
-                13.0,
+                26.0,
                 1.0,
-                30.0,
+                40.0,
                 1.0,
                 "Points per sqrt(shot-on-target Δ) — largest contributor.",
             ),
             WeightSpec(
                 "sofft_points",
                 "Shot off target points",
-                8.0,
+                16.0,
                 0.0,
-                20.0,
+                30.0,
                 1.0,
                 "Points per sqrt(shot-off-target Δ).",
             ),
             WeightSpec(
-                "corner_points", "Corner points", 5.0, 0.0, 15.0, 1.0, "Points per sqrt(corner Δ)."
+                "corner_points", "Corner points", 10.0, 0.0, 20.0, 1.0, "Points per sqrt(corner Δ)."
             ),
             WeightSpec(
                 "da_points",
                 "Dangerous attack points",
-                2.0,
+                4.0,
                 0.0,
-                10.0,
+                12.0,
                 0.5,
                 "Points per sqrt(dangerous-attack Δ) — the noisy input, so low weight.",
             ),
@@ -810,16 +810,16 @@ BUILTIN_PRESETS: Mapping[str, Mapping[str, Mapping[str, float]]] = MappingProxyT
         "pressure_index": {
             "Balanced (default)": {},
             "Shots emphasized": {
-                "sot_points": 16.0,
-                "sofft_points": 10.0,
-                "corner_points": 4.0,
-                "da_points": 1.5,
+                "sot_points": 32.0,
+                "sofft_points": 20.0,
+                "corner_points": 8.0,
+                "da_points": 3.0,
             },
             "DA/corners emphasized": {
-                "sot_points": 11.0,
-                "sofft_points": 7.0,
-                "corner_points": 7.0,
-                "da_points": 3.5,
+                "sot_points": 22.0,
+                "sofft_points": 14.0,
+                "corner_points": 14.0,
+                "da_points": 7.0,
             },
         },
         "delta_goal": {

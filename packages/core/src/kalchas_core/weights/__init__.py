@@ -61,6 +61,45 @@ class UnknownCoefficientError(KeyError):
     """Raised when asking for a coefficient that is not in the registry."""
 
 
+# Pre-scale Pressure Index points (sqrt · 13/8/5/2). Drop so the doubled
+# defaults (26/16/10/4) apply unless admin saved a different value.
+_STALE_PRESSURE_POINTS: Mapping[str, float] = MappingProxyType(
+    {
+        "sot_points": 13.0,
+        "sofft_points": 8.0,
+        "corner_points": 5.0,
+        "da_points": 2.0,
+    }
+)
+
+
+def _drop_stale_pressure_points(
+    overrides: Mapping[str, Mapping[str, float]],
+) -> Mapping[str, Mapping[str, float]]:
+    """Ignore factory Pressure Index points saved before the IPT-scale bump."""
+    pressure = overrides.get("pressure_index")
+    if not isinstance(pressure, Mapping):
+        return overrides
+    dropped: dict[str, float] = {}
+    for key, value in pressure.items():
+        old = _STALE_PRESSURE_POINTS.get(key)
+        if old is not None:
+            try:
+                if abs(float(value) - old) <= 1e-6:
+                    continue
+            except (TypeError, ValueError):
+                pass
+        dropped[key] = value
+    if dropped == dict(pressure):
+        return overrides
+    cleaned = dict(overrides)
+    if dropped:
+        cleaned["pressure_index"] = dropped
+    else:
+        cleaned.pop("pressure_index", None)
+    return cleaned
+
+
 def _drop_stale_omega_scale(
     overrides: Mapping[str, Mapping[str, float]],
 ) -> Mapping[str, Mapping[str, float]]:
@@ -99,6 +138,7 @@ def _freeze(overrides: Mapping[str, Mapping[str, float]]) -> Mapping[str, Mappin
     Out-of-range values are clamped to the registered bounds.
     """
     overrides = _drop_stale_omega_scale(overrides)
+    overrides = _drop_stale_pressure_points(overrides)
     frozen: dict[str, Mapping[str, float]] = {}
     for strategy, values in overrides.items():
         if strategy not in REGISTRY or not isinstance(values, Mapping):
