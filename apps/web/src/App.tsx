@@ -6,7 +6,14 @@ import {
   useState,
   type MouseEvent,
 } from "react";
-import { HoverLedger, HoverTip, hoverBarPct, hoverLead, type HoverScale } from "./HoverTip";
+import {
+  HoverLedger,
+  HoverTip,
+  hoverBarPct,
+  hoverLead,
+  phiInk,
+  type HoverScale,
+} from "./HoverTip";
 import { MatchOverlay } from "./MatchPanel";
 import kalchasMark from "./assets/kalchas-mark.png";
 
@@ -815,7 +822,11 @@ function StratCell({
   const home = block?.teams?.home;
   const away = block?.teams?.away;
   const extras = { suffix: col.suffix, signed: col.signed };
-  const lead = hoverLead(home, away);
+  const fires = col.key !== "npei";
+  const lead = hoverLead(
+    fires ? home : { value: home?.value },
+    fires ? away : { value: away?.value },
+  );
   return (
     <td className={`col-strat col-tone-${col.tone}`}>
       <HoverTip
@@ -836,13 +847,17 @@ function StratCell({
         }
       >
         <div className="band">
-          <div className={`band-line team-row${home?.triggered ? " trig" : ""}`}>
+          <div className={`band-line team-row${fires && home?.triggered ? " trig" : ""}`}>
             <span className="tag">H</span>
-            <span className="val">{fmtStrat(home?.value, col.digits, extras)}</span>
+            <span className="val" style={{ color: fires ? undefined : phiInk(home?.value) }}>
+              {fmtStrat(home?.value, col.digits, extras)}
+            </span>
           </div>
-          <div className={`band-line team-row${away?.triggered ? " trig" : ""}`}>
+          <div className={`band-line team-row${fires && away?.triggered ? " trig" : ""}`}>
             <span className="tag">A</span>
-            <span className="val">{fmtStrat(away?.value, col.digits, extras)}</span>
+            <span className="val" style={{ color: fires ? undefined : phiInk(away?.value) }}>
+              {fmtStrat(away?.value, col.digits, extras)}
+            </span>
           </div>
         </div>
       </HoverTip>

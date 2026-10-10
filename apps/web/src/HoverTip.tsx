@@ -27,6 +27,19 @@ export function hoverLead(
   return { home: hv > av, away: av > hv };
 }
 
+const PHI_INK_FULL = [242, 235, 224] as const;
+const PHI_INK_FLOOR = [138, 132, 122] as const;
+
+export function phiInk(value: number | undefined | null): string | undefined {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return undefined;
+  const t = Math.max(0, Math.min(50, n)) / 50;
+  const rgb = PHI_INK_FULL.map((hi, i) =>
+    Math.round(PHI_INK_FLOOR[i] + (hi - PHI_INK_FLOOR[i]) * t),
+  );
+  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+}
+
 export function hoverBarPct(
   value: number | undefined | null,
   scale?: HoverScale,

@@ -4,6 +4,7 @@ import {
   HoverTip,
   hoverBarPct,
   hoverLead,
+  phiInk,
   type HoverScale,
 } from "./HoverTip";
 
@@ -363,6 +364,8 @@ function DualBar({
   awayName,
   tone,
   scale,
+  inkHome,
+  inkAway,
 }: {
   label: string;
   home: number;
@@ -377,6 +380,8 @@ function DualBar({
   awayName?: string;
   tone?: string;
   scale?: HoverScale;
+  inkHome?: string;
+  inkAway?: string;
 }) {
   const { homePct, awayPct } = dualBarFillPcts(home, away);
   const extras = { suffix, signed };
@@ -417,7 +422,10 @@ function DualBar({
     <div className="stat-bar">
       <div className="stat-bar-label">{labelNode}</div>
       <div className="stat-bar-row">
-        <span className={`stat-bar-val home${homeTriggered ? " trig" : ""}`}>
+        <span
+          className={`stat-bar-val home${homeTriggered ? " trig" : ""}`}
+          style={inkHome ? { color: inkHome } : undefined}
+        >
           {fmtSignal(home, digits, extras)}
         </span>
         <div className="stat-bar-track" aria-hidden>
@@ -428,7 +436,10 @@ function DualBar({
             <div className="stat-bar-fill away" style={{ width: `${awayPct}%` }} />
           </div>
         </div>
-        <span className={`stat-bar-val away${awayTriggered ? " trig" : ""}`}>
+        <span
+          className={`stat-bar-val away${awayTriggered ? " trig" : ""}`}
+          style={inkAway ? { color: inkAway } : undefined}
+        >
           {fmtSignal(away, digits, extras)}
         </span>
       </div>
@@ -1663,8 +1674,14 @@ export function MatchOverlay({
                       home={Number(block?.teams?.home?.value || 0)}
                       away={Number(block?.teams?.away?.value || 0)}
                       digits={row.digits}
-                      homeTriggered={Boolean(block?.teams?.home?.triggered)}
-                      awayTriggered={Boolean(block?.teams?.away?.triggered)}
+                      homeTriggered={
+                        row.key !== "npei" && Boolean(block?.teams?.home?.triggered)
+                      }
+                      awayTriggered={
+                        row.key !== "npei" && Boolean(block?.teams?.away?.triggered)
+                      }
+                      inkHome={row.key === "npei" ? phiInk(block?.teams?.home?.value) : undefined}
+                      inkAway={row.key === "npei" ? phiInk(block?.teams?.away?.value) : undefined}
                       tip={row.tip}
                       suffix={row.suffix}
                       signed={row.signed}
