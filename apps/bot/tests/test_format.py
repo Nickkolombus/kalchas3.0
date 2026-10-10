@@ -26,7 +26,14 @@ def _delta5_row(**overrides):
                 "corners": {"home": 2, "away": 0},
                 "possession": {"home": 58, "away": 42},
             },
-            "h2h": {"sample": 8, "home_avg": 1.3, "away_avg": 0.3},
+            "h2h": {
+                "sample": 8,
+                "home_avg": 1.3,
+                "away_avg": 0.3,
+                "home_wins": 5,
+                "draws": 1,
+                "away_wins": 2,
+            },
         },
     }
     row.update(overrides)
@@ -45,7 +52,10 @@ def test_delta_5min_caption():
     assert "DA: <b>6</b> - 1" in text
     assert "Corners: <b>2</b> - 0" in text
     assert "Possession: <b>58%</b> - 42%" in text
-    assert "Patriotas average 1.3 goals per meeting vs Boca Juniors 0.3, last 8." in text
+    assert (
+        "· Patriotas average 1.3 goals per meeting vs Boca Juniors 0.3, last 8." in text
+    )
+    assert "· 5W-1D-2L for Patriotas." in text
     assert "KO " not in text
     assert "TSLG" not in text
     assert "1-2" not in text
@@ -96,6 +106,14 @@ def test_skips_h2h_when_missing():
     assert "goals per meeting" not in text
 
 
+def test_h2h_goals_line_without_record_if_wins_missing():
+    row = _delta5_row()
+    row["payload"]["h2h"] = {"sample": 8, "home_avg": 1.3, "away_avg": 0.3}
+    text = format_alert_html(row)
+    assert "· Patriotas average 1.3 goals per meeting vs Boca Juniors 0.3, last 8." in text
+    assert "W-" not in text
+
+
 def test_html_escapes_team_names():
     text = format_alert_html(
         {
@@ -128,7 +146,8 @@ def test_omega_uses_degrees_over_ceiling():
             "payload": {"theta": 22.0, "k_scale": 0.5, "league": "Test"},
         }
     )
-    assert "<b>Ω</b> (Omega): 22° / 40°" in text
+    assert "<b>Ω</b> (Omega): 22°" in text
+    assert "/ 40" not in text
     assert "<b>Home</b> vs Away · 20′" in text
 
 
@@ -152,7 +171,8 @@ def test_match_totals_for_other_strategies():
             },
         }
     )
-    assert "<b>UrG</b> (Unrealised goals): 1.4 / 3.0" in text
+    assert "<b>UrG</b> (Unrealised goals): 1.4" in text
+    assert "/ 3" not in text
     assert "Lesotho vs <b>Morocco</b> · 64′" in text
     assert "Last 5 mins" not in text
     assert "SOT: <b>2</b> - 1" in text

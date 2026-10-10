@@ -25,14 +25,14 @@ ALERT_NAMES: dict[str, str] = {
     "kscore": "K-Score",
 }
 
-# Same ceilings as the board hover scale max.
-ALERT_CEILING: dict[str, tuple[float, int, str]] = {
-    "rule_of_three": (3.0, 1, ""),
+# Ceiling is a display cap (x / cap). None means show the number only.
+ALERT_CEILING: dict[str, tuple[float | None, int, str]] = {
+    "rule_of_three": (None, 1, ""),
     "delta_5min": (12.0, 1, ""),
     "pressure_index": (100.0, 0, ""),
     "delta_goal": (10.0, 1, ""),
     "npei": (100.0, 0, ""),
-    "omega": (40.0, 0, "°"),
+    "omega": (None, 0, "°"),
     "kscore": (100.0, 0, ""),
 }
 
@@ -58,10 +58,10 @@ def format_alert_html(row: Mapping[str, Any], *, with_score: bool = False) -> st
         lines.append("")
         lines.extend(stats)
 
-    h2h = _h2h_line(payload, home, away)
+    h2h = _h2h_lines(payload, home, away)
     if h2h:
         lines.append("")
-        lines.append(h2h)
+        lines.extend(h2h)
     return "\n".join(lines)
 
 
@@ -158,22 +158,30 @@ def _bold_bigger(home: int, away: int, *, percent: bool) -> str:
     return f"{home_s} - {away_s}"
 
 
-def _h2h_line(payload: Mapping[str, Any], home: str, away: str) -> str:
+def _h2h_lines(payload: Mapping[str, Any], home: str, away: str) -> list[str]:
     raw = payload.get("h2h")
     if not isinstance(raw, Mapping):
-        return ""
+        return []
     try:
         sample = int(raw.get("sample") or 0)
         home_avg = float(raw.get("home_avg"))
         away_avg = float(raw.get("away_avg"))
     except (TypeError, ValueError):
-        return ""
+        return []
     if sample < DEFAULT_MIN_SAMPLE:
-        return ""
-    return (
-        f"{home} average {home_avg:.1f} goals per meeting vs {away} {away_avg:.1f}, "
+        return []
+    lines = [
+        f"· {home} average {home_avg:.1f} goals per meeting vs {away} {away_avg:.1f}, "
         f"last {sample}."
-    )
+    ]
+    try:
+        wins = int(raw.get("home_wins"))
+        draws = int(raw.get("draws"))
+        losses = int(raw.get("away_wins"))
+    except (TypeError, ValueError):
+        return lines
+    lines.append(f"· {wins}W-{draws}D-{losses}L for {home}.")
+    return lines
 
 
 def _payload(raw: object) -> Mapping[str, Any]:
@@ -246,8 +254,6 @@ def _value_over_ceiling(
         numeric = alert_theta_degrees(numeric, k_scale, theta=theta)
         digits = 0
         suffix = "°"
-        if ceiling is None:
-            ceiling = 40.0
     if digits <= 0:
         shown = f"{numeric:.0f}{suffix}"
         cap = f"{ceiling:.0f}{suffix}" if ceiling is not None else ""

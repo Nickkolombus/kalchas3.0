@@ -317,10 +317,14 @@ class Scanner:
         if not isinstance(cached, dict):
             return None
         try:
-            sample = int((cached.get("summary") or {}).get("sample") or 0)
+            summary = cached.get("summary") or {}
+            sample = int(summary.get("sample") or 0)
             patterns = cached.get("patterns") or {}
             home_goals = float(patterns.get("home_goals"))
             away_goals = float(patterns.get("away_goals"))
+            home_wins = int(summary.get("home_wins") or 0)
+            draws = int(summary.get("draws") or 0)
+            away_wins = int(summary.get("away_wins") or 0)
         except (TypeError, ValueError):
             return None
         if sample < 5:
@@ -329,6 +333,9 @@ class Scanner:
             "sample": sample,
             "home_avg": round(home_goals / sample, 1),
             "away_avg": round(away_goals / sample, 1),
+            "home_wins": home_wins,
+            "draws": draws,
+            "away_wins": away_wins,
         }
 
     def _claim_stats_http(self) -> bool:

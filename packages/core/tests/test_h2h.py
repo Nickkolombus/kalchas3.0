@@ -67,6 +67,9 @@ class TestComputeH2H:
         assert averages["sample"] == 5
         assert averages["home_avg"] == round(stats.team1.goals_total / 5, 1)
         assert averages["away_avg"] == round(stats.team2.goals_total / 5, 1)
+        assert averages["home_wins"] == 2
+        assert averages["draws"] == 2
+        assert averages["away_wins"] == 1
 
     def test_insufficient_sample_still_computes_counts(self) -> None:
         fixtures = [meeting(1, 2, 1, 0), meeting(1, 2, 2, 2)]

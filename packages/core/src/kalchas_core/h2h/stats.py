@@ -142,6 +142,9 @@ def h2h_meeting_averages(
         "sample": n,
         "home_avg": round(stats.team1.goals_total / n, 1),
         "away_avg": round(stats.team2.goals_total / n, 1),
+        "home_wins": int(stats.team1.wins),
+        "draws": int(stats.draws),
+        "away_wins": int(stats.team2.wins),
     }
 
 
