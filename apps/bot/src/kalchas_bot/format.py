@@ -111,7 +111,7 @@ def _stat_block(key: str, payload: Mapping[str, Any], minute: object) -> list[st
         if end is None:
             end = _minute_int(minute)
         if start is not None and end is not None:
-            heading = f"<b>Last 5 mins ({start}-{end}′):</b>"
+            heading = f"<b>Last 5 mins ({start}′-{end}′):</b>"
         else:
             heading = "<b>Last 5 mins:</b>"
         rows = _stat_rows(window)

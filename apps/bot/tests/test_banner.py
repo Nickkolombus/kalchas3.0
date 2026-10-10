@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from kalchas_bot.banner import render_alert_photo
+from io import BytesIO
+
+from PIL import Image
+
+from kalchas_bot.banner import HEIGHT, WIDTH, render_alert_photo
 
 
 def test_banner_renders_without_crests():
@@ -18,3 +22,6 @@ def test_banner_renders_without_crests():
     assert buf is not None
     assert buf.getvalue()[:2] == b"\xff\xd8"
     assert buf.name == "alert.jpg"
+    img = Image.open(BytesIO(buf.getvalue()))
+    assert img.size == (WIDTH, HEIGHT)
+    assert img.size == (520, 168)

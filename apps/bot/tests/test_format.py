@@ -39,7 +39,7 @@ def test_delta_5min_caption():
     assert "<b>Patriotas</b> vs Boca Juniors · 45′" in text
     assert "[Patriotas]" not in text
     assert "<i>Primera B</i>" in text
-    assert "<b>Last 5 mins (40-45′):</b>" in text
+    assert "<b>Last 5 mins (40′-45′):</b>" in text
     assert "SOT: <b>2</b> - 0" in text
     assert "SOFFT: <b>1</b> - 0" in text
     assert "DA: <b>6</b> - 1" in text

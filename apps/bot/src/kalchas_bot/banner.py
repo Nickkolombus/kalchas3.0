@@ -13,12 +13,14 @@ from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger("kalchas.bot.banner")
 
-WIDTH = 960
-HEIGHT = 420
+WIDTH = 520
+HEIGHT = 168
 BG = (11, 28, 51)
 CREAM = (243, 234, 210)
 MUTED = (139, 154, 171)
-CREST = 112
+CREST = 80
+PAD_X = 24
+PAD_Y = 10
 _FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -52,43 +54,56 @@ def render_alert_photo(row: Mapping[str, Any]) -> BytesIO | None:
 
         img = Image.new("RGB", (WIDTH, HEIGHT), BG)
         draw = ImageDraw.Draw(img)
-        title_font = _font(22)
-        score_font = _font(72)
-        name_font = _font(26)
-        clock_font = _font(22)
+        title_font = _font(16)
+        score_font = _font(48)
+        name_font = _font(20)
+        clock_font = _font(16)
 
+        y = PAD_Y
         if league:
             bbox = draw.textbbox((0, 0), league, font=title_font)
             draw.text(
-                ((WIDTH - (bbox[2] - bbox[0])) / 2, 28),
+                ((WIDTH - (bbox[2] - bbox[0])) / 2, y),
                 league,
                 font=title_font,
                 fill=MUTED,
             )
+            y += (bbox[3] - bbox[1]) + 10
 
         left = _crest(home_logo, home)
         right = _crest(away_logo, away)
-        img.paste(left, (110, 110), left)
-        img.paste(right, (WIDTH - 110 - CREST, 110), right)
-
         sb = draw.textbbox((0, 0), score, font=score_font)
+        score_w = sb[2] - sb[0]
+        mid = WIDTH / 2
+        left_x = PAD_X
+        right_x = WIDTH - PAD_X - CREST
+        img.paste(left, (left_x, y), left)
+        img.paste(right, (right_x, y), right)
+
+        clock_box = (
+            draw.textbbox((0, 0), clock, font=clock_font) if clock else (0, 0, 0, 0)
+        )
+        score_h = sb[3] - sb[1]
+        clock_h = (clock_box[3] - clock_box[1] + 8) if clock else 0
+        block_h = score_h + clock_h
+        score_y = y + max(0, (CREST - block_h) / 2) - sb[1]
         draw.text(
-            ((WIDTH - (sb[2] - sb[0])) / 2, 140),
+            (mid - score_w / 2, score_y),
             score,
             font=score_font,
             fill=CREAM,
         )
         if clock:
-            cb = draw.textbbox((0, 0), clock, font=clock_font)
             draw.text(
-                ((WIDTH - (cb[2] - cb[0])) / 2, 230),
+                (mid - (clock_box[2] - clock_box[0]) / 2, score_y + sb[3] + 6),
                 clock,
                 font=clock_font,
                 fill=MUTED,
             )
 
-        _centered(draw, home, 110 + CREST / 2, 250, name_font, CREAM)
-        _centered(draw, away, WIDTH - 110 - CREST / 2, 250, name_font, CREAM)
+        name_y = y + CREST + 8
+        _centered(draw, home, left_x + CREST / 2, name_y, name_font, CREAM)
+        _centered(draw, away, right_x + CREST / 2, name_y, name_font, CREAM)
 
         buf = BytesIO()
         img.save(buf, format="JPEG", quality=88)
