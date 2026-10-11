@@ -1255,38 +1255,18 @@ function minutesAgo(iso?: string | null): number | null {
   return Math.max(0, Math.floor((Date.now() - at.getTime()) / 60_000));
 }
 
-function signalClock(
-  minute: number | null | undefined,
-  status?: string | null,
-): string {
-  const phase = (status || "").trim().toUpperCase();
-  if (phase === "HT" || phase === "BT") {
-    return phase;
-  }
-  if (phase === "PEN" || phase === "P" || phase === "PENALTIES") {
-    return "PEN";
-  }
-  if (minute != null && Number.isFinite(minute) && minute > 0) {
-    if (phase === "1H" && minute > 45) return `45'+${minute - 45}'`;
-    if (phase === "2H" && minute > 90) return `90'+${minute - 90}'`;
-    return `${minute}′`;
-  }
-  if (phase) {
-    return phase;
-  }
-  return "";
-}
-
 function signalProgress(alert: RecentAlert): string {
   const fireScore = alert.score || "–";
   const fireMin = `${alert.minute}′`;
   const liveScore = alert.current_score || "";
-  const liveMin = signalClock(alert.current_minute, alert.current_status);
   if (liveScore && liveScore !== fireScore) {
-    return `${fireScore} (${fireMin}) → ${liveScore} (${liveMin || fireMin})`;
-  }
-  if (liveMin) {
-    return `${fireScore} (${liveMin})`;
+    const atGoal =
+      alert.goal_minute != null && Number.isFinite(alert.goal_minute)
+        ? `${alert.goal_minute}′`
+        : "";
+    return atGoal
+      ? `${fireScore} (${fireMin}) → ${liveScore} (${atGoal})`
+      : `${fireScore} (${fireMin}) → ${liveScore}`;
   }
   return `${fireScore} (${fireMin})`;
 }
@@ -1448,8 +1428,7 @@ function SignalRow({
   const progress = signalProgress({
     ...oldest,
     current_score: primary.current_score || oldest.current_score,
-    current_minute: primary.current_minute ?? oldest.current_minute,
-    current_status: primary.current_status || oldest.current_status,
+    goal_minute: headline.goal_minute ?? primary.goal_minute ?? oldest.goal_minute,
   });
   const liveKo = kickoffHomeAway(liveOdds);
   const homeKo = primary.kickoff_home ?? liveKo.home;
