@@ -1,5 +1,33 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+type SidePair = { home?: number | null; away?: number | null };
+
+type ResultFactors = {
+  status?: string | null;
+  country?: string | null;
+  sweet_spot?: boolean | null;
+  half?: string | null;
+  tslg?: string | null;
+  tslg_home?: number | null;
+  tslg_away?: number | null;
+  odds_home?: number | null;
+  odds_draw?: number | null;
+  odds_away?: number | null;
+  trigger_odds?: number | null;
+  sot?: SidePair;
+  da?: SidePair;
+  urg?: SidePair;
+  d5?: SidePair;
+  d10?: SidePair;
+  lbar?: SidePair;
+  phi?: SidePair;
+  omega?: SidePair;
+  k?: SidePair;
+  k_match?: number | null;
+  also_firing?: string[];
+  has_board?: boolean;
+};
+
 export type ResultItem = {
   id: number;
   match_id: string;
@@ -19,6 +47,12 @@ export type ResultItem = {
   settle_score?: string | null;
   settle_minute?: number | null;
   live: boolean;
+  factors?: ResultFactors;
+};
+
+type PatternBlock = {
+  title: string;
+  rows: { label: string; n: number; confirmed: number; hit_rate: number }[];
 };
 
 type ResultsPayload = {
@@ -29,6 +63,7 @@ type ResultsPayload = {
     monitoring: number;
     hit_rate: number | null;
   };
+  patterns?: PatternBlock[];
   items: ResultItem[];
 };
 
@@ -61,6 +96,25 @@ function pct(rate: number | null): string {
   return `${Math.round(rate * 100)}%`;
 }
 
+function fmtNum(value: number | null | undefined, digits = 0): string {
+  if (value == null || Number.isNaN(Number(value))) return "–";
+  const n = Number(value);
+  return Number.isInteger(n) && digits === 0 ? String(n) : n.toFixed(digits);
+}
+
+function sideVal(pair: SidePair | undefined, team: string | null, digits = 0): string {
+  if (!pair) return "–";
+  return fmtNum(team === "away" ? pair.away : pair.home, digits);
+}
+
+function triggerOdds(row: ResultItem): string {
+  const factors = row.factors;
+  if (!factors) return "–";
+  if (factors.trigger_odds != null) return fmtNum(factors.trigger_odds, 2);
+  if (row.team === "away") return fmtNum(factors.odds_away, 2);
+  return fmtNum(factors.odds_home, 2);
+}
+
 export function AdminResults({
   strategies,
   selected,
@@ -80,6 +134,7 @@ export function AdminResults({
   const [body, setBody] = useState<ResultsPayload | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [csvBusy, setCsvBusy] = useState(false);
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -112,13 +167,34 @@ export function AdminResults({
 
   const summary = body?.summary;
 
+  async function downloadCsv() {
+    setCsvBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/results.csv?${query}`, { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "kalchas-results.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "csv failed");
+    } finally {
+      setCsvBusy(false);
+    }
+  }
+
   return (
     <>
       <header>
         <h1>Results</h1>
         <p>
-          Settled Recent signals. Changing confirmation rules does not rewrite
-          these rows. History starts when the scanner first settles an alert.
+          Fire-time board plus settle result. Changing confirmation rules does
+          not rewrite these rows. Full K / Δ5 / Δ10 / Ω snapshots start on
+          alerts after this deploy; older rows still have stats, odds, and TSLG.
         </p>
       </header>
       <nav className="admin-tabs" role="tablist" aria-label="Strategy filter">
@@ -193,8 +269,41 @@ export function AdminResults({
         <span>
           hit rate <strong>{pct(summary?.hit_rate ?? null)}</strong>
         </span>
+        <button type="button" disabled={csvBusy || busy} onClick={() => void downloadCsv()}>
+          {csvBusy ? "CSV…" : "Download CSV"}
+        </button>
       </div>
       {error ? <p className="admin-status">{error}</p> : null}
+      {(body?.patterns || []).length ? (
+        <div className="admin-pattern-grid">
+          {(body?.patterns || []).map((block) => (
+            <article key={block.title} className="admin-pattern-card">
+              <h2>{block.title}</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Slice</th>
+                    <th>n</th>
+                    <th>Hit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {block.rows.map((row) => (
+                    <tr key={row.label}>
+                      <td>{row.label}</td>
+                      <td>{row.n}</td>
+                      <td>{pct(row.hit_rate)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </article>
+          ))}
+        </div>
+      ) : null}
+      <p className="admin-hint">
+        Board columns are the trigger side at fire. CSV has both sides plus DA / SOT / possession.
+      </p>
       <div className="admin-results-table-wrap">
         <table className="admin-results-table">
           <thead>
@@ -203,47 +312,77 @@ export function AdminResults({
               <th>Match</th>
               <th>Strategy</th>
               <th>Fire</th>
+              <th>K</th>
+              <th>Δ5</th>
+              <th>Δ10</th>
+              <th>Ω</th>
+              <th>ΦI</th>
+              <th>TSLG</th>
+              <th>Odds</th>
               <th>Settle</th>
               <th>Result</th>
             </tr>
           </thead>
           <tbody>
-            {(body?.items || []).map((row) => (
-              <tr key={row.id}>
-                <td>{fmtTime(row.created_at)}</td>
-                <td>
-                  {row.live ? (
-                    <a href={`/?match=${encodeURIComponent(row.match_id)}`}>
-                      {row.home_team} vs {row.away_team}
-                    </a>
-                  ) : (
-                    <>
-                      {row.home_team} vs {row.away_team}
-                    </>
-                  )}
-                  {row.league ? <small>{row.league}</small> : null}
-                </td>
-                <td>
-                  {strategies.find((item) => item.key === row.strategy)?.short || row.strategy}
-                  {row.team ? ` · ${row.team}` : ""}
-                </td>
-                <td>
-                  {row.score || "–"} {row.minute}′
-                </td>
-                <td>
-                  {row.settle_score
-                    ? `${row.settle_score}${
-                        row.settle_minute != null ? ` ${row.settle_minute}′` : ""
-                      }`
-                    : "–"}
-                </td>
-                <td>
-                  <span className={`admin-result-pill is-${row.state.toLowerCase()}`}>
-                    {row.state}
-                  </span>
-                </td>
-              </tr>
-            ))}
+            {(body?.items || []).map((row) => {
+              const factors = row.factors;
+              return (
+                <tr key={row.id}>
+                  <td>{fmtTime(row.created_at)}</td>
+                  <td>
+                    {row.live ? (
+                      <a href={`/?match=${encodeURIComponent(row.match_id)}`}>
+                        {row.home_team} vs {row.away_team}
+                      </a>
+                    ) : (
+                      <>
+                        {row.home_team} vs {row.away_team}
+                      </>
+                    )}
+                    <small>
+                      {[row.league, factors?.country, factors?.half, factors?.sweet_spot ? "sweet" : null]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </small>
+                  </td>
+                  <td>
+                    {strategies.find((item) => item.key === row.strategy)?.short || row.strategy}
+                    {row.team ? ` · ${row.team}` : ""}
+                    {factors?.also_firing?.length ? (
+                      <small>
+                        +{" "}
+                        {factors.also_firing
+                          .map((key) => strategies.find((item) => item.key === key)?.short || key)
+                          .join(", ")}
+                      </small>
+                    ) : null}
+                  </td>
+                  <td>
+                    {row.score || "–"} {row.minute}′
+                    <small>{fmtNum(row.value, 1)}</small>
+                  </td>
+                  <td>{sideVal(factors?.k, row.team)}</td>
+                  <td>{sideVal(factors?.d5, row.team, 1)}</td>
+                  <td>{sideVal(factors?.d10, row.team)}</td>
+                  <td>{sideVal(factors?.omega, row.team)}</td>
+                  <td>{sideVal(factors?.phi, row.team)}</td>
+                  <td>{factors?.tslg || "–"}</td>
+                  <td>{triggerOdds(row)}</td>
+                  <td>
+                    {row.settle_score
+                      ? `${row.settle_score}${
+                          row.settle_minute != null ? ` ${row.settle_minute}′` : ""
+                        }`
+                      : "–"}
+                  </td>
+                  <td>
+                    <span className={`admin-result-pill is-${row.state.toLowerCase()}`}>
+                      {row.state}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         {!busy && (body?.items || []).length === 0 ? (

@@ -393,6 +393,63 @@
   color: var(--text);
 }
 
+.admin-results-summary button {
+  margin-left: auto;
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.28rem 0.7rem;
+  border-radius: 0.35rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.admin-pattern-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr));
+  gap: 0.7rem;
+  margin: 0 0 0.9rem;
+}
+
+.admin-pattern-card {
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  padding: 0.55rem 0.65rem 0.45rem;
+  background: var(--surface);
+}
+
+.admin-pattern-card h2 {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.admin-pattern-card table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.admin-pattern-card th,
+.admin-pattern-card td {
+  text-align: left;
+  padding: 0.12rem 0.2rem;
+}
+
+.admin-pattern-card th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.admin-pattern-card td:nth-child(2),
+.admin-pattern-card td:nth-child(3),
+.admin-pattern-card th:nth-child(2),
+.admin-pattern-card th:nth-child(3) {
+  text-align: right;
+}
+
 .admin-results-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);

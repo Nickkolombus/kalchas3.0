@@ -258,6 +258,10 @@ def test_alert_payload_includes_live_stats(monkeypatch) -> None:
     assert payload["odds"]["home"] == 2.1
     assert payload["odds"]["kickoff"]["away"] == 3.4
     assert sink.items[0]["sot"] == payload["sot"]
+    assert "omega" in payload["board"]
+    assert "kscore" in payload["board"]
+    assert "sweet_spot" in payload
+    assert payload["tslg_home"] is None or isinstance(payload["tslg_home"], int)
 
 
 def test_process_match_persists_lineup_before_min_minute_without_extra_http() -> None:

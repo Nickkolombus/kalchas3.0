@@ -70,7 +70,13 @@ def test_admin_results_returns_filtered_rows(monkeypatch) -> None:
                     "home_team": "Home",
                     "away_team": "Away",
                     "created_at": datetime(2026, 10, 1, 20, 0, tzinfo=UTC),
-                    "payload": {"league": "CONCACAF", "theta": 22},
+                    "payload": {
+                        "league": "CONCACAF",
+                        "theta": 22,
+                        "status_short": "1H",
+                        "tslg_home": 12,
+                        "sweet_spot": True,
+                    },
                     "state": "Confirmed",
                     "decision": "confirmed",
                     "detail": {
@@ -95,6 +101,12 @@ def test_admin_results_returns_filtered_rows(monkeypatch) -> None:
     assert body["items"][0]["state"] == "Confirmed"
     assert body["items"][0]["league"] == "CONCACAF"
     assert body["items"][0]["settle_score"] == "0-1"
+    assert body["items"][0]["factors"]["half"] == "1H"
+    assert body["patterns"][0]["title"] == "Clock"
+    csv = client.get("/api/admin/results.csv", params={"strategy": "omega"})
+    assert csv.status_code == 200
+    assert csv.headers["content-type"].startswith("text/csv")
+    assert csv.text.splitlines()[0].startswith("result,strategy,side,value")
 
 
 def test_save_preset_rejects_builtin_name(monkeypatch) -> None:

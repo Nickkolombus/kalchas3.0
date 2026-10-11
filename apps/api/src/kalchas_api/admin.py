@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
+from kalchas_core.alert_factors import CSV_COLUMNS, csv_row, factors_from_payload, pattern_summary
 from kalchas_core.alert_outcomes import DEFAULT_RULES
 from kalchas_core.conditions import condition_catalog, prepare_extra_conditions
 from kalchas_core.cooldown import (
@@ -566,6 +569,13 @@ def _result_item(row: dict[str, Any]) -> dict[str, Any]:
         "settle_score": detail.get("settle_score"),
         "settle_minute": detail.get("settle_minute"),
         "live": bool(row.get("live")),
+        "factors": factors_from_payload(
+            payload,
+            strategy=str(row["strategy_key"]),
+            team=str(row["team"]) if row.get("team") else None,
+            minute=int(row["minute"]),
+            score=str(row["score"]) if row.get("score") else None,
+        ),
     }
 
 
@@ -578,27 +588,35 @@ def admin_results(
     state: str | None = None,
     team: str | None = None,
     league: str | None = None,
-    limit: int = Query(default=100, ge=1, le=200),
+    limit: int = Query(default=100, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     require_admin(request)
-    from kalchas_db.alerts import list_alert_results_sync
-
     start, end = _parse_results_window(since, until)
     keys = [item for item in (strategy or []) if item]
-    dsn = _dsn()
     try:
-        rows, summary = list_alert_results_sync(
-            dsn,
+        display, summary = _load_results(
             since=start,
             until=end,
-            strategies=keys or None,
-            state=state or None,
-            team=team or None,
-            league=league or None,
+            strategies=keys,
+            state=state,
+            team=team,
+            league=league,
             limit=limit,
             offset=offset,
         )
+        pattern_src = display
+        if offset == 0 and limit < 2000:
+            pattern_src, _ = _load_results(
+                since=start,
+                until=end,
+                strategies=keys,
+                state=state,
+                team=team,
+                league=league,
+                limit=2000,
+                offset=0,
+            )
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"results unavailable: {exc}") from exc
     settled = int(summary["confirmed"]) + int(summary["expired"])
@@ -607,8 +625,74 @@ def admin_results(
         "since": start.isoformat(),
         "until": end.isoformat(),
         "summary": {**summary, "hit_rate": hit_rate},
-        "items": [_result_item(row) for row in rows],
+        "patterns": pattern_summary(pattern_src),
+        "items": display,
     }
+
+
+def _load_results(
+    *,
+    since: datetime,
+    until: datetime,
+    strategies: list[str],
+    state: str | None,
+    team: str | None,
+    league: str | None,
+    limit: int,
+    offset: int,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    from kalchas_db.alerts import list_alert_results_sync
+
+    rows, summary = list_alert_results_sync(
+        _dsn(),
+        since=since,
+        until=until,
+        strategies=strategies or None,
+        state=state or None,
+        team=team or None,
+        league=league or None,
+        limit=limit,
+        offset=offset,
+    )
+    return [_result_item(row) for row in rows], summary
+
+
+@router.get("/results.csv")
+def admin_results_csv(
+    request: Request,
+    since: str | None = None,
+    until: str | None = None,
+    strategy: list[str] | None = Query(default=None),
+    state: str | None = None,
+    team: str | None = None,
+    league: str | None = None,
+) -> Response:
+    require_admin(request)
+    start, end = _parse_results_window(since, until)
+    keys = [item for item in (strategy or []) if item]
+    try:
+        items, _summary = _load_results(
+            since=start,
+            until=end,
+            strategies=keys,
+            state=state,
+            team=team,
+            league=league,
+            limit=2000,
+            offset=0,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"results unavailable: {exc}") from exc
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=list(CSV_COLUMNS), extrasaction="ignore")
+    writer.writeheader()
+    for item in items:
+        writer.writerow(csv_row(item))
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=kalchas-results.csv"},
+    )
 
 
 @router.get("/various")

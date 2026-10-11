@@ -7,6 +7,7 @@ import os
 import time
 from dataclasses import dataclass, field, replace
 
+from kalchas_core.alert_factors import compact_board, sweet_spot_flag
 from kalchas_core.alert_outcomes import AlertOutcomeEvaluator, evaluator_from_rule_rows
 from kalchas_core.cooldown import (
     DEFAULT_BASE_COOLDOWN,
@@ -24,11 +25,13 @@ from kalchas_core.events import (
 from kalchas_core.h2h import DEFAULT_LAST, compute_h2h_stats, h2h_meeting_averages
 from kalchas_core.runner import (
     DEFAULT_THRESHOLDS,
+    board_snapshot,
     evaluate_match,
     home_away_odds,
     live_home_away_odds,
 )
 from kalchas_core.strategies.delta_5min import last_5min_block
+from kalchas_core.sweet_spot import SweetSpotWindows
 from kalchas_core.weights import WeightSet
 from kalchas_football import (
     FootballAPIClient,
@@ -114,6 +117,7 @@ class Scanner:
     persist: MatchPersist = field(default_factory=default_persist)
     thresholds: dict[int, float] = field(default_factory=lambda: dict(DEFAULT_THRESHOLDS))
     conditions: dict[int, list] = field(default_factory=dict)
+    sweet_spot: SweetSpotWindows = field(default_factory=SweetSpotWindows)
     _cycles: int = 0
     _tuning_at: float = 0.0
     _odds_by_match: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -534,7 +538,7 @@ class Scanner:
             red_cards=red,
             conditions=self.conditions,
         )
-        emitted: list[dict] = []
+        pending: list[tuple] = []
         for cand in candidates:
             team = cand.side.value if cand.side else None
             decision = self.cooldown.decide(
@@ -555,6 +559,30 @@ class Scanner:
                     decision.blocked_by,
                 )
                 continue
+            pending.append((cand, team, decision))
+        board = None
+        if pending:
+            board = compact_board(
+                board_snapshot(
+                    timeline,
+                    home_goals=match.home_score,
+                    away_goals=match.away_score,
+                    weights=self.weights,
+                    thresholds=self.thresholds,
+                    league_id=match.league_id,
+                    league_name=match.league_name or None,
+                    country_name=match.country_name or None,
+                    home_odds=home_odds,
+                    away_odds=away_odds,
+                    live_home_odds=live_home,
+                    live_away_odds=live_away,
+                    yellow_cards=yellow,
+                    red_cards=red,
+                    conditions=self.conditions,
+                )
+            )
+        emitted: list[dict] = []
+        for cand, team, decision in pending:
             detail = cand.detail or {}
             payload = {
                 "event": "alert",
@@ -568,7 +596,10 @@ class Scanner:
                 "team": team,
                 "value": cand.value,
                 "tslg": tslg.get("display"),
+                "tslg_home": tslg.get("home_minutes"),
+                "tslg_away": tslg.get("away_minutes"),
                 "league": match.league_name or None,
+                "country": match.country_name or None,
                 "sot": _side_counts(block, "shots_on_target"),
                 "sofft": _side_counts(block, "shots_off_target"),
                 "corners": _side_counts(block, "corners"),
@@ -578,6 +609,13 @@ class Scanner:
                 "yc": _tally_yellow(cards, match.home_team, match.away_team),
                 "rc": {"home": reds.get("home", 0), "away": reds.get("away", 0)},
                 "odds": odds_payload,
+                "board": board or {},
+                "sweet_spot": sweet_spot_flag(
+                    match.minute,
+                    status_short=match.status_short,
+                    minute_display=match.minute_display,
+                    windows=self.sweet_spot,
+                ),
             }
             if cand.strategy_key == "omega":
                 payload["theta"] = detail.get("theta")
@@ -636,9 +674,13 @@ class Scanner:
             self._tuning_at = now
             return
         try:
-            from kalchas_db.settings import KEY_BY_SLOT, load_runtime_bundle
+            from kalchas_db.settings import KEY_BY_SLOT, get_board_settings, load_runtime_bundle
 
             bundle = load_runtime_bundle(dsn)
+            try:
+                self.sweet_spot = SweetSpotWindows.from_mapping(get_board_settings(dsn))
+            except Exception:
+                logger.exception("failed loading sweet-spot windows")
             stored_w = bundle.get("weights") or {}
             if stored_w:
                 self.weights = WeightSet.from_overrides(stored_w)
