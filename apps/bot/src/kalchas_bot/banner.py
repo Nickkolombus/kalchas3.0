@@ -13,7 +13,7 @@ from io import BytesIO
 from typing import Any
 from urllib.request import Request, urlopen
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 logger = logging.getLogger("kalchas.bot.banner")
 
@@ -22,7 +22,7 @@ HEIGHT = 450
 BG = (11, 28, 51)
 CREAM = (243, 234, 210)
 MUTED = (139, 154, 171)
-CREST = 112
+CREST = 180  # 112 * 1.6; names stay the same size
 PAD_X = 52
 _FONT_REGULAR = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -62,7 +62,7 @@ def render_alert_photo(row: Mapping[str, Any]) -> BytesIO | None:
         img = Image.new("RGB", (WIDTH, HEIGHT), BG)
         draw = ImageDraw.Draw(img)
         title_font = _font(18, bold=False)
-        score_font = _font(64, bold=True)
+        score_font = _font(64, bold=False)
         name_font = _font(22, bold=False)
         clock_font = _font(20, bold=False)
 
@@ -72,7 +72,8 @@ def render_alert_photo(row: Mapping[str, Any]) -> BytesIO | None:
             league_h = (lb[3] - lb[1]) + 18
 
         name_h = 28
-        block_h = league_h + CREST + 14 + name_h
+        crest_gap = 16
+        block_h = league_h + CREST + crest_gap + name_h
         y = max(PAD_X // 2, int((HEIGHT - block_h) / 2))
 
         if league:
@@ -111,13 +112,13 @@ def render_alert_photo(row: Mapping[str, Any]) -> BytesIO | None:
                 fill=MUTED,
             )
 
-        name_y = y + CREST + 12
+        name_y = y + CREST + crest_gap
         name_max = int(WIDTH / 2 - PAD_X - 16)
         _fitted(draw, home, left_x + CREST / 2, name_y, name_font, CREAM, name_max)
         _fitted(draw, away, right_x + CREST / 2, name_y, name_font, CREAM, name_max)
 
         buf = BytesIO()
-        img.save(buf, format="JPEG", quality=90, optimize=True)
+        img.save(buf, format="JPEG", quality=95, subsampling=0, optimize=True)
         buf.seek(0)
         buf.name = "alert.jpg"
         return buf
@@ -172,26 +173,38 @@ def _crest(url: str, name: str) -> Image.Image:
     raw = _fetch(url) if url.startswith("http") else None
     if raw is not None:
         try:
-            crest = Image.open(BytesIO(raw)).convert("RGBA")
-            crest.thumbnail((CREST, CREST), Image.Resampling.LANCZOS)
-            canvas = Image.new("RGBA", (CREST, CREST), (0, 0, 0, 0))
-            canvas.paste(
-                crest,
-                ((CREST - crest.width) // 2, (CREST - crest.height) // 2),
-                crest,
-            )
-            return canvas
+            return _fit_logo(Image.open(BytesIO(raw)), CREST)
         except Exception:  # noqa: BLE001 - fall through to letter badge
             logger.debug("crest decode failed for %s", name)
     return _letter_badge(name)
 
 
+def _fit_logo(src: Image.Image, size: int) -> Image.Image:
+    """Fill the crest box. Matte onto the card, then Lanczos through 2x."""
+    src = src.convert("RGBA")
+    matted = Image.alpha_composite(Image.new("RGBA", src.size, (*BG, 255)), src)
+    hi = ImageOps.contain(matted, (size * 2, size * 2), Image.Resampling.LANCZOS)
+    if min(src.width, src.height) < size:
+        hi = hi.filter(ImageFilter.GaussianBlur(0.55))
+    fitted = hi.resize(
+        (max(1, round(hi.width / 2)), max(1, round(hi.height / 2))),
+        Image.Resampling.LANCZOS,
+    )
+    canvas = Image.new("RGBA", (size, size), (*BG, 255))
+    canvas.paste(
+        fitted,
+        ((size - fitted.width) // 2, (size - fitted.height) // 2),
+    )
+    return canvas
+
+
 def _letter_badge(name: str) -> Image.Image:
     canvas = Image.new("RGBA", (CREST, CREST), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
-    draw.rounded_rectangle((0, 0, CREST - 1, CREST - 1), radius=28, fill=(24, 48, 78))
+    radius = max(8, round(CREST * 28 / 112))
+    draw.rounded_rectangle((0, 0, CREST - 1, CREST - 1), radius=radius, fill=(24, 48, 78))
     letter = (name.strip()[:1] or "?").upper()
-    font = _font(56, bold=True)
+    font = _font(max(24, round(CREST * 56 / 112)), bold=True)
     bbox = draw.textbbox((0, 0), letter, font=font)
     draw.text(
         ((CREST - (bbox[2] - bbox[0])) / 2, (CREST - (bbox[3] - bbox[1])) / 2 - 4),
