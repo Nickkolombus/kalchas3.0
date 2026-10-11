@@ -794,6 +794,20 @@ body {
     inset 0 0 0 999px rgba(61, 214, 198, 0.08);
 }
 
+.board tbody tr.row-goal td {
+  background-color: rgba(232, 217, 176, 0.08);
+}
+
+.board tbody tr.row-goal td.col-fav {
+  box-shadow: inset 3px 0 0 #e8d9b0;
+}
+
+.board tbody tr.row-goal.row-fav td.col-fav,
+.board tbody tr.row-goal.row-hot td.col-fav,
+.board tbody tr.row-goal.row-sel td.col-fav {
+  box-shadow: inset 3px 0 0 #e8d9b0;
+}
+
 .band {
   display: grid;
   grid-template-rows: var(--row-line-h) var(--row-line-h);
@@ -946,6 +960,51 @@ body {
   font-size: 0.92rem;
 }
 
+.score-n.is-goal,
+.score-roll-track > span.is-goal {
+  color: #f3e2b0;
+}
+
+.score-n.score-roll {
+  overflow: hidden;
+  display: block;
+}
+
+.score-roll-track {
+  display: flex;
+  flex-direction: column;
+  animation: score-roll 5s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+
+.score-roll-track > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--row-line-h);
+  flex: 0 0 var(--row-line-h);
+  font-weight: 700;
+  color: var(--text);
+}
+
+@keyframes score-roll {
+  0% {
+    transform: translateY(0);
+  }
+  16% {
+    transform: translateY(-50%);
+  }
+  100% {
+    transform: translateY(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .score-roll-track {
+    animation: none;
+    transform: translateY(-50%);
+  }
+}
+
 .col-match {
   width: 12.5rem;
   text-align: left;
@@ -990,6 +1049,11 @@ body {
     0 0 4px rgba(255, 220, 130, 0.38),
     0 0 10px rgba(255, 196, 80, 0.26),
     0 0 18px rgba(255, 180, 50, 0.14);
+}
+
+.team-label.is-scorer {
+  color: #f3e2b0;
+  text-shadow: none;
 }
 
 .badge-wrap {

@@ -157,6 +157,16 @@ const DEFAULT_SWEET_SPOT: SweetSpot = {
   include_injury_time: false,
 };
 const TSLG_COOLDOWN = 10;
+const GOAL_HOLD_MS = 5000;
+
+type GoalSide = "home" | "away" | "both";
+type GoalFlash = {
+  matchId: string;
+  side: GoalSide;
+  fromHome: number;
+  fromAway: number;
+  until: number;
+};
 const FINISHED_STATUS = new Set([
   "FT",
   "AET",
@@ -413,9 +423,33 @@ function matchK(m: LiveMatch): number {
   return Number(k?.match ?? m.hot_score ?? 0);
 }
 
+function parseScore(score: string): [number, number] {
+  const [h, a] = String(score || "")
+    .split("-")
+    .map((x) => Number(x.trim()));
+  return [Number.isFinite(h) ? h : 0, Number.isFinite(a) ? a : 0];
+}
+
 function scoreTotal(m: LiveMatch): number {
-  const [h, a] = m.score.split("-").map((x) => Number(x.trim()) || 0);
+  const [h, a] = parseScore(m.score);
   return h + a;
+}
+
+function detectGoalFlash(
+  prev: string | undefined,
+  next: string,
+): Omit<GoalFlash, "matchId" | "until"> | null {
+  if (prev == null || prev === next) return null;
+  const [fromHome, fromAway] = parseScore(prev);
+  const [home, away] = parseScore(next);
+  const homeUp = home > fromHome;
+  const awayUp = away > fromAway;
+  if (!homeUp && !awayUp) return null;
+  return {
+    side: homeUp && awayUp ? "both" : homeUp ? "home" : "away",
+    fromHome,
+    fromAway,
+  };
 }
 
 function tslgMinutes(match: LiveMatch): {
@@ -786,7 +820,13 @@ function MatchHoverBody({ match }: { match: LiveMatch }) {
   );
 }
 
-function TeamStack({ match }: { match: LiveMatch }) {
+function TeamStack({
+  match,
+  scorer,
+}: {
+  match: LiveMatch;
+  scorer?: GoalSide | null;
+}) {
   const homeLogo =
     match.home_team_logo ||
     apifootballBadgeUrl(match.home_team_id, match.home_team);
@@ -794,16 +834,26 @@ function TeamStack({ match }: { match: LiveMatch }) {
     match.away_team_logo ||
     apifootballBadgeUrl(match.away_team_id, match.away_team);
   const ko = kickoffHomeAway(match.odds);
+  const homeScorer = scorer === "home" || scorer === "both";
+  const awayScorer = scorer === "away" || scorer === "both";
   return (
     <HoverTip cardClass="hover-card-match" body={<MatchHoverBody match={match} />}>
       <div className="team-stack">
         <div className="team-line">
           <TeamBadge name={match.home_team} src={homeLogo} />
-          <span className={`team-label${favClass(ko.home)}`}>{match.home_team}</span>
+          <span
+            className={`team-label${favClass(ko.home)}${homeScorer ? " is-scorer" : ""}`}
+          >
+            {match.home_team}
+          </span>
         </div>
         <div className="team-line">
           <TeamBadge name={match.away_team} src={awayLogo} />
-          <span className={`team-label${favClass(ko.away)}`}>{match.away_team}</span>
+          <span
+            className={`team-label${favClass(ko.away)}${awayScorer ? " is-scorer" : ""}`}
+          >
+            {match.away_team}
+          </span>
         </div>
       </div>
     </HoverTip>
@@ -876,13 +926,62 @@ function StatCell({ line, start }: { line?: SideValue; start?: boolean }) {
   );
 }
 
-function ScoreCell({ score }: { score: string }) {
-  const [home, away] = score.split("-");
+function ScoreDigit({
+  value,
+  from,
+  rolling,
+}: {
+  value: number;
+  from: number;
+  rolling: boolean;
+}) {
+  const shown = String(value);
+  if (!rolling || from === value) {
+    return (
+      <div className={`band-line score-n${rolling ? " is-goal" : ""}`}>
+        {shown}
+      </div>
+    );
+  }
+  return (
+    <div className="band-line score-n score-roll">
+      <span className="score-roll-track">
+        <span>{from}</span>
+        <span className="is-goal">{shown}</span>
+      </span>
+    </div>
+  );
+}
+
+function ScoreCell({
+  score,
+  flash,
+}: {
+  score: string;
+  flash?: GoalFlash | null;
+}) {
+  const [home, away] = parseScore(score);
+  const rollHome = Boolean(
+    flash && (flash.side === "home" || flash.side === "both"),
+  );
+  const rollAway = Boolean(
+    flash && (flash.side === "away" || flash.side === "both"),
+  );
   return (
     <td className="col-score">
       <div className="band">
-        <div className="band-line score-n">{home?.trim() ?? "—"}</div>
-        <div className="band-line score-n">{away?.trim() ?? "—"}</div>
+        <ScoreDigit
+          key={rollHome ? `h-${flash?.until ?? 0}` : "h"}
+          value={home}
+          from={flash?.fromHome ?? home}
+          rolling={rollHome}
+        />
+        <ScoreDigit
+          key={rollAway ? `a-${flash?.until ?? 0}` : "a"}
+          value={away}
+          from={flash?.fromAway ?? away}
+          rolling={rollAway}
+        />
       </div>
     </td>
   );
@@ -1493,6 +1592,10 @@ export function App() {
     const id = new URLSearchParams(window.location.search).get("match");
     return id && id.trim() ? id.trim() : null;
   });
+  const [goalFlashes, setGoalFlashes] = useState<Record<string, GoalFlash>>(
+    {},
+  );
+  const prevScoresRef = useRef<Map<string, string>>(new Map());
 
   const load = useCallback(async () => {
     try {
@@ -1521,6 +1624,52 @@ export function App() {
     const id = window.setInterval(() => void load(), POLL_MS);
     return () => window.clearInterval(id);
   }, [load]);
+
+  useEffect(() => {
+    const prev = prevScoresRef.current;
+    const nextPrev = new Map<string, string>();
+    const now = Date.now();
+    const added: GoalFlash[] = [];
+    for (const match of matches) {
+      const old = prev.get(match.match_id);
+      nextPrev.set(match.match_id, match.score);
+      const found = detectGoalFlash(old, match.score);
+      if (!found) continue;
+      added.push({
+        matchId: match.match_id,
+        until: now + GOAL_HOLD_MS,
+        ...found,
+      });
+    }
+    prevScoresRef.current = nextPrev;
+    if (!added.length) return;
+    setGoalFlashes((cur) => {
+      const next = { ...cur };
+      for (const flash of added) next[flash.matchId] = flash;
+      return next;
+    });
+  }, [matches]);
+
+  useEffect(() => {
+    const times = Object.values(goalFlashes).map((flash) => flash.until);
+    if (!times.length) return;
+    const delay = Math.max(0, Math.min(...times) - Date.now());
+    const id = window.setTimeout(() => {
+      setGoalFlashes((cur) => {
+        const now = Date.now();
+        let changed = false;
+        const next = { ...cur };
+        for (const key of Object.keys(next)) {
+          if (next[key].until <= now) {
+            delete next[key];
+            changed = true;
+          }
+        }
+        return changed ? next : cur;
+      });
+    }, delay);
+    return () => window.clearTimeout(id);
+  }, [goalFlashes]);
 
   const onSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -1560,7 +1709,10 @@ export function App() {
       base = base.filter((m) => !isMatchStatless(m));
     }
     if (hideTslgUnder10) {
+      const now = Date.now();
       base = base.filter((m) => {
+        const flash = goalFlashes[m.match_id];
+        if (flash && flash.until > now) return true;
         const mins = minTslg(m);
         return mins === Number.POSITIVE_INFINITY || mins >= TSLG_COOLDOWN;
       });
@@ -1587,6 +1739,7 @@ export function App() {
     hideTslgUnder10,
     sweetSpotOnly,
     sweetSpot,
+    goalFlashes,
   ]);
 
   const selected = display.find((m) => m.match_id === selectedId) ?? null;
@@ -1844,6 +1997,8 @@ export function App() {
               const fav = favorites.has(m.match_id);
               const hot = Boolean(m.active_strategies?.length);
               const zebra = idx % 2 === 0 ? "row-a" : "row-b";
+              const flash = goalFlashes[m.match_id];
+              const celebrating = Boolean(flash && flash.until > Date.now());
               return (
                 <tr
                   key={m.match_id}
@@ -1852,6 +2007,7 @@ export function App() {
                     hot ? "row-hot" : "",
                     selectedId === m.match_id ? "row-sel" : "",
                     fav ? "row-fav" : "",
+                    celebrating ? "row-goal" : "",
                   ]
                     .filter(Boolean)
                     .join(" ")}
@@ -1876,9 +2032,12 @@ export function App() {
                     countryCode={m.country_code}
                     countryLogo={m.country_logo}
                   />
-                  <ScoreCell score={m.score} />
+                  <ScoreCell score={m.score} flash={celebrating ? flash : null} />
                   <td className="col-match">
-                    <TeamStack match={m} />
+                    <TeamStack
+                      match={m}
+                      scorer={celebrating ? flash?.side : null}
+                    />
                   </td>
                   <TimeCell match={m} />
                   <OddsCell odds={m.odds} />
