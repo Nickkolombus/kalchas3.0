@@ -169,6 +169,104 @@ def test_omega_uses_degrees_over_ceiling():
     assert "<b>Home</b> vs Away · 20′" in text
 
 
+def test_omega_caption_uses_last_10min():
+    text = format_alert_html(
+        {
+            "home_team": "Home",
+            "away_team": "Away",
+            "minute": 84,
+            "score": "1-1",
+            "strategy_key": "omega",
+            "team": "home",
+            "value": 0.5,
+            "payload": {
+                "league": "Test",
+                "theta": 22.0,
+                "k_scale": 0.5,
+                "sot": {"home": 10, "away": 2},
+                "sofft": {"home": 6, "away": 5},
+                "da": {"home": 82, "away": 44},
+                "corners": {"home": 13, "away": 4},
+                "possession": {"home": 57, "away": 43},
+                "last_10min": {
+                    "start": 74,
+                    "end": 84,
+                    "sot": {"home": 3, "away": 1},
+                    "sofft": {"home": 2, "away": 1},
+                    "da": {"home": 12, "away": 4},
+                    "corners": {"home": 3, "away": 1},
+                    "possession": {"home": 57, "away": 43},
+                },
+            },
+        }
+    )
+    assert "<b>Ω</b> (Omega): 22° for <b>Home</b>" in text
+    assert "<b>Last 10 mins (74′-84′):</b>" in text
+    assert "SOT: <b>3</b> - 1" in text
+    assert "DA: <b>12</b> - 4" in text
+    assert "SOT: <b>10</b>" not in text
+    assert "DA: <b>82</b>" not in text
+
+
+def test_pressure_index_caption_uses_last_10min():
+    text = format_alert_html(
+        {
+            "home_team": "Gimnastica Segoviana",
+            "away_team": "Valladolid Promesas",
+            "minute": 84,
+            "score": "1-1",
+            "strategy_key": "pressure_index",
+            "team": "home",
+            "value": 82,
+            "payload": {
+                "league": "Segunda División RFEF - Group 5",
+                "sot": {"home": 10, "away": 2},
+                "sofft": {"home": 6, "away": 5},
+                "da": {"home": 82, "away": 44},
+                "corners": {"home": 13, "away": 4},
+                "possession": {"home": 57, "away": 43},
+                "last_10min": {
+                    "start": 74,
+                    "end": 84,
+                    "sot": {"home": 3, "away": 1},
+                    "sofft": {"home": 2, "away": 1},
+                    "da": {"home": 12, "away": 4},
+                    "corners": {"home": 3, "away": 1},
+                    "possession": {"home": 57, "away": 43},
+                },
+            },
+        }
+    )
+    assert "<b>Δ10′</b> (Sustained pressure): 82 / 100 for <b>Gimnastica Segoviana</b>" in text
+    assert "<b>Last 10 mins (74′-84′):</b>" in text
+    assert "SOT: <b>3</b> - 1" in text
+    assert "SOFFT: <b>2</b> - 1" in text
+    assert "DA: <b>12</b> - 4" in text
+    assert "Corners: <b>3</b> - 1" in text
+    assert "SOT: <b>10</b>" not in text
+    assert "DA: <b>82</b>" not in text
+
+
+def test_pressure_index_falls_back_to_match_totals_without_window():
+    text = format_alert_html(
+        {
+            "home_team": "Home",
+            "away_team": "Away",
+            "minute": 64,
+            "score": "0-0",
+            "strategy_key": "pressure_index",
+            "team": "home",
+            "value": 70,
+            "payload": {
+                "sot": {"home": 10, "away": 2},
+                "da": {"home": 82, "away": 44},
+            },
+        }
+    )
+    assert "Last 10 mins" not in text
+    assert "SOT: <b>10</b> - 2" in text
+
+
 def test_match_totals_for_other_strategies():
     text = format_alert_html(
         {

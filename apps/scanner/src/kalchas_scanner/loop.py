@@ -31,6 +31,7 @@ from kalchas_core.runner import (
     live_home_away_odds,
 )
 from kalchas_core.strategies.delta_5min import last_5min_block
+from kalchas_core.strategies.pressure_index import last_10min_block
 from kalchas_core.sweet_spot import SweetSpotWindows
 from kalchas_core.weights import WeightSet
 from kalchas_football import (
@@ -624,6 +625,10 @@ class Scanner:
                 last_5 = last_5min_block(timeline)
                 if last_5:
                     payload["last_5min"] = last_5
+            if cand.strategy_key in ("pressure_index", "omega"):
+                last_10 = last_10min_block(timeline)
+                if last_10:
+                    payload["last_10min"] = last_10
             h2h = self._h2h_for_alert(match)
             if h2h:
                 payload["h2h"] = h2h

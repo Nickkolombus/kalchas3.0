@@ -23,6 +23,7 @@ from kalchas_core.strategies.pressure_index import (
     TeamPressure,
     evaluate,
     game_state_modifier,
+    last_10min_block,
     pressure_series,
     raw_pressure,
     time_multiplier,
@@ -317,3 +318,57 @@ class TestPressureSeries:
         series = pressure_series(timeline, Side.HOME, up_to_minute=20, window_minutes=10)
         assert series[15] == 0.0
         assert series[20] > 0.0
+
+
+class TestLast10MinBlock:
+    def test_counts_are_window_deltas_not_match_totals(self) -> None:
+        timeline = timeline_from(
+            {
+                74: {
+                    "home": {
+                        "shots_on_target": 7,
+                        "shots_off_target": 4,
+                        "dangerous_attacks": 70,
+                        "corners": 10,
+                        "possession": 55,
+                    },
+                    "away": {
+                        "shots_on_target": 1,
+                        "shots_off_target": 4,
+                        "dangerous_attacks": 40,
+                        "corners": 3,
+                        "possession": 45,
+                    },
+                },
+                84: {
+                    "home": {
+                        "shots_on_target": 10,
+                        "shots_off_target": 6,
+                        "dangerous_attacks": 82,
+                        "corners": 13,
+                        "possession": 57,
+                    },
+                    "away": {
+                        "shots_on_target": 2,
+                        "shots_off_target": 5,
+                        "dangerous_attacks": 44,
+                        "corners": 4,
+                        "possession": 43,
+                    },
+                },
+            },
+            current_minute=84,
+        )
+        block = last_10min_block(timeline)
+        assert block is not None
+        assert block["start"] == 74
+        assert block["end"] == 84
+        assert block["sot"] == {"home": 3, "away": 1}
+        assert block["sofft"] == {"home": 2, "away": 1}
+        assert block["da"] == {"home": 12, "away": 4}
+        assert block["corners"] == {"home": 3, "away": 1}
+        assert block["possession"] == {"home": 57, "away": 43}
+
+    def test_too_early_returns_none(self) -> None:
+        timeline = busy_timeline(start_minute=1, end_minute=3, home={"shots_on_target": 1})
+        assert last_10min_block(timeline) is None

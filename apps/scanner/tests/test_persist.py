@@ -264,6 +264,90 @@ def test_alert_payload_includes_live_stats(monkeypatch) -> None:
     assert payload["tslg_home"] is None or isinstance(payload["tslg_home"], int)
 
 
+def test_pressure_index_payload_includes_last_10min(monkeypatch) -> None:
+    from kalchas_core.match import Side
+    from kalchas_core.runner import AlertCandidate
+    from kalchas_scanner.loop import Scanner
+    from kalchas_scanner.outbox import MemoryAlertSink
+
+    class NoStatsCallClient:
+        def get_fixture_statistics(self, match_id: str):
+            raise AssertionError("embedded stats present; get_statistics must not be called")
+
+        def get_fixture_events(self, match_id: str):
+            return {}
+
+        def get_live_fixtures(self):
+            return []
+
+    persist = MemoryMatchPersist()
+    persist.save_minute(
+        match_id="10",
+        home_team="A",
+        away_team="B",
+        home_team_id=1,
+        away_team_id=2,
+        league_name="L",
+        status_short="2H",
+        home_score=1,
+        away_score=1,
+        minute=74,
+        minute_block={
+            "shots_on_target": {"home": 7, "away": 1},
+            "shots_off_target": {"home": 4, "away": 4},
+            "dangerous_attacks": {"home": 70, "away": 40},
+            "corners": {"home": 10, "away": 3},
+            "possession": {"home": 55, "away": 45},
+            "attacks": {"home": 80, "away": 50},
+        },
+        league_id=1,
+    )
+    scanner = Scanner(
+        client=NoStatsCallClient(),  # type: ignore[arg-type]
+        sink=MemoryAlertSink(),
+        persist=persist,
+    )
+    monkeypatch.setattr(
+        "kalchas_scanner.loop.evaluate_match",
+        lambda *a, **k: [AlertCandidate(2, "pressure_index", Side.HOME, 82.0, {})],
+    )
+    match = LiveMatch(
+        match_id="10",
+        home_team="A",
+        away_team="B",
+        home_team_id=1,
+        away_team_id=2,
+        minute=84,
+        home_score=1,
+        away_score=1,
+        status_short="2H",
+        league_name="L",
+        raw={
+            "match_id": "10",
+            "match_hometeam_name": "A",
+            "match_awayteam_name": "B",
+            "statistics": [
+                {"type": "Attacks", "home": "100", "away": "60"},
+                {"type": "Dangerous Attacks", "home": "82", "away": "44"},
+                {"type": "On Target", "home": "10", "away": "2"},
+                {"type": "Off Target", "home": "6", "away": "5"},
+                {"type": "Corners", "home": "13", "away": "4"},
+                {"type": "Ball Possession", "home": "57%", "away": "43%"},
+            ],
+        },
+    )
+    emitted = scanner.process_match(match)
+    assert len(emitted) == 1
+    window = emitted[0]["last_10min"]
+    assert window["start"] == 74
+    assert window["end"] == 84
+    assert window["sot"] == {"home": 3, "away": 1}
+    assert window["sofft"] == {"home": 2, "away": 1}
+    assert window["da"] == {"home": 12, "away": 4}
+    assert window["corners"] == {"home": 3, "away": 1}
+    assert emitted[0]["sot"] == {"home": 10, "away": 2}
+
+
 def test_process_match_persists_lineup_before_min_minute_without_extra_http() -> None:
     from kalchas_scanner.loop import Scanner
     from kalchas_scanner.outbox import MemoryAlertSink

@@ -57,6 +57,23 @@ def test_old_payload_still_exposes_stats_and_odds() -> None:
     assert factors["tslg_bucket"] == "10-19'"
 
 
+def test_factors_keep_last_10min_window() -> None:
+    window = {
+        "start": 74,
+        "end": 84,
+        "sot": {"home": 3, "away": 1},
+    }
+    factors = factors_from_payload(
+        {"last_10min": window, "sot": {"home": 10, "away": 2}},
+        strategy="pressure_index",
+        team="home",
+        minute=84,
+        score="1-1",
+    )
+    assert factors["last_10min"] == window
+    assert factors["sot"]["home"] == 10
+
+
 def test_pattern_summary_hit_rate_by_clock() -> None:
     rows = [
         {

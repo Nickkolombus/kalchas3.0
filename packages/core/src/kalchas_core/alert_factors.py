@@ -337,6 +337,7 @@ def factors_from_payload(
         "odds_bucket": _odds_bucket(trigger_odds),
         "h2h": raw.get("h2h") if isinstance(raw.get("h2h"), Mapping) else None,
         "last_5min": raw.get("last_5min") if isinstance(raw.get("last_5min"), Mapping) else None,
+        "last_10min": raw.get("last_10min") if isinstance(raw.get("last_10min"), Mapping) else None,
         "has_board": bool(board),
     }
 

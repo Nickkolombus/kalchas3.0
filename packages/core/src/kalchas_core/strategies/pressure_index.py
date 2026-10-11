@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Any
 
 from kalchas_core.match import (
     ActivityWindow,
@@ -298,3 +299,41 @@ def evaluate(
         window_start_minute=window.start_minute,
         window_end_minute=window.end_minute,
     )
+
+
+def _side_counts(window: ActivityWindow, attr: str) -> dict[str, int]:
+    return {
+        "home": max(0, int(getattr(window.end.home, attr) - getattr(window.start.home, attr))),
+        "away": max(0, int(getattr(window.end.away, attr) - getattr(window.start.away, attr))),
+    }
+
+
+def last_10min_block(timeline: MatchTimeline) -> dict[str, Any] | None:
+    """SOT / SOFFT / DA / corners in the same 10-minute window Δ10 uses.
+
+    Possession is the share at the end of the window, not a 10-minute delta.
+    """
+    if timeline.current_minute < MINIMUM_MINUTE:
+        return None
+
+    window = resolve_window(
+        timeline,
+        DEFAULT_WINDOW_MINUTES,
+        clamp=WindowClamp.PERIOD_START,
+        fallback_lookback=FALLBACK_LOOKBACK_MINUTES,
+        require_full_span=False,
+    )
+    if window is None:
+        return None
+    return {
+        "start": window.start_minute,
+        "end": window.end_minute,
+        "sot": _side_counts(window, "shots_on_target"),
+        "sofft": _side_counts(window, "shots_off_target"),
+        "da": _side_counts(window, "dangerous_attacks"),
+        "corners": _side_counts(window, "corners"),
+        "possession": {
+            "home": int(window.end.home.possession),
+            "away": int(window.end.away.possession),
+        },
+    }

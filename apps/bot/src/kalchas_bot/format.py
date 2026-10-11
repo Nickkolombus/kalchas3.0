@@ -1,7 +1,8 @@
 """HTML Telegram alert caption from an outbox row.
 
 Crests go on the photo. This module is caption-only: strategy, firing team,
-clock, last-5-minute counts for Δ5, H2H when the sample is at least 5.
+clock, last-5-minute counts for Δ5, last-10-minute counts for Δ10 and Ω, H2H
+when the sample is at least 5.
 """
 
 from __future__ import annotations
@@ -126,21 +127,27 @@ def _versus_line(
 
 def _stat_block(key: str, payload: Mapping[str, Any], minute: object) -> list[str]:
     if key == "delta_5min":
-        window = payload.get("last_5min")
-        if not isinstance(window, Mapping):
-            return []
-        start = _minute_int(window.get("start"))
-        end = _minute_int(window.get("end"))
-        if end is None:
-            end = _minute_int(minute)
-        if start is not None and end is not None:
-            heading = f"<b>Last 5 mins ({start}′-{end}′):</b>"
-        else:
-            heading = "<b>Last 5 mins:</b>"
-        rows = _stat_rows(window)
-        return [heading, *rows] if rows else []
-    rows = _stat_rows(payload)
-    return rows
+        return _window_stat_lines(payload.get("last_5min"), minute, span=5)
+    if key in ("pressure_index", "omega"):
+        windowed = _window_stat_lines(payload.get("last_10min"), minute, span=10)
+        if windowed or isinstance(payload.get("last_10min"), Mapping):
+            return windowed
+    return _stat_rows(payload)
+
+
+def _window_stat_lines(window: object, minute: object, *, span: int) -> list[str]:
+    if not isinstance(window, Mapping):
+        return []
+    start = _minute_int(window.get("start"))
+    end = _minute_int(window.get("end"))
+    if end is None:
+        end = _minute_int(minute)
+    if start is not None and end is not None:
+        heading = f"<b>Last {span} mins ({start}′-{end}′):</b>"
+    else:
+        heading = f"<b>Last {span} mins:</b>"
+    rows = _stat_rows(window)
+    return [heading, *rows] if rows else []
 
 
 def _stat_rows(block: Mapping[str, Any]) -> list[str]:
