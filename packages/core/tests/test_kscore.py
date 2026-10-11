@@ -76,7 +76,7 @@ class TestConsultantVotes:
     def test_quiet_signals_sit_near_or_below_neutral(self) -> None:
         votes = consultant_votes(signals(), DEFAULTS)
         assert votes["momentum"] == pytest.approx(0.5)
-        assert votes["pressure"] == 0.0
+        assert votes["pressure"] == pytest.approx(0.5)
         assert votes["rule3"] == pytest.approx(0.3 / 1.3)
         # No acceleration → legacy sine form at (0,0) → 0.5
         assert votes["omega"] == pytest.approx(0.5)
@@ -94,9 +94,17 @@ class TestConsultantVotes:
             DEFAULTS,
         )
         assert votes["momentum"] > 0.99
-        assert votes["pressure"] == 1.0
+        assert votes["pressure"] > 0.9
         assert votes["rule3"] == 1.0
         assert votes["omega"] > 0.8
+
+    def test_quiet_pressure_is_neutral_not_a_veto(self) -> None:
+        quiet = consultant_votes(signals(pressure_index=0.0), DEFAULTS)["pressure"]
+        working = consultant_votes(signals(pressure_index=40.0), DEFAULTS)["pressure"]
+        hot = consultant_votes(signals(pressure_index=80.0), DEFAULTS)["pressure"]
+        assert quiet == pytest.approx(0.5)
+        assert working > 0.7
+        assert hot > working
 
     def test_momentum_scale_is_tunable(self) -> None:
         quiet_scale = WeightSet.from_overrides({"kscore": {"momentum_scale": 2.0}})
@@ -105,6 +113,14 @@ class TestConsultantVotes:
         assert (
             consultant_votes(s, quiet_scale)["momentum"]
             > consultant_votes(s, wide_scale)["momentum"]
+        )
+
+    def test_pressure_scale_is_tunable(self) -> None:
+        tight = WeightSet.from_overrides({"kscore": {"pressure_scale": 15.0}})
+        wide = WeightSet.from_overrides({"kscore": {"pressure_scale": 80.0}})
+        s = signals(pressure_index=40.0)
+        assert (
+            consultant_votes(s, tight)["pressure"] > consultant_votes(s, wide)["pressure"]
         )
 
 

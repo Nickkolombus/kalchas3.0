@@ -420,7 +420,15 @@ function saveFavorites(ids: Set<string>) {
 
 function matchK(m: LiveMatch): number {
   const k = m.strategy_status?.kscore;
-  return Number(k?.match ?? m.hot_score ?? 0);
+  const home = Number(k?.teams?.home?.value);
+  const away = Number(k?.teams?.away?.value);
+  const hotter = Math.max(
+    Number.isFinite(home) ? home : 0,
+    Number.isFinite(away) ? away : 0,
+  );
+  if (hotter > 0) return hotter;
+  const combined = Number(k?.match ?? m.hot_score ?? 0);
+  return Number.isFinite(combined) ? combined : 0;
 }
 
 function parseScore(score: string): [number, number] {
@@ -1173,7 +1181,8 @@ function KCell({ match }: { match: LiveMatch }) {
             tip="Blend of the other signals, out of 100. 60+ is a picked match."
             extra={
               <p className="hover-match-k">
-                Match {score < 5 ? "—" : score}
+                Match{" "}
+                {Number(k?.match) >= 5 ? Number(k?.match) : "—"}
               </p>
             }
             homeName={match.home_team}

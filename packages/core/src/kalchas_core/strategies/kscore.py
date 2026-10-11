@@ -4,8 +4,8 @@ Unlike every other strategy, K-Score does not read the match timeline. It
 takes the *outputs* of other strategies as inputs and blends them into a
 0-100 score per team:
 
-    momentum  ← Delta 5min pressure
-    pressure  ← Pressure Index
+    momentum  ← Delta 5min pressure   σ(Δ5 / momentum_scale)
+    pressure  ← Pressure Index        σ(PI / pressure_scale)
     rule3     ← Rule of Three unrealised goals
     omega     ← Omega (acceleration + baseline + level) — same TeamOmega SSOT
     focus ΦI  ← NPEI, as a multiplier rather than a fifth vote
@@ -187,10 +187,13 @@ def consultant_votes(signals: TeamSignals, weights: WeightSet) -> dict[str, floa
     scale = weights.get(STRATEGY_KEY, "momentum_scale")
     if scale <= 0:
         scale = 8.0
+    p_scale = weights.get(STRATEGY_KEY, "pressure_scale")
+    if p_scale <= 0:
+        p_scale = 40.0
 
     return {
         "momentum": sigmoid(signals.delta_5min / scale),
-        "pressure": _clamp(signals.pressure_index / 100.0, 0.0, 1.0),
+        "pressure": sigmoid(signals.pressure_index / p_scale),
         "rule3": _clamp((signals.rule_of_three + _RULE3_OFFSET) / _RULE3_SPAN, 0.0, 1.0),
         "omega": omega_vote(
             acceleration=signals.omega_acceleration,

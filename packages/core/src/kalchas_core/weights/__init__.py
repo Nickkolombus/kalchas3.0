@@ -129,6 +129,27 @@ def _drop_stale_omega_scale(
     return cleaned
 
 
+def _drop_stale_k_pressure_trust(
+    overrides: Mapping[str, Mapping[str, float]],
+) -> Mapping[str, Mapping[str, float]]:
+    """Ignore factory K trust_pressure 0.7 saved before quiet PI stopped being a veto."""
+    kscore = overrides.get("kscore")
+    if not isinstance(kscore, Mapping) or "trust_pressure" not in kscore:
+        return overrides
+    try:
+        if abs(float(kscore["trust_pressure"]) - 0.7) > 1e-6:
+            return overrides
+    except (TypeError, ValueError):
+        return overrides
+    cleaned = dict(overrides)
+    k_clean = {key: value for key, value in kscore.items() if key != "trust_pressure"}
+    if k_clean:
+        cleaned["kscore"] = k_clean
+    else:
+        cleaned.pop("kscore", None)
+    return cleaned
+
+
 def _freeze(overrides: Mapping[str, Mapping[str, float]]) -> Mapping[str, Mapping[str, float]]:
     """Validate, clamp, and deep-freeze a set of overrides.
 
@@ -139,6 +160,7 @@ def _freeze(overrides: Mapping[str, Mapping[str, float]]) -> Mapping[str, Mappin
     """
     overrides = _drop_stale_omega_scale(overrides)
     overrides = _drop_stale_pressure_points(overrides)
+    overrides = _drop_stale_k_pressure_trust(overrides)
     frozen: dict[str, Mapping[str, float]] = {}
     for strategy, values in overrides.items():
         if strategy not in REGISTRY or not isinstance(values, Mapping):
