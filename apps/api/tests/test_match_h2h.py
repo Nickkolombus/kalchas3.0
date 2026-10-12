@@ -110,7 +110,7 @@ def test_h2h_endpoint_from_cache(monkeypatch) -> None:
     monkeypatch.setattr(
         kalchas_db.panel_cache,
         "load_panel_cache",
-        lambda dsn, key, ttl_days=7: {
+        lambda dsn, key, ttl_days=7, ttl_hours=None: {
             "home_team": "Old Home",
             "away_team": "Old Away",
             "insufficient": False,
@@ -240,3 +240,52 @@ def test_h2h_endpoint_skips_cache_when_sample_under_five(monkeypatch) -> None:
     assert body["data"]["insufficient"] is True
     assert body["data"]["summary"]["sample"] == 1
     assert saved == {}
+
+
+def test_h2h_endpoint_includes_league_ranks(monkeypatch) -> None:
+    import kalchas_db.matches
+    import kalchas_db.panel_cache
+
+    h2h_payload = {
+        "home_team": "Old Home",
+        "away_team": "Old Away",
+        "insufficient": False,
+        "reason": None,
+        "summary": {"home_wins": 4, "draws": 1, "away_wins": 2, "sample": 7},
+        "fixtures": [],
+        "patterns": {
+            "sample": 7,
+            "over_2_5": {"count": 3, "pct": 43},
+            "under_2_5": {"count": 4, "pct": 57},
+            "btts": {"count": 4, "pct": 57},
+            "home_cs": {"count": 2, "pct": 29, "team": "Home"},
+            "away_cs": {"count": 1, "pct": 14, "team": "Away"},
+            "avg_goals": 2.4,
+            "home_goals": 10,
+            "away_goals": 7,
+            "timing": None,
+        },
+    }
+
+    def load(dsn, key, ttl_days=7, ttl_hours=None):
+        if str(key).startswith("standings_"):
+            return {"positions": {"10": 5, "20": 14}}
+        return h2h_payload
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
+    monkeypatch.setattr(
+        kalchas_db.matches,
+        "get_match_sync",
+        lambda dsn, match_id: {
+            "match_id": match_id,
+            "home_team": "Home",
+            "away_team": "Away",
+            "home_team_id": 10,
+            "away_team_id": 20,
+            "league_id": 152,
+        },
+    )
+    monkeypatch.setattr(kalchas_db.panel_cache, "load_panel_cache", load)
+    body = TestClient(app).get("/api/match/m1/h2h").json()
+    assert body["data"]["home_rank"] == 5
+    assert body["data"]["away_rank"] == 14

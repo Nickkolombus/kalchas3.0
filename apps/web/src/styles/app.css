@@ -1524,6 +1524,13 @@ body {
   white-space: nowrap;
 }
 
+.match-hover-rank {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--muted);
+  line-height: 1;
+}
+
 .match-hover-center {
   display: flex;
   flex-direction: column;
@@ -1766,6 +1773,12 @@ body {
   font-size: 0.82rem;
   font-weight: 600;
   text-align: center;
+}
+
+.h2h-rank {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--muted);
 }
 
 .h2h-team-name.home,

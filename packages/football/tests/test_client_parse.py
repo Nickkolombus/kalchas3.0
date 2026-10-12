@@ -567,6 +567,26 @@ def test_merge_odds_records_freezes_kickoff_and_updates_live() -> None:
     assert merged["live"] == {"home": 1.8, "draw": 3.5, "away": 4.2}
 
 
+def test_parse_standings_positions_from_provider_rows() -> None:
+    from kalchas_football.client import parse_standings_positions
+
+    rows = parse_standings_positions(
+        [
+            {
+                "team_id": "10",
+                "team_name": "Alpha",
+                "overall_league_position": "5",
+            },
+            {
+                "team_id": "20",
+                "overall_league_position": "14",
+            },
+            {"team_id": "0", "overall_league_position": "1"},
+        ]
+    )
+    assert rows == {10: 5, 20: 14}
+
+
 def test_parse_h2h_meetings_from_provider_shape() -> None:
     from kalchas_football.client import parse_h2h_meetings
 

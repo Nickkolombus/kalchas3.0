@@ -629,6 +629,28 @@ def odds_1x2_from_live_comments(payload: Any) -> dict[str, dict[str, float]]:
     return out
 
 
+def parse_standings_positions(data: Any) -> dict[int, int]:
+    """Map ``team_id`` → ``overall_league_position`` from ``get_standings``."""
+    rows: list[Any] = []
+    if isinstance(data, dict):
+        if data.get("error"):
+            return {}
+        block = data.get("standings") or data.get("response")
+        if isinstance(block, list):
+            rows = block
+    elif isinstance(data, list):
+        rows = data
+    out: dict[int, int] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        team_id = _coerce_int(row.get("team_id"))
+        position = _coerce_int(row.get("overall_league_position"))
+        if team_id > 0 and position > 0:
+            out[team_id] = position
+    return out
+
+
 def parse_h2h_meetings(data: Any) -> list[dict[str, Any]]:
     """Flatten ``get_H2H`` into canonical meeting dicts.
 
@@ -866,6 +888,21 @@ class FootballAPIClient:
         """One ``get_live_odds_commnets`` call; keep only full-time 1X2 lines."""
         odds, _clocks = self.get_live_odds_comments_bundle()
         return odds
+
+    def get_standings(self, league_id: int) -> dict[int, int]:
+        """``action=get_standings`` → team_id to table position."""
+        try:
+            lid = int(league_id)
+        except (TypeError, ValueError):
+            return {}
+        if lid <= 0:
+            return {}
+        try:
+            data = self._get("get_standings", {"league_id": lid})
+        except RateLimitBudgetExceeded:
+            logger.warning("skipping get_standings; hourly HTTP budget exhausted")
+            raise
+        return parse_standings_positions(data)
 
     def get_head_to_head(
         self,

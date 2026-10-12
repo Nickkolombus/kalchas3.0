@@ -17,6 +17,7 @@ from kalchas_football.client import (
     odds_1x2_from_live_comments,
     odds_1x2_from_provider_rows,
     parse_h2h_meetings,
+    parse_standings_positions,
     statistics_from_event,
     substitutions_from_event,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "odds_1x2_from_live_comments",
     "odds_1x2_from_provider_rows",
     "parse_h2h_meetings",
+    "parse_standings_positions",
     "statistics_from_event",
     "substitutions_from_event",
 ]

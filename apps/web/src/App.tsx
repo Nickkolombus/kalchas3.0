@@ -667,7 +667,17 @@ type HoverH2H = {
   draws: number;
   away_wins: number;
   sample: number;
+  home_rank?: number | null;
+  away_rank?: number | null;
 };
+
+function leagueRankLabel(rank?: number | null): string {
+  if (rank == null || rank < 1) return "";
+  const mod = rank % 100;
+  const suffix =
+    mod >= 11 && mod <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" }[rank % 10] ?? "th");
+  return `${rank}${suffix}`;
+}
 
 const hoverH2hCache = new Map<string, HoverH2H | "empty">();
 
@@ -738,16 +748,24 @@ function MatchHoverBody({ match }: { match: LiveMatch }) {
           return;
         }
         const body = (await res.json()) as {
-          data?: { summary?: HoverH2H };
+          data?: {
+            summary?: HoverH2H;
+            home_rank?: number | null;
+            away_rank?: number | null;
+          };
         };
         const summary = body.data?.summary;
+        const homeRank = Number(body.data?.home_rank) || null;
+        const awayRank = Number(body.data?.away_rank) || null;
         const next: HoverH2H | "empty" =
-          summary && Number(summary.sample) > 0
+          summary && (Number(summary.sample) > 0 || homeRank || awayRank)
             ? {
                 home_wins: Number(summary.home_wins) || 0,
                 draws: Number(summary.draws) || 0,
                 away_wins: Number(summary.away_wins) || 0,
                 sample: Number(summary.sample) || 0,
+                home_rank: homeRank,
+                away_rank: awayRank,
               }
             : "empty";
         hoverH2hCache.set(match.match_id, next);
@@ -815,6 +833,9 @@ function MatchHoverBody({ match }: { match: LiveMatch }) {
           <span className={`match-hover-name${favClass(ko.home)}`}>
             {match.home_team}
           </span>
+          {hoverRank(h2h, "home") ? (
+            <span className="match-hover-rank">{hoverRank(h2h, "home")}</span>
+          ) : null}
         </div>
         <div className="match-hover-center">
           <div className="match-hover-score">{match.score}</div>
@@ -828,11 +849,19 @@ function MatchHoverBody({ match }: { match: LiveMatch }) {
           <span className={`match-hover-name${favClass(ko.away)}`}>
             {match.away_team}
           </span>
+          {hoverRank(h2h, "away") ? (
+            <span className="match-hover-rank">{hoverRank(h2h, "away")}</span>
+          ) : null}
         </div>
       </div>
       {h2hBlock}
     </div>
   );
+}
+
+function hoverRank(h2h: HoverH2H | "empty" | "loading", side: "home" | "away"): string {
+  if (typeof h2h !== "object") return "";
+  return leagueRankLabel(side === "home" ? h2h.home_rank : h2h.away_rank);
 }
 
 function TeamStack({

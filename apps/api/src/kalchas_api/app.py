@@ -243,6 +243,8 @@ class H2HDataOut(BaseModel):
     summary: H2HSummaryOut = Field(default_factory=H2HSummaryOut)
     fixtures: list[H2HFixtureOut] = Field(default_factory=list)
     patterns: H2HPatternsOut = Field(default_factory=H2HPatternsOut)
+    home_rank: int | None = None
+    away_rank: int | None = None
 
 
 class H2HResponse(BaseModel):
@@ -937,6 +939,7 @@ def match_h2h(match_id: str) -> H2HResponse:
     from kalchas_db.panel_cache import load_panel_cache, pair_cache_key, save_panel_cache
 
     from kalchas_api.h2h import DEFAULT_LAST, build_h2h_payload, empty_h2h_payload
+    from kalchas_api.standings import attach_league_ranks
 
     header = get_match_sync(dsn, match_id)
     if header is None:
@@ -948,12 +951,20 @@ def match_h2h(match_id: str) -> H2HResponse:
         away_id = int(header.get("away_team_id") or 0)
     except (TypeError, ValueError):
         home_id = away_id = 0
+    league_id = _optional_league_id(header.get("league_id"))
     if home_id <= 0 or away_id <= 0 or home_id == away_id:
+        empty = empty_h2h_payload(
+            home_team=home_team, away_team=away_team, reason="missing_team_ids"
+        )
         return H2HResponse(
             source="empty",
             data=H2HDataOut.model_validate(
-                empty_h2h_payload(
-                    home_team=home_team, away_team=away_team, reason="missing_team_ids"
+                attach_league_ranks(
+                    empty,
+                    dsn=dsn,
+                    league_id=league_id,
+                    home_id=home_id,
+                    away_id=away_id,
                 )
             ),
         )
@@ -966,7 +977,18 @@ def match_h2h(match_id: str) -> H2HResponse:
     if cached:
         cached["home_team"] = home_team or cached.get("home_team") or ""
         cached["away_team"] = away_team or cached.get("away_team") or ""
-        return H2HResponse(source="cache", data=H2HDataOut.model_validate(cached))
+        return H2HResponse(
+            source="cache",
+            data=H2HDataOut.model_validate(
+                attach_league_ranks(
+                    cached,
+                    dsn=dsn,
+                    league_id=league_id,
+                    home_id=home_id,
+                    away_id=away_id,
+                )
+            ),
+        )
 
     from kalchas_football import FootballAPIClient, RateLimitBudgetExceeded
 
@@ -993,7 +1015,18 @@ def match_h2h(match_id: str) -> H2HResponse:
             save_panel_cache(dsn, cache_key, payload)
         except Exception:  # noqa: BLE001,S110 — cache write must not hide a good payload
             pass
-    return H2HResponse(source="api", data=H2HDataOut.model_validate(payload))
+    return H2HResponse(
+        source="api",
+        data=H2HDataOut.model_validate(
+            attach_league_ranks(
+                payload,
+                dsn=dsn,
+                league_id=league_id,
+                home_id=home_id,
+                away_id=away_id,
+            )
+        ),
+    )
 
 
 def _default_rule_outs() -> list[StrategyRuleOut]:

@@ -118,12 +118,23 @@ type H2HTiming = {
   btts_first_half: H2HCount;
   first_goal_before_30: H2HCount;
 };
+
+function leagueRankLabel(rank?: number | null): string {
+  if (rank == null || rank < 1) return "";
+  const mod = rank % 100;
+  const suffix =
+    mod >= 11 && mod <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" }[rank % 10] ?? "th");
+  return `${rank}${suffix}`;
+}
+
 type H2HData = {
   home_team: string;
   away_team: string;
   insufficient: boolean;
   reason?: string | null;
   summary: { home_wins: number; draws: number; away_wins: number; sample: number };
+  home_rank?: number | null;
+  away_rank?: number | null;
   fixtures: H2HFixture[];
   patterns: {
     sample: number;
@@ -1396,6 +1407,9 @@ function H2HPane({
       <div className="h2h-header">
         <div className="h2h-team-col">
           <div className="h2h-team-name home">{data.home_team || homeTeam}</div>
+          {leagueRankLabel(data.home_rank) ? (
+            <div className="h2h-rank">{leagueRankLabel(data.home_rank)}</div>
+          ) : null}
           <div className="h2h-wins home">{empty ? "—" : data.summary.home_wins}</div>
           <div className="h2h-wins-lbl">Wins</div>
         </div>
@@ -1411,6 +1425,9 @@ function H2HPane({
         </div>
         <div className="h2h-team-col">
           <div className="h2h-team-name away">{data.away_team || awayTeam}</div>
+          {leagueRankLabel(data.away_rank) ? (
+            <div className="h2h-rank">{leagueRankLabel(data.away_rank)}</div>
+          ) : null}
           <div className="h2h-wins away">{empty ? "—" : data.summary.away_wins}</div>
           <div className="h2h-wins-lbl">Wins</div>
         </div>
