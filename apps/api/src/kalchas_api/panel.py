@@ -232,6 +232,8 @@ def build_match_panel(dsn: str, match_id: str) -> dict[str, Any] | None:
         "status_short": str(row["status_short"]) if row.get("status_short") else None,
         "stat_lines": (board or {}).get("stat_lines") or {},
         "strategy_status": (board or {}).get("strategy_status") or {},
+        "last_5min": (board or {}).get("last_5min"),
+        "last_10min": (board or {}).get("last_10min"),
         "events": events,
         "substitutions": flatten_substitutions(subs_raw),
         "timeline": series,

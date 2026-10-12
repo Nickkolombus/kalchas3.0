@@ -5,7 +5,10 @@ import {
   hoverBarPct,
   hoverLead,
   phiInk,
+  windowLabel,
+  windowRecipe,
   type HoverScale,
+  type WindowBlock,
 } from "./HoverTip";
 
 type SideValue = { home: number; away: number };
@@ -88,6 +91,8 @@ type MatchPanel = {
   substitutions: Substitution[];
   timeline: TimelinePoint[];
   lineup: { home: TeamLineup; away: TeamLineup };
+  last_5min?: WindowBlock | null;
+  last_10min?: WindowBlock | null;
 };
 
 type H2HCount = { count: number; pct: number; team?: string | null };
@@ -366,6 +371,9 @@ function DualBar({
   scale,
   inkHome,
   inkAway,
+  homeNote,
+  awayNote,
+  windowHeading,
 }: {
   label: string;
   home: number;
@@ -382,6 +390,9 @@ function DualBar({
   scale?: HoverScale;
   inkHome?: string;
   inkAway?: string;
+  homeNote?: string;
+  awayNote?: string;
+  windowHeading?: string;
 }) {
   const { homePct, awayPct } = dualBarFillPcts(home, away);
   const extras = { suffix, signed };
@@ -407,6 +418,9 @@ function DualBar({
             awayLead={lead.away}
             homePct={hoverBarPct(home, scale)}
             awayPct={hoverBarPct(away, scale)}
+            homeNote={homeNote}
+            awayNote={awayNote}
+            windowHeading={windowHeading}
           />
         ) : (
           <p>{tip}</p>
@@ -1667,6 +1681,13 @@ export function MatchOverlay({
                 <h3>Signals</h3>
                 {STRAT_ROWS.map((row) => {
                   const block = panel.strategy_status[row.key];
+                  const window =
+                    row.key === "delta_5min"
+                      ? panel.last_5min
+                      : row.key === "pressure_index"
+                        ? panel.last_10min
+                        : null;
+                  const span = row.key === "delta_5min" ? 5 : row.key === "pressure_index" ? 10 : 0;
                   return (
                     <DualBar
                       key={row.key}
@@ -1689,6 +1710,11 @@ export function MatchOverlay({
                       awayName={panel.away_team}
                       tone={row.tone}
                       scale={row.scale}
+                      homeNote={window ? windowRecipe(window, "home") : undefined}
+                      awayNote={window ? windowRecipe(window, "away") : undefined}
+                      windowHeading={
+                        window && span ? windowLabel(window, span) : undefined
+                      }
                     />
                   );
                 })}

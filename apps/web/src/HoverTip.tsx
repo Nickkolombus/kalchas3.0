@@ -50,27 +50,66 @@ export function hoverBarPct(
   return Math.min(100, Math.max(0, ((value - scale.min) / span) * 100));
 }
 
+export type WindowBlock = {
+  start?: number | null;
+  end?: number | null;
+  sot?: { home?: number; away?: number };
+  sofft?: { home?: number; away?: number };
+  da?: { home?: number; away?: number };
+  corners?: { home?: number; away?: number };
+};
+
+export function windowLabel(
+  block: WindowBlock | null | undefined,
+  span: 5 | 10,
+): string {
+  if (!block) return "";
+  const start = Number(block.start);
+  const end = Number(block.end);
+  if (Number.isFinite(start) && Number.isFinite(end)) {
+    return `Last ${span} mins (${start}′-${end}′)`;
+  }
+  return `Last ${span} mins`;
+}
+
+export function windowRecipe(
+  block: WindowBlock | null | undefined,
+  side: "home" | "away",
+): string {
+  if (!block) return "";
+  const n = (key: "sot" | "sofft" | "da" | "corners") => {
+    const value = Number(block[key]?.[side] ?? 0);
+    return Number.isFinite(value) ? value : 0;
+  };
+  return `${n("sot")} SOT · ${n("sofft")} SOFF · ${n("da")} DA · ${n("corners")} CRN`;
+}
+
 function HoverRow({
   name,
   value,
   lead,
   pct,
+  note,
 }: {
   name: string;
   value: string;
   lead?: boolean;
   pct?: number | null;
+  note?: string;
 }) {
   return (
-    <div className="hover-row">
-      <span className={`hover-dot${lead ? " is-lead" : ""}`} />
-      <span className="hover-row-name">{name}</span>
-      <span className="hover-row-val">{value}</span>
-      {pct != null ? (
-        <div className="hover-mini" aria-hidden>
-          <i style={{ width: `${pct}%` }} />
-        </div>
-      ) : null}
+    <div className="hover-team">
+      <div className="hover-row">
+        <span className={`hover-dot${lead ? " is-lead" : ""}`} />
+        <span className="hover-row-name">{name}</span>
+        <span className="hover-row-val">{value}</span>
+        {pct != null ? (
+          <div className="hover-mini" aria-hidden>
+            <i style={{ width: `${pct}%` }} />
+          </div>
+        ) : null}
+      </div>
+      {note ? <div className="hover-recipe">{note}</div> : null}
     </div>
   );
 }
@@ -86,6 +125,9 @@ export function HoverLedger({
   homePct,
   awayPct,
   extra,
+  homeNote,
+  awayNote,
+  windowHeading,
 }: {
   tip: string;
   homeName: string;
@@ -97,15 +139,31 @@ export function HoverLedger({
   homePct?: number | null;
   awayPct?: number | null;
   extra?: ReactNode;
+  homeNote?: string;
+  awayNote?: string;
+  windowHeading?: string;
 }) {
   return (
     <>
       <p>{tip}</p>
       {extra}
       <div className="hover-ledger">
-        <HoverRow name={homeName} value={homeValue} lead={homeLead} pct={homePct} />
-        <HoverRow name={awayName} value={awayValue} lead={awayLead} pct={awayPct} />
+        <HoverRow
+          name={homeName}
+          value={homeValue}
+          lead={homeLead}
+          pct={homePct}
+          note={homeNote}
+        />
+        <HoverRow
+          name={awayName}
+          value={awayValue}
+          lead={awayLead}
+          pct={awayPct}
+          note={awayNote}
+        />
       </div>
+      {windowHeading ? <div className="hover-window">{windowHeading}</div> : null}
     </>
   );
 }

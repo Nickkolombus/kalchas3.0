@@ -1338,6 +1338,27 @@ body {
   margin-top: 0.45rem;
 }
 
+.hover-team {
+  margin: 0.12rem 0 0.28rem;
+}
+
+.hover-recipe {
+  margin: 0.12rem 0 0 1.15rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.01em;
+}
+
+.hover-window {
+  margin: 0.45rem 0 0;
+  font-family: var(--font-body);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.hover-tone-d5 .hover-window { color: #fdba74; }
+.hover-tone-d10 .hover-window { color: #fde68a; }
+
 .hover-row {
   display: grid;
   grid-template-columns: 0.7rem minmax(0, 1fr) auto;

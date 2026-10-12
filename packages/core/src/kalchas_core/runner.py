@@ -655,4 +655,6 @@ def board_snapshot(
         "active_strategies": active,
         "hot_score": int(ks.match_score),
         "stat_lines": stat_lines,
+        "last_5min": delta_5min.last_5min_block(timeline),
+        "last_10min": pressure_index.last_10min_block(timeline),
     }

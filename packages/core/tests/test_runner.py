@@ -40,6 +40,7 @@ def test_board_snapshot_has_strategy_and_stat_lines() -> None:
     timeline = timeline_from(
         {
             10: {"home": {}, "away": {}},
+            15: {"home": {}, "away": {}},
             20: {
                 "home": {
                     "shots_on_target": 8,
@@ -62,6 +63,11 @@ def test_board_snapshot_has_strategy_and_stat_lines() -> None:
     assert status["omega"]["threshold"] == 30
     assert board["stat_lines"]["shots_on_target"]["home"] == 8
     assert isinstance(board["hot_score"], int)
+    assert board["last_5min"]["sot"]["home"] == 8
+    assert board["last_5min"]["start"] == 15
+    assert board["last_10min"]["sot"]["home"] == 8
+    assert board["last_10min"]["start"] == 10
+    assert board["last_10min"]["end"] == 20
 
 
 def _busy_board_timeline():

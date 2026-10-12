@@ -12,7 +12,10 @@ import {
   hoverBarPct,
   hoverLead,
   phiInk,
+  windowLabel,
+  windowRecipe,
   type HoverScale,
+  type WindowBlock,
 } from "./HoverTip";
 import { MatchOverlay } from "./MatchPanel";
 import kalchasMark from "./assets/kalchas-mark.png";
@@ -78,6 +81,8 @@ export type LiveMatch = {
   card_events?: MatchEvent[];
   /** Explicit override from the feed. When omitted, activity counters decide. */
   statless?: boolean;
+  last_5min?: WindowBlock | null;
+  last_10min?: WindowBlock | null;
 };
 
 type RecentAlert = {
@@ -868,6 +873,18 @@ function TeamStack({
   );
 }
 
+function windowHover(key: string, match: LiveMatch) {
+  const span = key === "delta_5min" ? 5 : key === "pressure_index" ? 10 : 0;
+  if (!span) return {};
+  const block = span === 5 ? match.last_5min : match.last_10min;
+  if (!block) return {};
+  return {
+    homeNote: windowRecipe(block, "home"),
+    awayNote: windowRecipe(block, "away"),
+    windowHeading: windowLabel(block, span),
+  };
+}
+
 function StratCell({
   match,
   block,
@@ -901,6 +918,7 @@ function StratCell({
             awayLead={lead.away}
             homePct={hoverBarPct(home?.value, col.scale)}
             awayPct={hoverBarPct(away?.value, col.scale)}
+            {...windowHover(col.key, match)}
           />
         }
       >

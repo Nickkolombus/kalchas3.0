@@ -181,6 +181,8 @@ class MatchPanelResponse(BaseModel):
     substitutions: list[SubstitutionOut] = Field(default_factory=list)
     timeline: list[TimelinePointOut] = Field(default_factory=list)
     lineup: dict[str, TeamLineupOut] = Field(default_factory=dict)
+    last_5min: WindowStatsOut | None = None
+    last_10min: WindowStatsOut | None = None
 
 
 class H2HCountOut(BaseModel):
@@ -248,6 +250,15 @@ class H2HResponse(BaseModel):
     data: H2HDataOut
 
 
+class WindowStatsOut(BaseModel):
+    start: int | None = None
+    end: int | None = None
+    sot: SideValue = Field(default_factory=SideValue)
+    sofft: SideValue = Field(default_factory=SideValue)
+    da: SideValue = Field(default_factory=SideValue)
+    corners: SideValue = Field(default_factory=SideValue)
+
+
 class LiveMatchRow(BaseModel):
     match_id: str
     home_team: str
@@ -272,6 +283,8 @@ class LiveMatchRow(BaseModel):
     country_name: str | None = None
     country_logo: str | None = None
     odds: OddsOut | None = None
+    last_5min: WindowStatsOut | None = None
+    last_10min: WindowStatsOut | None = None
 
 
 class RecentAlertOut(BaseModel):
@@ -446,6 +459,26 @@ def _optional_league_id(value: Any) -> int | None:
     return parsed if parsed else None
 
 
+def _window_stats(raw: Any) -> WindowStatsOut | None:
+    if not isinstance(raw, dict):
+        return None
+    start = raw.get("start")
+    end = raw.get("end")
+    try:
+        start_i = int(start) if start is not None and start != "" else None
+        end_i = int(end) if end is not None and end != "" else None
+    except (TypeError, ValueError):
+        start_i, end_i = None, None
+    return WindowStatsOut(
+        start=start_i,
+        end=end_i,
+        sot=_side_value(raw.get("sot")),
+        sofft=_side_value(raw.get("sofft")),
+        da=_side_value(raw.get("da")),
+        corners=_side_value(raw.get("corners")),
+    )
+
+
 def _stat_lines_from_sides(
     home_stats: dict[str, Any], away_stats: dict[str, Any]
 ) -> dict[str, SideValue]:
@@ -505,6 +538,8 @@ def _enrich_live_row(
     strategy_status: dict[str, StrategyBlock] = {}
     active: list[str] = []
     hot = 0
+    last_5min: WindowStatsOut | None = None
+    last_10min: WindowStatsOut | None = None
     if events is None:
         events = load_match_events_sync(dsn, match_id)
     yellow, red = count_cards_by_side(events)
@@ -542,6 +577,8 @@ def _enrich_live_row(
             stat_lines = {
                 k: SideValue(home=v["home"], away=v["away"]) for k, v in board["stat_lines"].items()
             }
+        last_5min = _window_stats(board.get("last_5min"))
+        last_10min = _window_stats(board.get("last_10min"))
     events = [
         MatchEventOut(
             event_type=str(event["event_type"]),
@@ -592,6 +629,8 @@ def _enrich_live_row(
         country_name=str(row["country_name"]) if row.get("country_name") else None,
         country_logo=str(row["country_logo"]) if row.get("country_logo") else None,
         odds=_odds_out(row.get("odds")),
+        last_5min=last_5min,
+        last_10min=last_10min,
     )
 
 
@@ -866,6 +905,8 @@ def _panel_to_response(raw: dict[str, Any]) -> MatchPanelResponse:
             "home": _lineup_side(lineup_raw.get("home")),
             "away": _lineup_side(lineup_raw.get("away")),
         },
+        last_5min=_window_stats(raw.get("last_5min")),
+        last_10min=_window_stats(raw.get("last_10min")),
     )
 
 
