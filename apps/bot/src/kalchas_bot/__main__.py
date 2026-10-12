@@ -31,8 +31,15 @@ async def _maybe_start_delivery(application: Application) -> None:
         return
     from kalchas_bot.delivery import deliver_loop
 
+    free_chat_id = (os.environ.get("TELEGRAM_FREE_CHANNEL") or "").strip() or None
+    unlimited_until = (os.environ.get("TELEGRAM_FREE_UNLIMITED_UNTIL") or "").strip() or None
     application.bot_data["delivery_task"] = asyncio.create_task(
-        deliver_loop(application.bot, chat_id)
+        deliver_loop(
+            application.bot,
+            chat_id,
+            free_chat_id=free_chat_id,
+            unlimited_until=unlimited_until,
+        )
     )
 
 

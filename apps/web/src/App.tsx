@@ -20,6 +20,8 @@ import {
 import { MatchOverlay } from "./MatchPanel";
 import kalchasMark from "./assets/kalchas-mark.png";
 
+const TELEGRAM_FREE_JOIN_URL = "https://t.me/Kalchas_Tips_Free";
+
 type SideValue = { home: number; away: number };
 type TeamCell = { value: number; triggered?: boolean };
 type StrategyBlock = {
@@ -1791,6 +1793,15 @@ export function App() {
                 Follow pressure, attacking momentum and goal signals as they build
                 across every live match - before the score changes.
               </p>
+              <a
+                className="hero-telegram"
+                href={TELEGRAM_FREE_JOIN_URL}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Join free alerts
+                <span>unlimited until 1.1.2027</span>
+              </a>
             </div>
           </div>
           <div className="hero-filters">

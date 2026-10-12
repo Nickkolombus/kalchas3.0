@@ -96,7 +96,7 @@ WHERE o.alert_id = a.id
   )
 RETURNING o.alert_id, o.state, o.decision, o.detail, o.evaluated_at,
           a.strategy_key, a.team, a.home_team, a.away_team,
-          a.telegram_message_id, a.minute, a.score
+          a.telegram_message_id, a.telegram_free_message_id, a.minute, a.score
 """
 
 SKIP_UNREPLIABLE_OUTCOMES = """
@@ -121,6 +121,19 @@ MARK_OUTCOME_FAILED = """
 UPDATE alert_outcomes
 SET telegram_delivery_status = 'failed'
 WHERE alert_id = $1
+"""
+
+MARK_FREE_SENT = """
+UPDATE alerts
+SET telegram_free_message_id = $2,
+    telegram_free_sent_at = NOW()
+WHERE id = $1
+"""
+
+LAST_FREE_SENT_AT = """
+SELECT MAX(telegram_free_sent_at) AS last_at
+FROM alerts
+WHERE telegram_free_message_id IS NOT NULL
 """
 
 
@@ -174,6 +187,22 @@ async def mark_outcome_failed(conn: asyncpg.Connection, alert_id: int) -> None:
 
 async def mark_failed(conn: asyncpg.Connection, alert_id: int, error: str) -> None:
     await conn.execute(MARK_FAILED, alert_id, error[:2000])
+
+
+async def mark_free_sent(
+    conn: asyncpg.Connection,
+    alert_id: int,
+    telegram_free_message_id: int | None,
+) -> None:
+    await conn.execute(MARK_FREE_SENT, alert_id, telegram_free_message_id)
+
+
+async def last_free_sent_at(conn: asyncpg.Connection) -> datetime | None:
+    row = await conn.fetchrow(LAST_FREE_SENT_AT)
+    if row is None:
+        return None
+    value = row["last_at"]
+    return value if isinstance(value, datetime) else None
 
 
 def list_recent_alerts_sync(dsn: str, limit: int = 20) -> list[dict[str, Any]]:
