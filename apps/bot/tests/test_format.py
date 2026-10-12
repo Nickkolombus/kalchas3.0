@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kalchas_bot.format import format_alert_html
+from kalchas_bot.format import format_alert_html, format_outcome_html
 
 
 def _delta5_row(**overrides):
@@ -294,3 +294,70 @@ def test_match_totals_for_other_strategies():
     assert "SOT: <b>2</b> - 1" in text
     assert "SOFFT:" not in text
     assert "Corners: <b>5</b> - 1" in text
+
+
+def test_confirmed_outcome_reply():
+    text = format_outcome_html(
+        {
+            "strategy_key": "pressure_index",
+            "team": "home",
+            "home_team": "Zhytomyr 2",
+            "away_team": "Kulikiv",
+            "state": "Confirmed",
+            "detail": {
+                "fire_score": "1-4",
+                "settle_score": "1-5",
+                "settle_minute": 82,
+                "goal_minute": 61,
+            },
+        }
+    )
+    assert text == "GOAL at 61′ · 1-4 → 1-5\n<b>Δ10′</b> for <b>Zhytomyr 2</b>"
+
+
+def test_expired_outcome_reply():
+    text = format_outcome_html(
+        {
+            "strategy_key": "delta_5min",
+            "team": "away",
+            "home_team": "Home",
+            "away_team": "Away",
+            "state": "Expired",
+            "detail": {
+                "fire_score": "0-0",
+                "settle_score": "0-0",
+                "settle_minute": 74,
+                "success_window_minutes": 20,
+            },
+        }
+    )
+    assert text == "No goal arrived within 20′\n<b>Δ5′</b> for <b>Away</b>"
+
+
+def test_expired_infinite_ttl_has_no_window():
+    text = format_outcome_html(
+        {
+            "strategy_key": "rule_of_three",
+            "team": "away",
+            "home_team": "Home",
+            "away_team": "Away",
+            "state": "Expired",
+            "detail": {"infinite_ttl": True, "success_window_minutes": 999},
+        }
+    )
+    assert text == "No goal arrived\n<b>UrG</b> for <b>Away</b>"
+
+
+def test_outcome_reply_escapes_team_names():
+    text = format_outcome_html(
+        {
+            "strategy_key": "kscore",
+            "team": "home",
+            "home_team": "A <B>",
+            "away_team": "C",
+            "state": "Confirmed",
+            "detail": {"goal_minute": 20, "fire_score": "0-0", "settle_score": "1-0"},
+        }
+    )
+    assert "A &lt;B&gt;" in text
+    assert "<b>K</b> for <b>A &lt;B&gt;</b>" in text

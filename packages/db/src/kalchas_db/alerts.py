@@ -37,7 +37,10 @@ RETURNING id, match_id, strategy_slot, strategy_key, team, value, minute,
 
 MARK_SENT = """
 UPDATE alerts
-SET delivery_status = 'sent', delivered_at = NOW(), error = NULL
+SET delivery_status = 'sent',
+    delivered_at = NOW(),
+    error = NULL,
+    telegram_message_id = COALESCE($2, telegram_message_id)
 WHERE id = $1
 """
 
@@ -76,6 +79,50 @@ UPSERT_OUTCOME = text(
     """
 )
 
+CLAIM_OUTCOME_BATCH = """
+UPDATE alert_outcomes o
+SET telegram_delivery_status = 'reserved'
+FROM alerts a
+WHERE o.alert_id = a.id
+  AND o.alert_id IN (
+    SELECT o2.alert_id
+    FROM alert_outcomes o2
+    INNER JOIN alerts a2 ON a2.id = o2.alert_id
+    WHERE o2.telegram_delivery_status = 'pending'
+      AND a2.telegram_message_id IS NOT NULL
+    ORDER BY o2.evaluated_at
+    LIMIT $1
+    FOR UPDATE OF o2 SKIP LOCKED
+  )
+RETURNING o.alert_id, o.state, o.decision, o.detail, o.evaluated_at,
+          a.strategy_key, a.team, a.home_team, a.away_team,
+          a.telegram_message_id, a.minute, a.score
+"""
+
+SKIP_UNREPLIABLE_OUTCOMES = """
+UPDATE alert_outcomes o
+SET telegram_delivery_status = 'skipped'
+FROM alerts a
+WHERE o.alert_id = a.id
+  AND o.telegram_delivery_status = 'pending'
+  AND (
+    a.delivery_status = 'failed'
+    OR (a.delivery_status = 'sent' AND a.telegram_message_id IS NULL)
+  )
+"""
+
+MARK_OUTCOME_SENT = """
+UPDATE alert_outcomes
+SET telegram_delivery_status = 'sent'
+WHERE alert_id = $1
+"""
+
+MARK_OUTCOME_FAILED = """
+UPDATE alert_outcomes
+SET telegram_delivery_status = 'failed'
+WHERE alert_id = $1
+"""
+
 
 async def insert_pending(conn: asyncpg.Connection, alert: dict[str, Any]) -> int:
     row = await conn.fetchrow(
@@ -101,8 +148,28 @@ async def claim_pending(conn: asyncpg.Connection, limit: int = 20) -> list[async
         return await conn.fetch(CLAIM_BATCH, limit)
 
 
-async def mark_sent(conn: asyncpg.Connection, alert_id: int) -> None:
-    await conn.execute(MARK_SENT, alert_id)
+async def mark_sent(
+    conn: asyncpg.Connection,
+    alert_id: int,
+    telegram_message_id: int | None = None,
+) -> None:
+    await conn.execute(MARK_SENT, alert_id, telegram_message_id)
+
+
+async def claim_pending_outcomes(
+    conn: asyncpg.Connection, limit: int = 20
+) -> list[asyncpg.Record]:
+    async with conn.transaction():
+        await conn.execute(SKIP_UNREPLIABLE_OUTCOMES)
+        return await conn.fetch(CLAIM_OUTCOME_BATCH, limit)
+
+
+async def mark_outcome_sent(conn: asyncpg.Connection, alert_id: int) -> None:
+    await conn.execute(MARK_OUTCOME_SENT, alert_id)
+
+
+async def mark_outcome_failed(conn: asyncpg.Connection, alert_id: int) -> None:
+    await conn.execute(MARK_OUTCOME_FAILED, alert_id)
 
 
 async def mark_failed(conn: asyncpg.Connection, alert_id: int, error: str) -> None:

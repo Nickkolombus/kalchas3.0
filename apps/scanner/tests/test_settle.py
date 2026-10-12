@@ -86,6 +86,8 @@ def test_closed_window_settles_expired() -> None:
     assert snap is not None
     assert snap["state"] == PUBLIC_EXPIRED
     assert snap["decision"] == "expired"
+    assert snap["detail"]["success_window_minutes"] == 20
+    assert snap["detail"]["infinite_ttl"] is False
 
 
 def test_frozen_feed_settles_expired() -> None:
@@ -135,6 +137,8 @@ def test_admin_checkbox_off_confirms_any_goal() -> None:
     )
     assert snap is not None
     assert snap["state"] == PUBLIC_CONFIRMED
+    assert snap["detail"]["goal_minute"] == 27
+    assert snap["detail"]["kind"] == "confirmed"
 
 
 def test_public_labels_unchanged() -> None:

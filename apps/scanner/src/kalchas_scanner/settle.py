@@ -14,7 +14,8 @@ from kalchas_core.alert_outcomes import (
     AlertOutcomeEvaluator,
     GoalEvent,
     effective_clock,
-    evaluate_public_signal,
+    rule_for_alert,
+    score_public_signal,
 )
 
 _SETTLED = {PUBLIC_CONFIRMED, PUBLIC_EXPIRED}
@@ -44,7 +45,7 @@ def outcome_snapshot(
     evaluator: AlertOutcomeEvaluator,
 ) -> dict[str, Any] | None:
     """Return a persistable outcome, or None while the strip is still Monitoring."""
-    state = evaluate_public_signal(
+    signal = score_public_signal(
         alert_minute=int(alert["minute"]),
         alert_score=str(alert["score"]) if alert.get("score") else None,
         strategy_slot=int(alert["strategy_slot"])
@@ -60,21 +61,33 @@ def outcome_snapshot(
         created_at=alert.get("created_at"),
         now=datetime.now(UTC),
     )
-    if state not in _SETTLED:
+    if signal.state not in _SETTLED:
         return None
     payload = alert.get("payload") or {}
     if not isinstance(payload, dict):
         payload = {}
     clock = effective_clock(int(alert["minute"]), current_minute, status_short)
+    slot = alert.get("strategy_slot")
+    key = alert.get("strategy_key")
+    rule = rule_for_alert(
+        strategy_slot=int(slot) if slot is not None else None,
+        strategy_key=str(key) if key else None,
+        rules=evaluator.rules,
+    )
     return {
         "alert_id": int(alert["id"]),
-        "state": state,
-        "decision": "confirmed" if state == PUBLIC_CONFIRMED else "expired",
+        "state": signal.state,
+        "decision": "confirmed" if signal.state == PUBLIC_CONFIRMED else "expired",
         "detail": {
             "fire_score": alert.get("score"),
             "fire_minute": int(alert["minute"]),
             "settle_score": current_score,
             "settle_minute": clock,
+            "goal_minute": signal.goal_minute,
+            "kind": signal.kind,
+            "scoring_side": signal.scoring_side,
+            "success_window_minutes": rule.success_window_minutes,
+            "infinite_ttl": rule.infinite_ttl,
             "status_short": status_short,
             "team": alert.get("team"),
             "league": payload.get("league"),

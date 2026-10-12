@@ -1,8 +1,9 @@
-"""HTML Telegram alert caption from an outbox row.
+"""HTML Telegram captions from an outbox row.
 
-Crests go on the photo. This module is caption-only: strategy, firing team,
-clock, last-5-minute counts for Δ5, last-10-minute counts for Δ10 and Ω, H2H
-when the sample is at least 5.
+Crests go on the photo. Fire captions: strategy, firing team, clock,
+last-5-minute counts for Δ5, last-10-minute counts for Δ10 and Ω, H2H
+when the sample is at least 5. Outcome replies: GOAL / No goal under the
+original fire message.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from kalchas_core.alert_outcomes import DEFAULT_RULES, rule_for_alert
 from kalchas_core.h2h import DEFAULT_MIN_SAMPLE
 from kalchas_core.strategies.omega import DEFAULT_ANGLE_SCALE, alert_theta_degrees
 from kalchas_core.weights import short_label_for
@@ -66,6 +68,51 @@ def format_alert_html(row: Mapping[str, Any], *, with_score: bool = False) -> st
         lines.append("")
         lines.extend(h2h)
     return "\n".join(lines)
+
+
+def format_outcome_html(row: Mapping[str, Any]) -> str:
+    """Reply under the original fire: GOAL at the settle minute, or No goal."""
+    detail = _payload(row.get("detail"))
+    home = _esc(row.get("home_team") or detail.get("home_team"))
+    away = _esc(row.get("away_team") or detail.get("away_team"))
+    key = str(row.get("strategy_key") or "")
+    short = _esc(short_label_for(key))
+    side = str(row.get("team") or detail.get("team") or "").lower()
+    trigger = _trigger_name(side if side in ("home", "away") else "", home, away)
+    state = str(row.get("state") or "")
+    fire = _score(detail.get("fire_score"))
+    settle = _score(detail.get("settle_score"))
+    goal_at = _minute_int(detail.get("goal_minute"))
+    settle_at = _minute_int(detail.get("settle_minute"))
+    if state == "Confirmed":
+        clock = _plain_minute(goal_at if goal_at is not None else settle_at)
+        head = f"GOAL at {clock}" if clock else "GOAL"
+        if fire and settle:
+            head = f"{head} · {fire} → {settle}"
+        elif settle:
+            head = f"{head} · {settle}"
+    else:
+        window = _success_window(row, detail)
+        if window is None:
+            head = "No goal arrived"
+        else:
+            head = f"No goal arrived within {_plain_minute(window)}"
+    if trigger:
+        return f"{head}\n<b>{short}</b> for <b>{trigger}</b>"
+    return f"{head}\n<b>{short}</b>"
+
+
+def _success_window(row: Mapping[str, Any], detail: Mapping[str, Any]) -> int | None:
+    if detail.get("infinite_ttl"):
+        return None
+    stored = _minute_int(detail.get("success_window_minutes"))
+    if stored is not None:
+        return stored
+    key = str(row.get("strategy_key") or "") or None
+    rule = rule_for_alert(strategy_slot=None, strategy_key=key, rules=DEFAULT_RULES)
+    if rule.infinite_ttl:
+        return None
+    return int(rule.success_window_minutes)
 
 
 def _trigger_side(row: Mapping[str, Any], payload: Mapping[str, Any]) -> str:
