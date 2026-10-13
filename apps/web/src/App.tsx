@@ -21,6 +21,7 @@ import { MatchOverlay } from "./MatchPanel";
 import kalchasMark from "./assets/kalchas-mark.png";
 
 const TELEGRAM_FREE_JOIN_URL = "https://t.me/Kalchas_Tips_Free";
+const TELEGRAM_PAID_JOIN_URL = "https://im.page/kalchas";
 
 type SideValue = { home: number; away: number };
 type TeamCell = { value: number; triggered?: boolean };
@@ -1823,15 +1824,26 @@ export function App() {
                 Telegram: Mon-Thu GMT, one alert per hour. Every fire goes to
                 the full feed.
               </p>
-              <a
-                className="hero-telegram"
-                href={TELEGRAM_FREE_JOIN_URL}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Join free alerts
-                <span>Mon-Thu GMT, 1 per hour</span>
-              </a>
+              <div className="hero-joins">
+                <a
+                  className="hero-telegram"
+                  href={TELEGRAM_FREE_JOIN_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Join free alerts
+                  <span>Mon-Thu GMT, 1 per hour</span>
+                </a>
+                <a
+                  className="hero-telegram hero-telegram-paid"
+                  href={TELEGRAM_PAID_JOIN_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Join full feed
+                  <span>€2.99 a week</span>
+                </a>
+              </div>
             </div>
           </div>
           <div className="hero-filters">

@@ -85,13 +85,21 @@ body {
   margin: 0 0 0.3rem;
 }
 
+.hero-joins {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
 .hero-telegram {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  margin-top: 0.75rem;
   padding: 0.45rem 0.85rem;
   border-radius: 0.4rem;
+  border: 1px solid transparent;
   background: var(--text);
   color: #071018;
   font-size: 0.78rem;
@@ -108,6 +116,16 @@ body {
 
 .hero-telegram:hover {
   filter: brightness(1.06);
+}
+
+.hero-telegram-paid {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--text);
+}
+
+.hero-telegram-paid span {
+  color: var(--muted);
 }
 
 .hero h1 {
