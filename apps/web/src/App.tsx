@@ -1819,8 +1819,9 @@ export function App() {
               <p className="brand">Kalchas</p>
               <h1>Live Match Intelligence</h1>
               <p className="lede">
-                Live board of pressure and goal signals. Free Telegram alerts
-                before the score changes, unlimited until 1.1.2027.
+                Live board of pressure and goal signals, free on this site. Free
+                Telegram: Mon-Thu GMT, one alert per hour. Every fire goes to
+                the full feed.
               </p>
               <a
                 className="hero-telegram"
@@ -1829,7 +1830,7 @@ export function App() {
                 rel="noreferrer"
               >
                 Join free alerts
-                <span>unlimited until 1.1.2027</span>
+                <span>Mon-Thu GMT, 1 per hour</span>
               </a>
             </div>
           </div>
