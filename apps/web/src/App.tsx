@@ -1819,8 +1819,8 @@ export function App() {
               <p className="brand">Kalchas</p>
               <h1>Live Match Intelligence</h1>
               <p className="lede">
-                Follow pressure, attacking momentum and goal signals as they build
-                across every live match - before the score changes.
+                Live board of pressure and goal signals. Free Telegram alerts
+                before the score changes, unlimited until 1.1.2027.
               </p>
               <a
                 className="hero-telegram"
