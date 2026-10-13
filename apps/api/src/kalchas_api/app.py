@@ -1118,6 +1118,13 @@ def _mount_web_ui() -> None:
     def spa_index() -> FileResponse:
         return FileResponse(index)
 
+    @app.get("/og.png", include_in_schema=False)
+    def og_png() -> FileResponse:
+        path = dist / "og.png"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Not Found")
+        return FileResponse(path, media_type="image/png")
+
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback(full_path: str) -> FileResponse:
         reserved = {"api", "health", "docs", "redoc", "openapi.json", "assets", "tips.csv"}
@@ -1131,6 +1138,8 @@ def _mount_web_ui() -> None:
             return FileResponse(index)
         if candidate.is_file():
             return FileResponse(candidate)
+        if Path(full_path).suffix.lower() in {".png", ".ico", ".svg", ".jpg", ".jpeg", ".webp"}:
+            raise HTTPException(status_code=404, detail="Not Found")
         return FileResponse(index)
 
 

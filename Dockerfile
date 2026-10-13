@@ -3,7 +3,7 @@ WORKDIR /web
 COPY apps/web/package.json ./
 RUN npm install
 COPY apps/web/ ./
-RUN npm run build
+RUN npm run build && test -f dist/og.png
 
 FROM public.ecr.aws/docker/library/python:3.13-slim AS base
 
