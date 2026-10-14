@@ -64,7 +64,16 @@ UPSERT_MATCH = text(
             WHEN EXCLUDED.substitutions = '{}'::jsonb THEN matches.substitutions
             ELSE EXCLUDED.substitutions
         END,
-        updated_at = NOW()
+        updated_at = CASE
+            WHEN matches.minute IS NOT DISTINCT FROM EXCLUDED.minute
+             AND matches.status_short IS NOT DISTINCT FROM EXCLUDED.status_short
+             AND matches.home_score IS NOT DISTINCT FROM EXCLUDED.home_score
+             AND matches.away_score IS NOT DISTINCT FROM EXCLUDED.away_score
+             AND COALESCE(matches.minute_display, '')
+                 IS NOT DISTINCT FROM COALESCE(EXCLUDED.minute_display, '')
+            THEN matches.updated_at
+            ELSE NOW()
+        END
     """
 )
 

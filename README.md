@@ -75,7 +75,7 @@ cd apps/web && npm install && npm run dev
 | `SCANNER_INTERVAL_SEC` | scanner (default 60) |
 | `SCANNER_ONCE` | scanner (one cycle then exit) |
 | `TELEGRAM_TOKEN` | bot |
-| `TELEGRAM_CHAT_ID` | bot delivery worker |
+| `TIPS_CHANNEL_ID` | bot paid feed (`Kalchas_Tips_Premium`); `TELEGRAM_CHAT_ID` still works as fallback |
 | `ADMIN_PASSWORD` | api — gates `kalchas.live/admin` |
 | `API_HOST` / `API_PORT` | api (default 127.0.0.1:8000) |
 

@@ -2,15 +2,15 @@
 
 Crests go on the photo. Fire captions: strategy, firing team, clock,
 last-5-minute counts for Δ5, last-10-minute counts for Δ10 and Ω, H2H
-when the sample is at least 5. Outcome replies: GOAL / No goal under the
-original fire message.
+when the sample is at least 5. Outcome replies: fire lede plus GOAL /
+No goal under the original fire message.
 """
 
 from __future__ import annotations
 
 import html
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from kalchas_core.alert_outcomes import DEFAULT_RULES, rule_for_alert
@@ -28,6 +28,9 @@ ALERT_NAMES: dict[str, str] = {
     "kscore": "K-Score",
 }
 
+# Joint posts use one window. Δ5′ + UrG is the only pair that stays on 5 minutes.
+_JOINT_FIVE_MINUTE = frozenset({"delta_5min", "rule_of_three"})
+
 # Ceiling is a display cap (x / cap). None means show the number only.
 ALERT_CEILING: dict[str, tuple[float | None, int, str]] = {
     "rule_of_three": (None, 1, ""),
@@ -40,8 +43,16 @@ ALERT_CEILING: dict[str, tuple[float | None, int, str]] = {
 }
 
 
-def format_alert_html(row: Mapping[str, Any], *, with_score: bool = False) -> str:
-    """Telegram HTML parse_mode caption. Team names are escaped."""
+def format_alert_html(
+    row: Mapping[str, Any],
+    *,
+    with_score: bool = False,
+    compact: bool = False,
+) -> str:
+    """Telegram HTML parse_mode caption. Team names are escaped.
+
+    ``compact`` is the fire lede only (versus, league, title) for outcome replies.
+    """
     payload = _payload(row.get("payload"))
     home = _esc(row.get("home_team"))
     away = _esc(row.get("away_team"))
@@ -58,6 +69,9 @@ def format_alert_html(row: Mapping[str, Any], *, with_score: bool = False) -> st
         lines.append(f"<i>{league}</i>")
     lines.append(_title_line(short, name, row, key, payload, trigger=trigger))
 
+    if compact:
+        return "\n".join(lines)
+
     stats = _stat_block(key, payload, row.get("minute"))
     if stats:
         lines.append("")
@@ -70,9 +84,75 @@ def format_alert_html(row: Mapping[str, Any], *, with_score: bool = False) -> st
     return "\n".join(lines)
 
 
+def joint_window_span(keys: Sequence[str]) -> int:
+    """10-minute delta for a joint post. 5 minutes only for exactly Δ5′ and UrG."""
+    present = {str(key) for key in keys if key}
+    if present == _JOINT_FIVE_MINUTE:
+        return 5
+    return 10
+
+
+def format_joint_html(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    with_score: bool = False,
+) -> str:
+    """One caption for every strategy that fired on the same match minute."""
+    if len(rows) == 1:
+        return format_alert_html(rows[0], with_score=with_score)
+    ordered = sorted(rows, key=_strategy_sort_key)
+    first = ordered[0]
+    payload = _merged_payload(ordered)
+    home = _esc(first.get("home_team"))
+    away = _esc(first.get("away_team"))
+    league = _esc(payload.get("league") or "")
+    minute = _minute(first.get("minute"))
+    sides = {_trigger_side(row, _payload(row.get("payload"))) for row in ordered}
+    sides.discard("")
+
+    lines = [
+        _versus_line(
+            "",
+            home,
+            away,
+            minute,
+            with_score=with_score,
+            score=first.get("score"),
+            bold_sides=sides,
+        )
+    ]
+    if league:
+        lines.append(f"<i>{league}</i>")
+    for row in ordered:
+        row_payload = _payload(row.get("payload"))
+        key = str(row.get("strategy_key") or "")
+        short = _esc(short_label_for(key))
+        name = _esc(ALERT_NAMES.get(key) or short)
+        side = _trigger_side(row, row_payload)
+        trigger = _trigger_name(side, home, away)
+        lines.append(_title_line(short, name, row, key, row_payload, trigger=trigger))
+
+    span = joint_window_span([str(row.get("strategy_key") or "") for row in ordered])
+    window_key = "last_5min" if span == 5 else "last_10min"
+    stats = _window_stat_lines(payload.get(window_key), first.get("minute"), span=span)
+    if stats:
+        lines.append("")
+        lines.extend(stats)
+
+    h2h_side = next(iter(sides)) if len(sides) == 1 else ""
+    h2h = _h2h_lines(payload, home, away, side=h2h_side)
+    if h2h:
+        lines.append("")
+        lines.extend(h2h)
+    return "\n".join(lines)
+
+
 def format_outcome_html(row: Mapping[str, Any]) -> str:
     """Reply under the original fire: GOAL at the settle minute, or No goal."""
     detail = _payload(row.get("detail"))
+    payload = _payload(row.get("payload"))
+    if not payload.get("league") and detail.get("league"):
+        payload = {**payload, "league": detail.get("league")}
     home = _esc(row.get("home_team") or detail.get("home_team"))
     away = _esc(row.get("away_team") or detail.get("away_team"))
     key = str(row.get("strategy_key") or "")
@@ -91,12 +171,27 @@ def format_outcome_html(row: Mapping[str, Any]) -> str:
             head = f"{head} · {fire} → {settle}"
         elif settle:
             head = f"{head} · {settle}"
+        fire_minute = row.get("minute")
+        if fire_minute is None:
+            fire_minute = detail.get("fire_minute")
+        lede = format_alert_html(
+            {
+                "home_team": row.get("home_team") or detail.get("home_team"),
+                "away_team": row.get("away_team") or detail.get("away_team"),
+                "minute": fire_minute,
+                "strategy_key": key,
+                "team": row.get("team") or detail.get("team"),
+                "value": row.get("value"),
+                "payload": payload,
+            },
+            compact=True,
+        )
+        return f"{lede}\n\n⚽ {head}"
+    window = _success_window(row, detail)
+    if window is None:
+        head = "No goal arrived"
     else:
-        window = _success_window(row, detail)
-        if window is None:
-            head = "No goal arrived"
-        else:
-            head = f"No goal arrived within {_plain_minute(window)}"
+        head = f"No goal arrived within {_plain_minute(window)}"
     if trigger:
         return f"{head}\n<b>{short}</b> for <b>{trigger}</b>"
     return f"{head}\n<b>{short}</b>"
@@ -151,6 +246,28 @@ def _title_line(
     return head
 
 
+def _strategy_sort_key(row: Mapping[str, Any]) -> tuple[int, int]:
+    try:
+        slot = int(row.get("strategy_slot") or 0)
+    except (TypeError, ValueError):
+        slot = 0
+    try:
+        alert_id = int(row.get("id") or 0)
+    except (TypeError, ValueError):
+        alert_id = 0
+    return slot, alert_id
+
+
+def _merged_payload(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for row in rows:
+        payload = _payload(row.get("payload"))
+        for key, value in payload.items():
+            if value not in (None, "", {}, []):
+                merged[key] = value
+    return merged
+
+
 def _versus_line(
     side: str,
     home: str,
@@ -159,9 +276,11 @@ def _versus_line(
     *,
     with_score: bool,
     score: object = None,
+    bold_sides: set[str] | None = None,
 ) -> str:
-    home_html = f"<b>{home}</b>" if side == "home" else home
-    away_html = f"<b>{away}</b>" if side == "away" else away
+    bold = bold_sides if bold_sides is not None else {side} if side else set()
+    home_html = f"<b>{home}</b>" if "home" in bold else home
+    away_html = f"<b>{away}</b>" if "away" in bold else away
     parts = [f"{home_html} vs {away_html}"]
     if with_score:
         scored = _score(score)

@@ -125,6 +125,10 @@ _COMMENT_END = re.compile(
     r"^(full time|half time|finished|end of|penalt|\s*ht\s*|\s*ft\s*)$",
     re.I,
 )
+_COMMENT_FULL_TIME = re.compile(
+    r"^(full time|match finished|finished|\s*ft\s*)$",
+    re.I,
+)
 
 
 def _added_from_event_time(time_str: Any, base: int) -> int:
@@ -282,6 +286,37 @@ def comment_elapsed_from_live_comments(payload: Any) -> dict[str, int]:
         if elapsed is not None:
             out[match_id] = elapsed
     return out
+
+
+def full_time_match_ids_from_live_comments(payload: Any) -> set[str]:
+    """Match ids whose live comments include a full-time marker.
+
+    apifootball often keeps ``match_live=1`` rows on ``90+`` after the whistle.
+    Those must become FT or they sit on the board until cleanup.
+    """
+    rows: list[Any]
+    if isinstance(payload, dict):
+        rows = list(payload.values())
+    elif isinstance(payload, list):
+        rows = payload
+    else:
+        return set()
+    ended: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        match_id = str(row.get("match_id") or "")
+        comments = row.get("live_comments")
+        if not match_id or not isinstance(comments, list):
+            continue
+        for item in comments:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or "").strip()
+            if _COMMENT_FULL_TIME.match(text):
+                ended.add(match_id)
+                break
+    return ended
 
 
 def _parse_elapsed(match_status: Any) -> tuple[int, str, str]:
@@ -875,18 +910,22 @@ class FootballAPIClient:
 
     def get_live_odds_comments_bundle(
         self,
-    ) -> tuple[dict[str, dict[str, float]], dict[str, int]]:
-        """One ``get_live_odds_commnets`` call: 1X2 plus comment elapsed clocks."""
+    ) -> tuple[dict[str, dict[str, float]], dict[str, int], set[str]]:
+        """One ``get_live_odds_commnets`` call: 1X2, comment clocks, full-time ids."""
         try:
             data = self._get("get_live_odds_commnets")
         except RateLimitBudgetExceeded:
             logger.warning("skipping get_live_odds_commnets; hourly HTTP budget exhausted")
-            return {}, {}
-        return odds_1x2_from_live_comments(data), comment_elapsed_from_live_comments(data)
+            return {}, {}, set()
+        return (
+            odds_1x2_from_live_comments(data),
+            comment_elapsed_from_live_comments(data),
+            full_time_match_ids_from_live_comments(data),
+        )
 
     def get_live_odds_1x2(self) -> dict[str, dict[str, float]]:
         """One ``get_live_odds_commnets`` call; keep only full-time 1X2 lines."""
-        odds, _clocks = self.get_live_odds_comments_bundle()
+        odds, _clocks, _ended = self.get_live_odds_comments_bundle()
         return odds
 
     def get_standings(self, league_id: int) -> dict[int, int]:

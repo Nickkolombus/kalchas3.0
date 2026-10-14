@@ -95,7 +95,7 @@ WHERE o.alert_id = a.id
     FOR UPDATE OF o2 SKIP LOCKED
   )
 RETURNING o.alert_id, o.state, o.decision, o.detail, o.evaluated_at,
-          a.strategy_key, a.team, a.home_team, a.away_team,
+          a.strategy_key, a.team, a.home_team, a.away_team, a.value, a.payload,
           a.telegram_message_id, a.telegram_free_message_id, a.minute, a.score
 """
 
@@ -130,11 +130,47 @@ SET telegram_free_message_id = $2,
 WHERE id = $1
 """
 
+ATTACH_FREE_MESSAGE = """
+UPDATE alerts
+SET telegram_free_message_id = $2
+WHERE id = $1
+"""
+
+SENT_SAME_MINUTE = """
+SELECT id, match_id, strategy_slot, strategy_key, team, value, minute,
+       score, home_team, away_team, payload,
+       telegram_message_id, telegram_free_message_id
+FROM alerts
+WHERE match_id = $1
+  AND minute = $2
+  AND delivery_status = 'sent'
+  AND telegram_message_id IS NOT NULL
+ORDER BY id
+"""
+
+MESSAGE_ALERT_STATES = """
+SELECT a.id, o.state
+FROM alerts a
+LEFT JOIN alert_outcomes o ON o.alert_id = a.id
+WHERE a.telegram_message_id = $1
+"""
+
+RELEASE_OUTCOME = """
+UPDATE alert_outcomes
+SET telegram_delivery_status = 'pending'
+WHERE alert_id = $1
+"""
+
 LAST_FREE_SENT_AT = """
 SELECT MAX(telegram_free_sent_at) AS last_at
 FROM alerts
-WHERE telegram_free_message_id IS NOT NULL
+WHERE telegram_free_sent_at IS NOT NULL
 """
+
+FREE_GATE_LOCK_KEY = 87420001
+
+LOCK_FREE_GATE = "SELECT pg_try_advisory_lock($1)"
+UNLOCK_FREE_GATE = "SELECT pg_advisory_unlock($1)"
 
 
 async def insert_pending(conn: asyncpg.Connection, alert: dict[str, Any]) -> int:
@@ -197,12 +233,49 @@ async def mark_free_sent(
     await conn.execute(MARK_FREE_SENT, alert_id, telegram_free_message_id)
 
 
+async def attach_free_message(
+    conn: asyncpg.Connection,
+    alert_id: int,
+    telegram_free_message_id: int,
+) -> None:
+    """Share an existing free post. Does not move the hourly free clock."""
+    await conn.execute(ATTACH_FREE_MESSAGE, alert_id, telegram_free_message_id)
+
+
+async def sent_same_minute(
+    conn: asyncpg.Connection,
+    match_id: str,
+    minute: int,
+) -> list[asyncpg.Record]:
+    return await conn.fetch(SENT_SAME_MINUTE, str(match_id), int(minute))
+
+
+async def message_alert_states(
+    conn: asyncpg.Connection,
+    telegram_message_id: int,
+) -> list[asyncpg.Record]:
+    return await conn.fetch(MESSAGE_ALERT_STATES, int(telegram_message_id))
+
+
+async def release_outcome(conn: asyncpg.Connection, alert_id: int) -> None:
+    await conn.execute(RELEASE_OUTCOME, alert_id)
+
+
 async def last_free_sent_at(conn: asyncpg.Connection) -> datetime | None:
     row = await conn.fetchrow(LAST_FREE_SENT_AT)
     if row is None:
         return None
     value = row["last_at"]
     return value if isinstance(value, datetime) else None
+
+
+async def lock_free_gate(conn: asyncpg.Connection) -> bool:
+    locked = await conn.fetchval(LOCK_FREE_GATE, FREE_GATE_LOCK_KEY)
+    return bool(locked)
+
+
+async def unlock_free_gate(conn: asyncpg.Connection) -> None:
+    await conn.fetchval(UNLOCK_FREE_GATE, FREE_GATE_LOCK_KEY)
 
 
 def list_recent_alerts_sync(dsn: str, limit: int = 20) -> list[dict[str, Any]]:

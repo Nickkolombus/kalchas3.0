@@ -49,3 +49,8 @@ def test_rolling_60_minutes_on_weekdays_after_cutoff():
         )
         is True
     )
+
+
+def test_second_fire_in_same_minute_is_blocked_once_last_is_updated():
+    assert allow_free_fire(now=MON, unlimited_until="2026-10-01", last_free_at=None) is True
+    assert allow_free_fire(now=MON, unlimited_until="2026-10-01", last_free_at=MON) is False

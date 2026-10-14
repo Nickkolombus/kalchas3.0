@@ -114,6 +114,27 @@ def test_first_half_stoppage_ignores_second_half_event_minute() -> None:
     assert match.minute_display == "45+"
 
 
+def test_full_time_comments_mark_match_ended() -> None:
+    from kalchas_football import full_time_match_ids_from_live_comments
+
+    payload = {
+        "1": {
+            "match_id": "1",
+            "live_comments": [
+                {"time": "90:31", "text": "attack", "state": ""},
+                {"time": "90:00", "text": "Full time", "state": ""},
+            ],
+        },
+        "2": {
+            "match_id": "2",
+            "live_comments": [
+                {"time": "45:00", "text": "Half time", "state": ""},
+            ],
+        },
+    }
+    assert full_time_match_ids_from_live_comments(payload) == {"1"}
+
+
 def test_comment_elapsed_skips_full_time_and_reads_mm_ss() -> None:
     from kalchas_football import advance_stoppage_clock, comment_elapsed_from_live_comments
 

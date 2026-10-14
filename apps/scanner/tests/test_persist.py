@@ -807,6 +807,55 @@ def test_process_match_persists_finished_as_ft_without_zeroing_minute(monkeypatc
     assert called["eval"] == 0
 
 
+def test_process_match_marks_full_time_from_comments(monkeypatch) -> None:
+    from kalchas_scanner.loop import Scanner
+    from kalchas_scanner.outbox import MemoryAlertSink
+
+    class CommentClient:
+        def get_odds_1x2_today(self):
+            return {}
+
+        def get_live_odds_comments_bundle(self):
+            return {}, {}, {"12"}
+
+        def get_live_fixtures(self):
+            return []
+
+        def get_fixture_statistics(self, match_id: str):
+            raise AssertionError("Full-time matches must not call get_statistics")
+
+        def get_fixture_events(self, match_id: str):
+            raise AssertionError("Full-time matches must not call get_events")
+
+    persist = MemoryMatchPersist()
+    scanner = Scanner(
+        client=CommentClient(),  # type: ignore[arg-type]
+        sink=MemoryAlertSink(),
+        persist=persist,
+    )
+    def _boom(*args: object, **kwargs: object) -> list:
+        raise AssertionError("Full-time matches must not evaluate alerts")
+
+    monkeypatch.setattr("kalchas_scanner.loop.evaluate_match", _boom)
+    match = LiveMatch(
+        match_id="12",
+        home_team="A",
+        away_team="B",
+        home_team_id=1,
+        away_team_id=2,
+        minute=90,
+        home_score=1,
+        away_score=0,
+        status_short="2H",
+        minute_display="90+",
+        league_name="L",
+    )
+    assert scanner.process_match(match) == []
+    header = persist.matches["12"]
+    assert header["status_short"] == "FT"
+    assert header["minute"] == 90
+
+
 def test_run_once_processes_every_live_match(monkeypatch) -> None:
     from kalchas_scanner.loop import Scanner, ScannerConfig
     from kalchas_scanner.outbox import MemoryAlertSink

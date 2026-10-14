@@ -126,6 +126,7 @@ class Scanner:
     _live_odds_by_match: dict[str, dict[str, float]] = field(default_factory=dict)
     _live_odds_fetched_at: float = 0.0
     _comment_elapsed_by_match: dict[str, int] = field(default_factory=dict)
+    _full_time_match_ids: set[str] = field(default_factory=set)
     _status_by_match: dict[str, str] = field(default_factory=dict)
     _stats_http_used: int = 0
     _stats_http_window_at: float = 0.0
@@ -187,8 +188,10 @@ class Scanner:
                 if callable(bundle):
                     packed = bundle() or ({}, {})
                     fresh, clocks = packed[0] or {}, packed[1] or {}
+                    ended = packed[2] if len(packed) > 2 else set()
                 else:
                     fresh = fetch() or {}
+                    ended = set()
                 if fresh:
                     for match_id, odds in fresh.items():
                         self._live_odds_by_match[str(match_id)] = dict(odds)
@@ -197,6 +200,7 @@ class Scanner:
                     self._comment_elapsed_by_match = {
                         str(match_id): int(elapsed) for match_id, elapsed in clocks.items()
                     }
+                self._full_time_match_ids = {str(match_id) for match_id in (ended or set())}
             except Exception:
                 logger.exception("live odds cache refresh failed")
         self._live_odds_fetched_at = now
@@ -424,6 +428,8 @@ class Scanner:
         self._refresh_odds_cache()
         self._hydrate_if_needed(match.match_id)
         match = self._with_comment_clock(match)
+        if match.match_id in self._full_time_match_ids:
+            match = replace(match, status_short="FT")
         match = hold_playing_period(match, previous_status=self._previous_status(match.match_id))
         self._status_by_match[match.match_id] = (match.status_short or "").strip().upper()
         if match.raw:
@@ -621,12 +627,11 @@ class Scanner:
             if cand.strategy_key == "omega":
                 payload["theta"] = detail.get("theta")
                 payload["k_scale"] = detail.get("k_scale")
-            if cand.strategy_key == "delta_5min":
+            if timeline is not None:
                 last_5 = last_5min_block(timeline)
+                last_10 = last_10min_block(timeline)
                 if last_5:
                     payload["last_5min"] = last_5
-            if cand.strategy_key in ("pressure_index", "omega"):
-                last_10 = last_10min_block(timeline)
                 if last_10:
                     payload["last_10min"] = last_10
             h2h = self._h2h_for_alert(match)

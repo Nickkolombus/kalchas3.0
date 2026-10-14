@@ -9,6 +9,8 @@ import os
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
+from kalchas_bot.paid_channel import paid_chat_id
+
 logger = logging.getLogger("kalchas.bot")
 
 
@@ -25,9 +27,9 @@ async def health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def _maybe_start_delivery(application: Application) -> None:
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    chat_id = paid_chat_id()
     if not chat_id or not os.environ.get("DATABASE_URL"):
-        logger.info("delivery worker idle (TELEGRAM_CHAT_ID and DATABASE_URL required)")
+        logger.info("delivery worker idle (TIPS_CHANNEL_ID and DATABASE_URL required)")
         return
     from kalchas_bot.delivery import deliver_loop
 
