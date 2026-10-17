@@ -1085,17 +1085,30 @@ body {
   font-family: var(--font-body);
 }
 
-.team-label.is-short-fav,
-.signal-team.is-short-fav {
-  color: #f7e9c8;
-  text-shadow:
-    0 0 4px rgba(255, 220, 130, 0.38),
-    0 0 10px rgba(255, 196, 80, 0.26),
-    0 0 18px rgba(255, 180, 50, 0.14);
+.team-label.is-step-39,
+.signal-team.is-step-39,
+.match-hover-name.is-step-39 {
+  color: #c0bdb7;
+  font-weight: 500;
+}
+
+.team-label.is-step-48,
+.signal-team.is-step-48,
+.match-hover-name.is-step-48 {
+  color: #b7b0a3;
+  font-weight: 500;
+}
+
+.team-label.is-step-83,
+.signal-team.is-step-83,
+.match-hover-name.is-step-83 {
+  color: #6f6a62;
+  font-weight: 500;
 }
 
 .team-label.is-scorer {
   color: #f3e2b0;
+  font-weight: 600;
   text-shadow: none;
 }
 

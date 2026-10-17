@@ -328,16 +328,33 @@ function isShortKo(price?: number | null): boolean {
   return typeof price === "number" && Number.isFinite(price) && price > 1 && price < SHORT_KO;
 }
 
+/** How far the longer price steps back. 1.40 to 1.68 is the normal step. */
+function otherPriceStep(home?: number | null, away?: number | null): "" | "step-39" | "step-48" | "step-83" {
+  if (!isShortKo(home) && !isShortKo(away)) return "";
+  if (typeof home !== "number" || typeof away !== "number") return "";
+  if (!Number.isFinite(home) || !Number.isFinite(away) || home <= 1 || away <= 1 || home === away) {
+    return "";
+  }
+  const fav = Math.min(home, away);
+  if (fav < 1.25) return "step-83";
+  if (fav < 1.4) return "step-48";
+  return "step-39";
+}
+
+function sideStepClass(side: "home" | "away", home?: number | null, away?: number | null): string {
+  const step = otherPriceStep(home, away);
+  if (!step) return "";
+  const favouriteIsHome = (home as number) < (away as number);
+  const sideIsFavourite = side === "home" ? favouriteIsHome : !favouriteIsHome;
+  return sideIsFavourite ? "" : ` is-${step}`;
+}
+
 function kickoffHomeAway(odds?: OddsFlat | null): { home?: number; away?: number } {
   if (!odds) return {};
   const nested = odds.kickoff;
   const line =
     nested && (nested.home != null || nested.away != null) ? nested : odds;
   return { home: line.home, away: line.away };
-}
-
-function favClass(price?: number | null): string {
-  return isShortKo(price) ? " is-short-fav" : "";
 }
 
 function fmtCell(v: number | undefined | null, digits = 1): string {
@@ -831,7 +848,7 @@ function MatchHoverBody({ match }: { match: LiveMatch }) {
       <div className="match-hover-header">
         <div className="match-hover-side">
           <TeamBadge name={match.home_team} src={homeLogo} className="match-hover-crest" />
-          <span className={`match-hover-name${favClass(ko.home)}`}>
+          <span className={`match-hover-name${sideStepClass("home", ko.home, ko.away)}`}>
             {match.home_team}
           </span>
           {hoverRank(h2h, "home") ? (
@@ -847,7 +864,7 @@ function MatchHoverBody({ match }: { match: LiveMatch }) {
         </div>
         <div className="match-hover-side">
           <TeamBadge name={match.away_team} src={awayLogo} className="match-hover-crest" />
-          <span className={`match-hover-name${favClass(ko.away)}`}>
+          <span className={`match-hover-name${sideStepClass("away", ko.home, ko.away)}`}>
             {match.away_team}
           </span>
           {hoverRank(h2h, "away") ? (
@@ -887,7 +904,7 @@ function TeamStack({
         <div className="team-line">
           <TeamBadge name={match.home_team} src={homeLogo} />
           <span
-            className={`team-label${favClass(ko.home)}${homeScorer ? " is-scorer" : ""}`}
+            className={`team-label${sideStepClass("home", ko.home, ko.away)}${homeScorer ? " is-scorer" : ""}`}
           >
             {match.home_team}
           </span>
@@ -895,7 +912,7 @@ function TeamStack({
         <div className="team-line">
           <TeamBadge name={match.away_team} src={awayLogo} />
           <span
-            className={`team-label${favClass(ko.away)}${awayScorer ? " is-scorer" : ""}`}
+            className={`team-label${sideStepClass("away", ko.home, ko.away)}${awayScorer ? " is-scorer" : ""}`}
           >
             {match.away_team}
           </span>
@@ -1491,11 +1508,11 @@ function SignalRow({
       <div className="signal-main">
         <div className="signal-headline">
           <span className="signal-teams">
-            <span className={`signal-team${favClass(homeKo)}`}>
+            <span className={`signal-team${sideStepClass("home", homeKo, awayKo)}`}>
               {primary.home_team || "Home"}
             </span>
             {" vs "}
-            <span className={`signal-team${favClass(awayKo)}`}>
+            <span className={`signal-team${sideStepClass("away", homeKo, awayKo)}`}>
               {primary.away_team || "Away"}
             </span>
           </span>
