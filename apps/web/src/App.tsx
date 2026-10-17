@@ -349,6 +349,56 @@ function sideStepClass(side: "home" | "away", home?: number | null, away?: numbe
   return sideIsFavourite ? "" : ` is-${step}`;
 }
 
+type BoardSide = "home" | "away";
+
+function statLineValue(match: LiveMatch, key: string, side: BoardSide): number | null {
+  const value = match.stat_lines?.[key]?.[side];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function cardTotal(match: LiveMatch, side: BoardSide): number {
+  return (statLineValue(match, "yellow_cards", side) ?? 0) + (statLineValue(match, "red_cards", side) ?? 0);
+}
+
+/** Longer price leading possession, shots on target, and corners together. */
+function underdogRun(match: LiveMatch): {
+  side: BoardSide;
+  price: number;
+  possession: readonly [number, number];
+  shots: readonly [number, number];
+  corners: readonly [number, number];
+  favouriteHasMoreCards: boolean;
+} | null {
+  const ko = kickoffHomeAway(match.odds);
+  if (typeof ko.home !== "number" || typeof ko.away !== "number") return null;
+  if (ko.home === ko.away || ko.home <= 1 || ko.away <= 1) return null;
+  if (!isShortKo(ko.home) && !isShortKo(ko.away)) return null;
+  const side: BoardSide = ko.home < ko.away ? "away" : "home";
+  const favourite: BoardSide = side === "home" ? "away" : "home";
+  const pair = (key: string): readonly [number, number] | null => {
+    const dog = statLineValue(match, key, side);
+    const fav = statLineValue(match, key, favourite);
+    if (dog == null || fav == null) return null;
+    return [dog, fav];
+  };
+  const possession = pair("possession");
+  const shots = pair("shots_on_target");
+  const corners = pair("corners");
+  if (!possession || !shots || !corners) return null;
+  if (possession[0] < possession[1] + 8) return null;
+  if (shots[0] < shots[1] + 2) return null;
+  if (corners[0] < corners[1] + 2) return null;
+  const price = side === "home" ? ko.home : ko.away;
+  return {
+    side,
+    price,
+    possession,
+    shots,
+    corners,
+    favouriteHasMoreCards: cardTotal(match, favourite) > cardTotal(match, side),
+  };
+}
+
 function kickoffHomeAway(odds?: OddsFlat | null): { home?: number; away?: number } {
   if (!odds) return {};
   const nested = odds.kickoff;
@@ -882,6 +932,50 @@ function hoverRank(h2h: HoverH2H | "empty" | "loading", side: "home" | "away"): 
   return leagueRankLabel(side === "home" ? h2h.home_rank : h2h.away_rank);
 }
 
+function UnderdogMark({ run }: { run: NonNullable<ReturnType<typeof underdogRun>> }) {
+  const line = (label: string, pair: readonly [number, number]) => (
+    <div>
+      <span>{label}</span>
+      <b>
+        {fmtCell(pair[0], 0)} - {fmtCell(pair[1], 0)}
+      </b>
+    </div>
+  );
+  return (
+    <span
+      className="underdog-mark"
+      data-hover-stop
+      onClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      <HoverTip
+        cardClass="hover-card-underdog"
+        body={
+          <div className="underdog-tip">
+            <p className="underdog-tip-title">Underdog of {run.price.toFixed(2)}</p>
+            <p className="underdog-tip-sub">Overperforming the favourite</p>
+            <div className="underdog-tip-rows">
+              {line("Possession", run.possession)}
+              {line("Shots on target", run.shots)}
+              {line("Corners", run.corners)}
+              {run.favouriteHasMoreCards ? (
+                <div>
+                  <span>Cards</span>
+                  <b>Favourite has more</b>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        }
+      >
+        <span className="underdog-glyph" role="img" aria-label="Underdog overperforming">
+          🐕
+        </span>
+      </HoverTip>
+    </span>
+  );
+}
+
 function TeamStack({
   match,
   scorer,
@@ -896,6 +990,7 @@ function TeamStack({
     match.away_team_logo ||
     apifootballBadgeUrl(match.away_team_id, match.away_team);
   const ko = kickoffHomeAway(match.odds);
+  const run = underdogRun(match);
   const homeScorer = scorer === "home" || scorer === "both";
   const awayScorer = scorer === "away" || scorer === "both";
   return (
@@ -908,6 +1003,7 @@ function TeamStack({
           >
             {match.home_team}
           </span>
+          {run?.side === "home" ? <UnderdogMark run={run} /> : null}
         </div>
         <div className="team-line">
           <TeamBadge name={match.away_team} src={awayLogo} />
@@ -916,6 +1012,7 @@ function TeamStack({
           >
             {match.away_team}
           </span>
+          {run?.side === "away" ? <UnderdogMark run={run} /> : null}
         </div>
       </div>
     </HoverTip>
@@ -990,12 +1087,55 @@ function StratCell({
   );
 }
 
-function StatCell({ line, start }: { line?: SideValue; start?: boolean }) {
+const STAT_STEP_KEYS = new Set([
+  "shots_on_target",
+  "shots_off_target",
+  "attacks",
+  "dangerous_attacks",
+  "corners",
+  "possession",
+]);
+
+/** Dim the smaller stat when the leader holds 60% or more of the pair. Cards never step. */
+function statSideStepClass(
+  key: string,
+  side: "home" | "away",
+  home?: number | null,
+  away?: number | null,
+): string {
+  if (!STAT_STEP_KEYS.has(key)) return "";
+  if (typeof home !== "number" || typeof away !== "number") return "";
+  if (!Number.isFinite(home) || !Number.isFinite(away) || home < 0 || away < 0) return "";
+  if (home === away) return "";
+  const total = home + away;
+  if (total <= 0) return "";
+  if (key !== "possession" && total < 4) return "";
+  const share = Math.max(home, away) / total;
+  if (share < 0.6) return "";
+  const step = share >= 0.8 ? "stat-step-83" : share >= 0.7 ? "stat-step-48" : "stat-step-39";
+  const leaderIsHome = home > away;
+  const sideIsLeader = side === "home" ? leaderIsHome : !leaderIsHome;
+  return sideIsLeader ? "" : ` is-${step}`;
+}
+
+function StatCell({
+  statKey,
+  line,
+  start,
+}: {
+  statKey: string;
+  line?: SideValue;
+  start?: boolean;
+}) {
   return (
     <td className={`col-stat${start ? " col-stat-start" : ""}`}>
       <div className="band">
-        <div className="band-line">{fmtCell(line?.home, 0)}</div>
-        <div className="band-line">{fmtCell(line?.away, 0)}</div>
+        <div className={`band-line${statSideStepClass(statKey, "home", line?.home, line?.away)}`}>
+          {fmtCell(line?.home, 0)}
+        </div>
+        <div className={`band-line${statSideStepClass(statKey, "away", line?.home, line?.away)}`}>
+          {fmtCell(line?.away, 0)}
+        </div>
       </div>
     </td>
   );
@@ -2130,6 +2270,7 @@ export function App() {
                   {STAT_COLS.map((c, index) => (
                     <StatCell
                       key={c.key}
+                      statKey={c.key}
                       line={m.stat_lines?.[c.key]}
                       start={index === 0}
                     />

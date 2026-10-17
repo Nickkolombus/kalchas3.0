@@ -1112,6 +1112,62 @@ body {
   text-shadow: none;
 }
 
+.underdog-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.underdog-mark .hover-anchor {
+  display: inline-flex;
+  width: auto;
+  margin: 0;
+}
+
+.underdog-glyph {
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: default;
+}
+
+.hover-card.hover-card-underdog {
+  min-width: 14.5rem;
+  max-width: 16.5rem;
+  text-align: left;
+  border-top: 2px solid #cbb892;
+}
+
+.underdog-tip-title {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+.underdog-tip-sub {
+  margin: 0.15rem 0 0;
+  font-size: 0.74rem;
+  color: var(--text-2);
+}
+
+.underdog-tip-rows {
+  margin-top: 0.55rem;
+  display: grid;
+  gap: 0.22rem;
+}
+
+.underdog-tip-rows div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-2);
+}
+
+.underdog-tip-rows b {
+  font-weight: 500;
+  color: var(--text);
+}
+
 .badge-wrap {
   position: relative;
   width: 18px;
@@ -1282,6 +1338,18 @@ body {
 
 .col-stat {
   width: 3.35rem;
+}
+
+.col-stat .band-line.is-stat-step-39 {
+  color: #918e86;
+}
+
+.col-stat .band-line.is-stat-step-48 {
+  color: #85837e;
+}
+
+.col-stat .band-line.is-stat-step-83 {
+  color: #6f6a62;
 }
 
 .board th.col-stat,

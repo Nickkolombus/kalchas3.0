@@ -228,12 +228,18 @@ export function HoverTip({
     <div
       className="hover-anchor"
       ref={anchorRef}
-      onMouseEnter={() => {
+      onMouseEnter={(event) => {
+        if ((event.target as HTMLElement).closest?.("[data-hover-stop]")) return;
         clearTimer();
         timerRef.current = window.setTimeout(() => {
           timerRef.current = null;
           setOpen(true);
         }, HOVER_SHOW_DELAY_MS);
+      }}
+      onMouseOver={(event) => {
+        if (!(event.target as HTMLElement).closest?.("[data-hover-stop]")) return;
+        clearTimer();
+        setOpen(false);
       }}
       onMouseLeave={() => {
         clearTimer();
