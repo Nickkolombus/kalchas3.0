@@ -100,6 +100,68 @@ def test_pattern_summary_hit_rate_by_clock() -> None:
     assert clock["76+"]["hit_rate"] == 1.0
 
 
+def test_pattern_summary_hit_rate_by_weekday_and_hour() -> None:
+    rows = [
+        {
+            "state": "Confirmed",
+            "created_at": "2026-10-12T14:30:00+00:00",  # Monday, 14:00 UTC
+            "factors": {},
+        },
+        {
+            "state": "Expired",
+            "created_at": "2026-10-12T14:45:00+00:00",  # Monday, 14:00 UTC
+            "factors": {},
+        },
+        {
+            "state": "Confirmed",
+            "created_at": "2026-10-18T09:05:00Z",  # Sunday, 09:00 UTC ('Z' form)
+            "factors": {},
+        },
+        {
+            "state": "Monitoring",
+            "created_at": "2026-10-12T14:10:00+00:00",
+            "factors": {},
+        },
+    ]
+    patterns = {block["title"]: block["rows"] for block in pattern_summary(rows)}
+    weekday = {row["label"]: row for row in patterns["Weekday (UTC)"]}
+    hour = {row["label"]: row for row in patterns["Hour (UTC)"]}
+    assert weekday["Mon"]["n"] == 2
+    assert weekday["Mon"]["hit_rate"] == 0.5
+    assert weekday["Sun"]["hit_rate"] == 1.0
+    assert hour["14:00"]["n"] == 2
+    assert hour["09:00"]["n"] == 1
+
+
+def test_pattern_summary_hit_rate_by_league_and_country() -> None:
+    rows = [
+        {"state": "Confirmed", "league": "Serie A", "factors": {"country": "Italy"}},
+        {"state": "Expired", "league": "Serie A", "factors": {"country": "Italy"}},
+        {"state": "Confirmed", "league": "La Liga", "factors": {"country": "Spain"}},
+        {"state": "Confirmed", "league": None, "factors": {}},
+    ]
+    patterns = {block["title"]: block["rows"] for block in pattern_summary(rows)}
+    league = {row["label"]: row for row in patterns["League"]}
+    country = {row["label"]: row for row in patterns["Country"]}
+    assert league["Serie A"]["n"] == 2
+    assert league["Serie A"]["hit_rate"] == 0.5
+    assert league["La Liga"]["hit_rate"] == 1.0
+    assert league["Unknown"]["n"] == 1
+    assert country["Italy"]["n"] == 2
+    assert country["Spain"]["hit_rate"] == 1.0
+
+
+def test_pattern_summary_leagues_beyond_top_n_fold_into_other() -> None:
+    rows = [
+        {"state": "Confirmed", "league": f"League {i}", "factors": {}} for i in range(14)
+    ]
+    patterns = {block["title"]: block["rows"] for block in pattern_summary(rows)}
+    league_rows = patterns["League"]
+    assert len(league_rows) == 13  # top 12 + one "Other" row
+    other = next(row for row in league_rows if row["label"].startswith("Other"))
+    assert other["n"] == 2
+
+
 def test_csv_row_flattens_pairs() -> None:
     row = csv_row(
         {

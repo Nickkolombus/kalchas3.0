@@ -417,6 +417,8 @@
   border-radius: 0.45rem;
   padding: 0.55rem 0.65rem 0.45rem;
   background: var(--surface);
+  max-height: 14rem;
+  overflow-y: auto;
 }
 
 .admin-pattern-card h2 {
@@ -424,6 +426,9 @@
   font-size: 0.78rem;
   color: var(--muted);
   font-weight: 600;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
 }
 
 .admin-pattern-card table {

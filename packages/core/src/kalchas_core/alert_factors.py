@@ -1,12 +1,16 @@
 """Fire-time board snapshot and pattern buckets for alert results.
 
 Keeps a compact copy of the live board on the alert payload so later
-Confirmed / Expired rows can be grouped by clock, score, odds, and TSLG.
+Confirmed / Expired rows can be grouped by clock, score, odds, TSLG, weekday,
+hour, league, and country -- 3.0's version of 2.2's `alerts-history.html`
+admin page, which grouped `alerts_history` by the same dimensions via
+`EXTRACT(DOW/HOUR FROM alert_time)` and `league_name`/`country_name`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Any
 
 from kalchas_core.alert_outcomes.score import parse_score
@@ -233,6 +237,30 @@ def _odds_bucket(price: float | None) -> str:
     return "dog >3.5"
 
 
+_WEEKDAY_LABELS: tuple[str, ...] = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+_HOUR_LABELS: tuple[str, ...] = tuple(f"{hour:02d}:00" for hour in range(24))
+
+
+def _parse_created_at(created_at: Any) -> datetime | None:
+    if not created_at:
+        return None
+    try:
+        return datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _weekday_bucket(created_at: Any) -> str | None:
+    """Mon-Sun in the timezone the timestamp carries (created_at is stored UTC)."""
+    at = _parse_created_at(created_at)
+    return _WEEKDAY_LABELS[at.weekday()] if at else None
+
+
+def _hour_bucket(created_at: Any) -> str | None:
+    at = _parse_created_at(created_at)
+    return f"{at.hour:02d}:00" if at else None
+
+
 def _tslg_min(home: int | None, away: int | None) -> int | None:
     values = [item for item in (home, away) if item is not None]
     if not values:
@@ -358,31 +386,44 @@ def sweet_spot_flag(
 
 
 def pattern_summary(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Hit rate by clock / score / TSLG / odds / sweet spot. Settled rows only."""
+    """Hit rate by clock / score / TSLG / odds / sweet spot / weekday / hour /
+    league / country. Settled rows only (Confirmed or Expired).
+
+    Weekday and hour come from `created_at`, not `factors`, so -- unlike the
+    board-snapshot groups -- they cover every row, including alerts fired
+    before full board snapshots started landing on the payload.
+    """
     settled = [row for row in rows if str(row.get("state") or "") in {"Confirmed", "Expired"}]
-    groups = (
+    fixed_groups = (
         ("Clock", "clock_bucket", ("1-15", "16-30", "31-45", "46-60", "61-75", "76+")),
         ("Half", "half", ("1H", "2H")),
         ("Score", "score_state", ("0-0", "level", "leading", "trailing")),
         ("TSLG", "tslg_bucket", ("no goal yet", "0-9'", "10-19'", "20'+")),
         ("Sweet spot", "sweet_spot", ("yes", "no")),
         ("Kickoff odds (trigger side)", "odds_bucket", ("favourite <2", "mid 2-3.5", "dog >3.5")),
+        ("Weekday (UTC)", "weekday_bucket", _WEEKDAY_LABELS),
+        ("Hour (UTC)", "hour_bucket", _HOUR_LABELS),
     )
     out: list[dict[str, Any]] = []
-    for title, field, labels in groups:
+    for title, field, labels in fixed_groups:
         buckets: dict[str, list[int]] = {label: [0, 0] for label in labels}
         for row in settled:
             factors = row.get("factors") if isinstance(row.get("factors"), Mapping) else {}
-            raw = factors.get(field) if isinstance(factors, Mapping) else None
-            if field == "sweet_spot":
-                if raw is True:
-                    key = "yes"
-                elif raw is False:
-                    key = "no"
-                else:
-                    continue
+            if field == "weekday_bucket":
+                key = _weekday_bucket(row.get("created_at")) or ""
+            elif field == "hour_bucket":
+                key = _hour_bucket(row.get("created_at")) or ""
             else:
-                key = str(raw or "")
+                raw = factors.get(field) if isinstance(factors, Mapping) else None
+                if field == "sweet_spot":
+                    if raw is True:
+                        key = "yes"
+                    elif raw is False:
+                        key = "no"
+                    else:
+                        continue
+                else:
+                    key = str(raw or "")
             if key not in buckets:
                 continue
             buckets[key][1] += 1
@@ -403,6 +444,58 @@ def pattern_summary(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             )
         if lines:
             out.append({"title": title, "rows": lines})
+    out.extend(_open_vocabulary_groups(settled))
+    return out
+
+
+def _open_vocabulary_groups(
+    settled: Sequence[Mapping[str, Any]], *, top_n: int = 12
+) -> list[dict[str, Any]]:
+    """League / Country hit rate, ranked by volume.
+
+    Unlike the fixed groups above, the label set is open-ended (dozens of
+    leagues), so this ranks by alert count instead of a known tuple, and
+    folds anything past `top_n` into one "Other" row.
+    """
+    specs: tuple[tuple[str, Any], ...] = (
+        ("League", lambda row: row.get("league")),
+        (
+            "Country",
+            lambda row: (row.get("factors") or {}).get("country")
+            if isinstance(row.get("factors"), Mapping)
+            else None,
+        ),
+    )
+    out: list[dict[str, Any]] = []
+    for title, getter in specs:
+        buckets: dict[str, list[int]] = {}
+        for row in settled:
+            raw = getter(row)
+            key = str(raw).strip() if raw else "Unknown"
+            bucket = buckets.setdefault(key, [0, 0])
+            bucket[1] += 1
+            if str(row.get("state")) == "Confirmed":
+                bucket[0] += 1
+        if not buckets:
+            continue
+        ranked = sorted(buckets.items(), key=lambda item: item[1][1], reverse=True)
+        lines = [
+            {"label": label, "n": total, "confirmed": confirmed, "hit_rate": confirmed / total}
+            for label, (confirmed, total) in ranked[:top_n]
+        ]
+        if len(ranked) > top_n:
+            rest = ranked[top_n:]
+            rest_confirmed = sum(confirmed for _, (confirmed, _) in rest)
+            rest_total = sum(total for _, (_, total) in rest)
+            lines.append(
+                {
+                    "label": f"Other ({len(rest)})",
+                    "n": rest_total,
+                    "confirmed": rest_confirmed,
+                    "hit_rate": (rest_confirmed / rest_total) if rest_total else 0.0,
+                }
+            )
+        out.append({"title": title, "rows": lines})
     return out
 
 
