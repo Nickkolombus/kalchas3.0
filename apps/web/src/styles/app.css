@@ -904,7 +904,9 @@ body {
 }
 
 .team-row.trig .val,
-.team-row.trig .tag {
+.team-row.trig .tag,
+.col-strat .team-row.trig .val,
+.col-strat .team-row.trig .tag {
   color: #f97316;
   font-weight: 700;
 }
@@ -1402,7 +1404,11 @@ body {
   color: #6f6a62;
 }
 
-/* Strategy values: dark near zero, full ink at the fire bar. UrG negative = darkest. */
+/* Strategy values: max ink is near-white; dark near zero; mid steps in between. */
+.col-strat .team-row .val {
+  color: #faf6f0;
+}
+
 .col-strat .band-line.is-strat-step-39 .val,
 .col-k .k-num.is-strat-step-39 {
   color: #918e86;
