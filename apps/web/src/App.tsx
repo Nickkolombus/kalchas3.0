@@ -164,7 +164,7 @@ const DEFAULT_SWEET_SPOT: SweetSpot = {
   include_injury_time: false,
 };
 const TSLG_COOLDOWN = 10;
-const GOAL_HOLD_MS = 5000;
+const GOAL_HOLD_MS = 10000;
 
 type GoalSide = "home" | "away" | "both";
 type GoalFlash = {
@@ -1002,6 +1002,11 @@ function TeamStack({
           >
             {match.home_team}
           </span>
+          {homeScorer ? (
+            <span className="goal-ball" role="img" aria-label="Goal">
+              ⚽
+            </span>
+          ) : null}
           {run?.side === "home" ? <UnderdogMark run={run} /> : null}
         </div>
         <div className="team-line">
@@ -1011,6 +1016,11 @@ function TeamStack({
           >
             {match.away_team}
           </span>
+          {awayScorer ? (
+            <span className="goal-ball" role="img" aria-label="Goal">
+              ⚽
+            </span>
+          ) : null}
           {run?.side === "away" ? <UnderdogMark run={run} /> : null}
         </div>
       </div>
@@ -1202,6 +1212,10 @@ function ScoreDigit({
   return (
     <div className="band-line score-n score-roll">
       <span className="score-roll-track">
+        <span>{from}</span>
+        <span className="is-goal">{shown}</span>
+        <span>{from}</span>
+        <span className="is-goal">{shown}</span>
         <span>{from}</span>
         <span className="is-goal">{shown}</span>
       </span>
