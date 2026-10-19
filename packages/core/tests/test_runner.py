@@ -36,6 +36,25 @@ def test_busy_home_can_produce_pressure_candidate() -> None:
     assert any(c.strategy_slot == 2 for c in cands)
 
 
+def test_rule_of_three_needs_three_shots_on_target() -> None:
+    """2.2's `min_shots_on_target: 3` gate: a high unrealised-goals reading
+    built mostly from shots off target should not fire alone."""
+    timeline = timeline_from(
+        {45: {"home": {"shots_on_target": 2, "shots_off_target": 30}, "away": {}}},
+        current_minute=45,
+    )
+    assert evaluate_match(timeline, slots=(1,)) == []
+
+
+def test_rule_of_three_fires_once_shot_gate_is_met() -> None:
+    timeline = timeline_from(
+        {45: {"home": {"shots_on_target": 3, "shots_off_target": 30}, "away": {}}},
+        current_minute=45,
+    )
+    cands = evaluate_match(timeline, slots=(1,))
+    assert any(c.strategy_slot == 1 for c in cands)
+
+
 def test_board_snapshot_has_strategy_and_stat_lines() -> None:
     timeline = timeline_from(
         {

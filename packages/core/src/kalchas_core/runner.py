@@ -27,15 +27,20 @@ from kalchas_core.strategies.kscore import TeamSignals
 from kalchas_core.strategies.rule_of_three import TeamShotProfile
 from kalchas_core.weights import WeightSet
 
-# Slot → default fire threshold (2.2 triggers.json defaults where known).
+# Slot → default fire threshold (2.2 triggers.json values).
 DEFAULT_THRESHOLDS: dict[int, float] = {
-    1: 1.0,  # Rule of Three unrealised goals
-    2: 70.0,  # Pressure Index
+    1: 1.5,  # Rule of Three unrealised goals
+    2: 75.0,  # Pressure Index
     3: 6.0,  # League Bar signed score threshold
-    4: 3.0,  # Delta 5min
+    4: 7.0,  # Delta 5min
     6: 0.0,  # Omega uses its own gate; threshold unused
     7: 60.0,  # K-Score
 }
+
+# 2.2 also gated Rule of Three on a minimum shot count before it could fire at
+# all (`strategy_001_rule_of_three/triggers.json`'s `min_shots_on_target`),
+# independent of the unrealised-goals threshold above.
+RULE_OF_THREE_MIN_SHOTS_ON_TARGET = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,15 +209,16 @@ def evaluate_match(
     ks = None
 
     if 1 in slots:
-        ro3 = rule_of_three.evaluate(
-            _shot_profile(timeline, Side.HOME),
-            _shot_profile(timeline, Side.AWAY),
-            minute=minute,
-            weights=w,
-        )
+        home_profile = _shot_profile(timeline, Side.HOME)
+        away_profile = _shot_profile(timeline, Side.AWAY)
+        ro3 = rule_of_three.evaluate(home_profile, away_profile, minute=minute, weights=w)
+        shot_profiles = {Side.HOME: home_profile, Side.AWAY: away_profile}
         for side in (Side.HOME, Side.AWAY):
             team = ro3.team(side)
-            if _clears_fire(team.unrealised_goals, th[1]):
+            has_evidence = (
+                shot_profiles[side].shots_on_target >= RULE_OF_THREE_MIN_SHOTS_ON_TARGET
+            )
+            if has_evidence and _clears_fire(team.unrealised_goals, th[1]):
                 candidates.append(
                     AlertCandidate(
                         1,
@@ -453,12 +459,10 @@ def board_snapshot(
     minute = timeline.current_minute
     npei_th = float(th.get(5, 55.0))
 
-    ro3 = rule_of_three.evaluate(
-        _shot_profile(timeline, Side.HOME),
-        _shot_profile(timeline, Side.AWAY),
-        minute=minute,
-        weights=w,
-    )
+    home_profile = _shot_profile(timeline, Side.HOME)
+    away_profile = _shot_profile(timeline, Side.AWAY)
+    ro3 = rule_of_three.evaluate(home_profile, away_profile, minute=minute, weights=w)
+    ro3_shot_profiles = {Side.HOME: home_profile, Side.AWAY: away_profile}
     pi = pressure_index.evaluate(timeline, home_goals=home_goals, away_goals=away_goals, weights=w)
     d5 = delta_5min.evaluate(timeline, weights=w)
     dg = delta_goal.evaluate(
@@ -516,11 +520,23 @@ def board_snapshot(
             "teams": {
                 "home": _team_cell(
                     ro3.home.unrealised_goals,
-                    triggered=_fired(1, Side.HOME, ro3.home.unrealised_goals >= th[1]),
+                    triggered=_fired(
+                        1,
+                        Side.HOME,
+                        ro3.home.unrealised_goals >= th[1]
+                        and ro3_shot_profiles[Side.HOME].shots_on_target
+                        >= RULE_OF_THREE_MIN_SHOTS_ON_TARGET,
+                    ),
                 ),
                 "away": _team_cell(
                     ro3.away.unrealised_goals,
-                    triggered=_fired(1, Side.AWAY, ro3.away.unrealised_goals >= th[1]),
+                    triggered=_fired(
+                        1,
+                        Side.AWAY,
+                        ro3.away.unrealised_goals >= th[1]
+                        and ro3_shot_profiles[Side.AWAY].shots_on_target
+                        >= RULE_OF_THREE_MIN_SHOTS_ON_TARGET,
+                    ),
                 ),
             },
             "threshold": th[1],

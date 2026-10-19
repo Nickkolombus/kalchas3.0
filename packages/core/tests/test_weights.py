@@ -157,17 +157,6 @@ class TestPresets:
         assert confirmed.get("omega", "pi_level_min") == 45.0
         assert confirmed.get("omega", "min_shots") == 1.0
 
-    def test_stale_k_pressure_trust_is_dropped(self) -> None:
-        weights = WeightSet.from_overrides(
-            {"kscore": {"trust_pressure": 0.7, "trust_momentum": 1.5}}
-        )
-        assert weights.get("kscore", "trust_pressure") == 1.1
-        assert weights.get("kscore", "trust_momentum") == 1.5
-
-    def test_tuned_k_pressure_trust_is_kept(self) -> None:
-        weights = WeightSet.from_overrides({"kscore": {"trust_pressure": 0.5}})
-        assert weights.get("kscore", "trust_pressure") == 0.5
-
     def test_stale_omega_scale_pair_is_dropped(self) -> None:
         weights = WeightSet.from_overrides(
             {"omega": {"k_scale": 0.5, "min_accel": 0.363, "pi_level_min": 40.0}}

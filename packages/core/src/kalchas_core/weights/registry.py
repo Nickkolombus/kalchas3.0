@@ -156,7 +156,7 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
             name="K-Score",
             short="K",
             equation=(
-                "votes: momentum=σ(Δ5/ms), pressure=σ(PI/ps), rule3=(RO3+0.3)/1.3,\n"
+                "votes: momentum=σ(Δ5/ms), pressure=PI/100, rule3=(RO3+0.3)/1.3,\n"
                 "       omega=σ(accel/0.8)·(0.45+0.55·σ(base/0.4))·clamp(level/55,0.2,1)\n"
                 "logit = bias + Σ trust_i · (2·vote_i − 1) + context\n"
                 "K = round(100 · σ(logit) · ΦI)   ΦI = floor+(1−floor)·NPEI/100"
@@ -164,9 +164,9 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
             blurb=(
                 "Meta-strategy: four consultant strategies vote in [0,1], a weighted "
                 "logit blend produces a probability, and NPEI scales it as a focus "
-                "multiplier (ΦI). Δ5 and Δ10 votes are quiet-neutral. Optional "
-                "context terms adjust for red cards, late trailing and kickoff odds. "
-                "Outputs a 0-100 score per team and a match-level OR of both."
+                "multiplier (ΦI). Optional context terms adjust for red cards, late "
+                "trailing and kickoff odds. Outputs a 0–100 score per team and a "
+                "match-level OR of both."
             ),
         ),
     }
@@ -698,7 +698,7 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
             WeightSpec(
                 "trust_pressure",
                 "Trust: Pressure Index",
-                1.1,
+                0.7,
                 0.0,
                 3.0,
                 0.1,
@@ -748,16 +748,6 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 30.0,
                 0.5,
                 "Divisor in σ(Δ5 / scale) for the momentum vote.",
-            ),
-            WeightSpec(
-                "pressure_scale",
-                "Δ10 → vote scale",
-                40.0,
-                5.0,
-                80.0,
-                1.0,
-                "Divisor in σ(PI / scale) for the Pressure Index vote. "
-                "Quiet PI is neutral, like Δ5, instead of a penalty.",
             ),
             WeightSpec(
                 "ctx_red_card",
