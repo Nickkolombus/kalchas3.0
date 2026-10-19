@@ -1392,6 +1392,11 @@ body {
   width: 3.35rem;
 }
 
+/* Stat max ink: cream, a notch under strategy near-white. Steps still dim the trailer. */
+.col-stat .band-line {
+  color: #f2ebe0;
+}
+
 .col-stat .band-line.is-stat-step-39 {
   color: #918e86;
 }
