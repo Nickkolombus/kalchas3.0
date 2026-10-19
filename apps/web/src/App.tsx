@@ -1162,10 +1162,12 @@ function stratValueStepClass(
 
   if (value <= 0) return " is-strat-step-83";
 
+  // Full ink once the value is clearly in fire range; keep near-zero dark.
+  // Example with Δ5 bar 6.8: 5.5 is full, 0.0 is darkest.
   const progress = value / bar;
-  if (progress >= 1) return "";
-  if (progress >= 0.7) return " is-strat-step-39";
-  if (progress >= 0.4) return " is-strat-step-48";
+  if (progress >= 0.8) return "";
+  if (progress >= 0.55) return " is-strat-step-39";
+  if (progress >= 0.3) return " is-strat-step-48";
   return " is-strat-step-83";
 }
 
