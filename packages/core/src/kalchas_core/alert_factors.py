@@ -387,7 +387,7 @@ def sweet_spot_flag(
 
 def pattern_summary(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """Hit rate by clock / score / TSLG / odds / sweet spot / weekday / hour /
-    league / country. Settled rows only (Confirmed or Expired).
+    league / country / trigger value. Settled rows only (Confirmed or Expired).
 
     Weekday and hour come from `created_at`, not `factors`, so -- unlike the
     board-snapshot groups -- they cover every row, including alerts fired
@@ -445,7 +445,57 @@ def pattern_summary(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
         if lines:
             out.append({"title": title, "rows": lines})
     out.extend(_open_vocabulary_groups(settled))
+    trigger_group = _trigger_value_group(settled)
+    if trigger_group:
+        out.append(trigger_group)
     return out
+
+
+def _trigger_value_group(
+    settled: Sequence[Mapping[str, Any]], *, bins: int = 5
+) -> dict[str, Any] | None:
+    """Hit rate by fire-value band -- 2.2's per-strategy threshold-optimization
+    report: did a higher or lower reading at fire time actually convert more?
+
+    `value` is on each strategy's own scale (K-Score 0-100, Omega degrees,
+    Delta 5min raw pressure, ...), so this mixes scales when "All strategies"
+    is selected. Filtering to one strategy chip first -- already how the
+    League/team filters work on this page -- gives the clean per-strategy
+    read; the mixed view still isn't wrong, just coarser.
+
+    Equal-count bins over the sorted values (quintiles by default), labelled
+    with the literal value range in each bin so they read as threshold
+    candidates, not as opaque "Q1..Q5".
+    """
+    pairs: list[tuple[float, bool]] = []
+    for row in settled:
+        try:
+            value = float(row.get("value"))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            continue
+        pairs.append((value, str(row.get("state")) == "Confirmed"))
+    if len(pairs) < bins:
+        return None
+
+    pairs.sort(key=lambda item: item[0])
+    total_n = len(pairs)
+    lines: list[dict[str, Any]] = []
+    for i in range(bins):
+        start = (i * total_n) // bins
+        end = ((i + 1) * total_n) // bins
+        chunk = pairs[start:end]
+        if not chunk:
+            continue
+        low, high = chunk[0][0], chunk[-1][0]
+        confirmed = sum(1 for _, hit in chunk if hit)
+        total = len(chunk)
+        label = f"{low:.2g}" if low == high else f"{low:.2g}–{high:.2g}"
+        lines.append(
+            {"label": label, "n": total, "confirmed": confirmed, "hit_rate": confirmed / total}
+        )
+    if not lines:
+        return None
+    return {"title": "Trigger value (fire strength)", "rows": lines}
 
 
 def _open_vocabulary_groups(

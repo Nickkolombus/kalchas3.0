@@ -162,6 +162,29 @@ def test_pattern_summary_leagues_beyond_top_n_fold_into_other() -> None:
     assert other["n"] == 2
 
 
+def test_pattern_summary_trigger_value_bins_by_fire_strength() -> None:
+    # 10 rows, value 1..10, odd values miss, even values confirm -> low bin
+    # should read worse than the high bin.
+    rows = [
+        {"state": "Confirmed" if value % 2 == 0 else "Expired", "value": value, "factors": {}}
+        for value in range(1, 11)
+    ]
+    patterns = {block["title"]: block["rows"] for block in pattern_summary(rows)}
+    trigger_rows = patterns["Trigger value (fire strength)"]
+    assert len(trigger_rows) == 5
+    assert sum(row["n"] for row in trigger_rows) == 10
+    # Every bin mixes one even and one odd value with this input, so each
+    # bin's hit rate is 0.5 -- check volume and ordering instead of hit rate.
+    assert trigger_rows[0]["label"] == "1–2"
+    assert trigger_rows[-1]["label"] == "9–10"
+
+
+def test_pattern_summary_trigger_value_skipped_below_bin_count() -> None:
+    rows = [{"state": "Confirmed", "value": 1.0, "factors": {}}]
+    titles = {block["title"] for block in pattern_summary(rows)}
+    assert "Trigger value (fire strength)" not in titles
+
+
 def test_csv_row_flattens_pairs() -> None:
     row = csv_row(
         {
