@@ -209,7 +209,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  max-height: calc(3 * 6.2rem + 2 * 0.3rem);
+  /* Two cards visible; rest scroll. Height tuned to typical signal card size. */
+  max-height: calc(2 * 4.6rem + 1 * 0.3rem);
   overflow-y: auto;
   scrollbar-width: thin;
 }
