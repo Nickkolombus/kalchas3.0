@@ -1352,6 +1352,22 @@ body {
   color: #6f6a62;
 }
 
+/* Strategy values: dark near zero, full ink at the fire bar. UrG negative = darkest. */
+.col-strat .band-line.is-strat-step-39 .val,
+.col-k .k-num.is-strat-step-39 {
+  color: #918e86;
+}
+
+.col-strat .band-line.is-strat-step-48 .val,
+.col-k .k-num.is-strat-step-48 {
+  color: #85837e;
+}
+
+.col-strat .band-line.is-strat-step-83 .val,
+.col-k .k-num.is-strat-step-83 {
+  color: #6f6a62;
+}
+
 .board th.col-stat,
 .board td.col-stat {
   padding-left: 0.4rem;

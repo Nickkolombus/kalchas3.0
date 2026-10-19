@@ -11,7 +11,6 @@ import {
   HoverTip,
   hoverBarPct,
   hoverLead,
-  phiInk,
   windowLabel,
   windowRecipe,
   type HoverScale,
@@ -1069,17 +1068,17 @@ function StratCell({
         }
       >
         <div className="band">
-          <div className={`band-line team-row${fires && home?.triggered ? " trig" : ""}`}>
+          <div
+            className={`band-line team-row${fires && home?.triggered ? " trig" : ""}${stratValueStepClass(col.key, home?.value, block?.threshold, fires && home?.triggered)}`}
+          >
             <span className="tag">H</span>
-            <span className="val" style={{ color: fires ? undefined : phiInk(home?.value) }}>
-              {fmtStrat(home?.value, col.digits, extras)}
-            </span>
+            <span className="val">{fmtStrat(home?.value, col.digits, extras)}</span>
           </div>
-          <div className={`band-line team-row${fires && away?.triggered ? " trig" : ""}`}>
+          <div
+            className={`band-line team-row${fires && away?.triggered ? " trig" : ""}${stratValueStepClass(col.key, away?.value, block?.threshold, fires && away?.triggered)}`}
+          >
             <span className="tag">A</span>
-            <span className="val" style={{ color: fires ? undefined : phiInk(away?.value) }}>
-              {fmtStrat(away?.value, col.digits, extras)}
-            </span>
+            <span className="val">{fmtStrat(away?.value, col.digits, extras)}</span>
           </div>
         </div>
       </HoverTip>
@@ -1116,6 +1115,48 @@ function statSideStepClass(
   const leaderIsHome = home > away;
   const sideIsLeader = side === "home" ? leaderIsHome : !leaderIsHome;
   return sideIsLeader ? "" : ` is-${step}`;
+}
+
+/** Fallback fire bars when a row has no threshold yet. Live payload overrides these. */
+const STRAT_STEP_FALLBACK: Record<string, number> = {
+  rule_of_three: 1.2,
+  delta_5min: 6.8,
+  pressure_index: 68,
+  delta_goal: 5,
+  npei: 55,
+  omega: 30,
+  kscore: 60,
+};
+
+/**
+ * Gray step for strategy numbers: dark near zero, full ink at the fire bar.
+ * UrG uses the darkest step when negative. Triggered rows keep the orange trig style.
+ */
+function stratValueStepClass(
+  key: string,
+  value: number | null | undefined,
+  threshold?: number | null,
+  triggered?: boolean,
+): string {
+  if (triggered) return "";
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+
+  if (key === "rule_of_three" && value < 0) return " is-strat-step-83";
+
+  const barRaw =
+    typeof threshold === "number" && Number.isFinite(threshold) && threshold > 0
+      ? threshold
+      : STRAT_STEP_FALLBACK[key];
+  const bar = typeof barRaw === "number" && barRaw > 0 ? barRaw : 0;
+  if (!(bar > 0)) return "";
+
+  if (value <= 0) return " is-strat-step-83";
+
+  const progress = value / bar;
+  if (progress >= 1) return "";
+  if (progress >= 0.7) return " is-strat-step-39";
+  if (progress >= 0.4) return " is-strat-step-48";
+  return " is-strat-step-83";
 }
 
 function StatCell({
@@ -1404,7 +1445,9 @@ function KCell({ match }: { match: LiveMatch }) {
         }
       >
         <div className="band band-center">
-          <div className={`band-span k-num${score < 5 ? " muted" : ""}`}>
+          <div
+            className={`band-span k-num${score < 5 ? " muted" : ""}${score < 5 ? "" : stratValueStepClass("kscore", score, k?.threshold, false)}`}
+          >
             {score < 5 ? "—" : score}
           </div>
         </div>
