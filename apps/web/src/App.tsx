@@ -1838,7 +1838,7 @@ export function App() {
   const [triggeredOnly, setTriggeredOnly] = useState(false);
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [hideHalfTimers, setHideHalfTimers] = useState(true);
-  const [hideStatless, setHideStatless] = useState(false);
+  const [hideStatless, setHideStatless] = useState(true);
   const [hideTslgUnder10, setHideTslgUnder10] = useState(true);
   const [sweetSpotOnly, setSweetSpotOnly] = useState(false);
   const [sweetSpot, setSweetSpot] = useState<SweetSpot>(DEFAULT_SWEET_SPOT);
