@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from kalchas_bot.format import format_alert_html, format_joint_html, format_outcome_html, joint_window_span
+from kalchas_bot.format import (
+    format_alert_html,
+    format_joint_html,
+    format_outcome_html,
+    joint_window_span,
+)
 
 
 def _delta5_row(**overrides):

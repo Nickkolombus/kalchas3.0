@@ -158,7 +158,7 @@ type SortDir = "asc" | "desc";
 
 const POLL_MS = 15_000;
 const FAV_KEY = "kalchas.favorites.v1";
-const VISITOR_ID_KEY = "kalchas.visitor.v1";
+const VISITOR_ID_STORAGE_SLOT = "kalchas.visitor.v1";
 const SHORT_KO = 1.68;
 const DEFAULT_SWEET_SPOT: SweetSpot = {
   ht1_start: 28,
@@ -498,13 +498,13 @@ function saveFavorites(ids: Set<string>) {
 
 function visitorId(): string {
   try {
-    const existing = localStorage.getItem(VISITOR_ID_KEY);
+    const existing = localStorage.getItem(VISITOR_ID_STORAGE_SLOT);
     if (existing) return existing;
     const next =
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
         : `v${Date.now()}${Math.random().toString(16).slice(2)}`;
-    localStorage.setItem(VISITOR_ID_KEY, next);
+    localStorage.setItem(VISITOR_ID_STORAGE_SLOT, next);
     return next;
   } catch {
     return "";

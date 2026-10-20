@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
-
 from kalchas_bot.delivery import _try_send_free_fire
 
 CUTOFF = "2026-10-12"

@@ -5,9 +5,8 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from telegram.error import TelegramError
-
 from kalchas_bot.delivery import _react_on_fire, _same_minute_groups, _send_outcome, outcome_action
+from telegram.error import TelegramError
 
 
 @pytest.mark.asyncio
