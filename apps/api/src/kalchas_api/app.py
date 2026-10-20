@@ -325,11 +325,22 @@ class SweetSpotOut(BaseModel):
     include_injury_time: bool = False
 
 
+class PresenceCountryOut(BaseModel):
+    code: str
+    count: int
+
+
+class PresenceOut(BaseModel):
+    count: int = 0
+    countries: list[PresenceCountryOut] = Field(default_factory=list)
+
+
 class LiveResponse(BaseModel):
     matches: list[LiveMatchRow]
     source: str
     recent_alerts: list[RecentAlertOut] = Field(default_factory=list)
     sweet_spot: SweetSpotOut = Field(default_factory=SweetSpotOut)
+    presence: PresenceOut = Field(default_factory=PresenceOut)
 
 
 _LIVE_CACHE_TTL = 2.0
@@ -647,23 +658,65 @@ def _recent_alert_display_value(strategy_key: str, stored: float, weights: Weigh
     return round(alert_theta_degrees(stored, k_scale))
 
 
+def _record_presence_ping(request: Request, visitor_id: str | None) -> None:
+    """Best-effort: a visitor's own poll should never fail on presence trouble."""
+    if not visitor_id:
+        return
+    dsn = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+    if not dsn:
+        return
+    try:
+        from kalchas_db.presence import record_visitor_ping
+
+        country = request.headers.get("CF-IPCountry") or request.headers.get("Cf-Ipcountry")
+        record_visitor_ping(dsn, visitor_id, country)
+    except Exception:
+        logging.getLogger(__name__).debug("presence ping failed", exc_info=True)
+
+
+def _current_presence() -> PresenceOut:
+    dsn = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+    if not dsn:
+        return PresenceOut()
+    try:
+        from kalchas_db.presence import get_live_presence
+
+        summary = get_live_presence(dsn)
+        return PresenceOut(
+            count=int(summary["count"]),
+            countries=[PresenceCountryOut(**row) for row in summary["countries"]],
+        )
+    except Exception:
+        logging.getLogger(__name__).debug("presence read failed", exc_info=True)
+        return PresenceOut()
+
+
 @app.get("/api/live", response_model=LiveResponse)
-def live() -> LiveResponse:
-    """Live board rows from scanner persistence + recomputed strategy cells."""
+def live(request: Request, vid: str | None = None) -> LiveResponse:
+    """Live board rows from scanner persistence + recomputed strategy cells.
+
+    `vid` is a client-generated id (no account) so this same poll can also
+    record the caller's own presence -- there is no separate heartbeat.
+    Presence is read fresh on every call; only the board rows are cached.
+    """
+    _record_presence_ping(request, vid)
     global _live_cache
     if not os.environ.get("PYTEST_CURRENT_TEST"):
         now = time.monotonic()
         cached = _live_cache
         if cached is not None and now - cached[0] < _LIVE_CACHE_TTL:
-            return cached[1]
-        with _live_cache_lock:
-            cached = _live_cache
-            if cached is not None and time.monotonic() - cached[0] < _LIVE_CACHE_TTL:
-                return cached[1]
-            payload = _build_live_response()
-            _live_cache = (time.monotonic(), payload)
-            return payload
-    return _build_live_response()
+            payload = cached[1]
+        else:
+            with _live_cache_lock:
+                cached = _live_cache
+                if cached is not None and time.monotonic() - cached[0] < _LIVE_CACHE_TTL:
+                    payload = cached[1]
+                else:
+                    payload = _build_live_response()
+                    _live_cache = (time.monotonic(), payload)
+    else:
+        payload = _build_live_response()
+    return payload.model_copy(update={"presence": _current_presence()})
 
 
 def _build_live_response() -> LiveResponse:

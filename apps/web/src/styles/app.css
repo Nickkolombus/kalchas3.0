@@ -209,8 +209,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  /* Two cards visible; rest scroll. Height tuned to typical signal card size. */
-  max-height: calc(2 * 4.6rem + 1 * 0.3rem);
+  /* 2.5 cards visible -- a sliver of the third hints there's more to scroll. */
+  max-height: calc(2.5 * 4.6rem + 2 * 0.3rem);
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -1479,6 +1479,35 @@ body {
   pointer-events: none;
   opacity: 0;
   transform: translateY(6px);
+}
+
+.presence-tile {
+  position: fixed;
+  right: 1rem;
+  bottom: calc(0.9rem + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: rgba(12, 21, 32, 0.92);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  text-align: right;
+  pointer-events: none;
+}
+
+.presence-count {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: var(--text);
+  line-height: 1;
+}
+
+.presence-flags {
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  line-height: 1;
 }
 
 .hover-card.hover-tone-urg { border-top-color: #5eead4; }

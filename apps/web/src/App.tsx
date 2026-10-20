@@ -117,11 +117,14 @@ type SweetSpot = {
   ht2_end: number;
   include_injury_time: boolean;
 };
+type PresenceCountry = { code: string; count: number };
+type Presence = { count: number; countries: PresenceCountry[] };
 type LiveResponse = {
   matches: LiveMatch[];
   source: string;
   recent_alerts?: RecentAlert[];
   sweet_spot?: SweetSpot;
+  presence?: Presence;
 };
 type FeedStatus = {
   state: string;
@@ -155,6 +158,7 @@ type SortDir = "asc" | "desc";
 
 const POLL_MS = 15_000;
 const FAV_KEY = "kalchas.favorites.v1";
+const VISITOR_ID_KEY = "kalchas.visitor.v1";
 const SHORT_KO = 1.68;
 const DEFAULT_SWEET_SPOT: SweetSpot = {
   ht1_start: 28,
@@ -490,6 +494,30 @@ function loadFavorites(): Set<string> {
 
 function saveFavorites(ids: Set<string>) {
   localStorage.setItem(FAV_KEY, JSON.stringify([...ids]));
+}
+
+function visitorId(): string {
+  try {
+    const existing = localStorage.getItem(VISITOR_ID_KEY);
+    if (existing) return existing;
+    const next =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `v${Date.now()}${Math.random().toString(16).slice(2)}`;
+    localStorage.setItem(VISITOR_ID_KEY, next);
+    return next;
+  } catch {
+    return "";
+  }
+}
+
+function countryFlag(code: string): string {
+  const letters = code.trim().toUpperCase();
+  // "" (no CF-IPCountry) and "XX"/"T1" (Cloudflare's unknown/Tor markers)
+  // aren't real ISO codes -- regional-indicator math on them prints garbage.
+  if (!/^[A-Z]{2}$/.test(letters) || letters === "XX") return "";
+  const points = [...letters].map((char) => 127397 + char.charCodeAt(0));
+  return String.fromCodePoint(...points);
 }
 
 function matchK(m: LiveMatch): number {
@@ -1825,6 +1853,21 @@ function BoardSearch({
   );
 }
 
+function PresenceTile({ presence }: { presence: Presence | null }) {
+  if (!presence || presence.count <= 0) return null;
+  const flags = presence.countries
+    .map((c) => countryFlag(c.code))
+    .filter(Boolean)
+    .slice(0, 6)
+    .join("");
+  return (
+    <div className="presence-tile" aria-label={`${presence.count} people on the board now`}>
+      <div className="presence-count">{presence.count}</div>
+      {flags ? <div className="presence-flags">{flags}</div> : null}
+    </div>
+  );
+}
+
 export function App() {
   const [matches, setMatches] = useState<LiveMatch[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -1842,6 +1885,8 @@ export function App() {
   const [hideTslgUnder10, setHideTslgUnder10] = useState(true);
   const [sweetSpotOnly, setSweetSpotOnly] = useState(false);
   const [sweetSpot, setSweetSpot] = useState<SweetSpot>(DEFAULT_SWEET_SPOT);
+  const [presence, setPresence] = useState<Presence | null>(null);
+  const [visitor] = useState<string>(() => visitorId());
   const [selectedId, setSelectedId] = useState<string | null>(() => {
     const id = new URLSearchParams(window.location.search).get("match");
     return id && id.trim() ? id.trim() : null;
@@ -1853,13 +1898,16 @@ export function App() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/live");
+      const res = await fetch(
+        visitor ? `/api/live?vid=${encodeURIComponent(visitor)}` : "/api/live",
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as LiveResponse;
       const rows = Array.isArray(body.matches) ? body.matches : [];
       setMatches(rows);
       setRecentAlerts(body.recent_alerts || []);
       if (body.sweet_spot) setSweetSpot(body.sweet_spot);
+      setPresence(body.presence || null);
       setError(null);
       setUpdatedAt(new Date());
       try {
@@ -1871,7 +1919,7 @@ export function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     }
-  }, []);
+  }, [visitor]);
 
   useEffect(() => {
     void load();
@@ -2356,6 +2404,7 @@ export function App() {
           onClose={() => setSelectedId(null)}
         />
       ) : null}
+      <PresenceTile presence={presence} />
     </div>
   );
 }
