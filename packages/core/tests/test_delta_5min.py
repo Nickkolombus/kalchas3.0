@@ -280,7 +280,12 @@ class TestSecondarySignalChoice:
 class TestLast5MinBlock:
     def test_counts_are_window_deltas_not_match_totals(self) -> None:
         timeline = window(
-            start={"shots_on_target": 3, "shots_off_target": 2, "dangerous_attacks": 10, "corners": 1},
+            start={
+                "shots_on_target": 3,
+                "shots_off_target": 2,
+                "dangerous_attacks": 10,
+                "corners": 1,
+            },
             end={
                 "shots_on_target": 5,
                 "shots_off_target": 3,

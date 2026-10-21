@@ -45,9 +45,9 @@ def load_panel_cache(
     hours = int(ttl_hours) if ttl_hours is not None else int(ttl_days) * 24
     eng = sync_engine(dsn)
     with eng.connect() as conn:
-        row = conn.execute(
-            GET_FRESH, {"cache_key": cache_key, "ttl_hours": hours}
-        ).mappings().first()
+        row = (
+            conn.execute(GET_FRESH, {"cache_key": cache_key, "ttl_hours": hours}).mappings().first()
+        )
     if row is None:
         return None
     payload = row["payload"]

@@ -851,9 +851,7 @@ def evaluate(
     """
     w = weights or WeightSet.defaults()
     context = MatchContext.build(timeline.current_minute, home_score, away_score)
-    base_prior = league_prior(
-        league_id, league_name=league_name, country_name=country_name
-    )
+    base_prior = league_prior(league_id, league_name=league_name, country_name=country_name)
 
     if timeline.current_minute < MINIMUM_MINUTE:
         empty = TeamThreat(

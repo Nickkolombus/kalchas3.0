@@ -205,9 +205,7 @@ async def mark_sent(
     await conn.execute(MARK_SENT, alert_id, telegram_message_id)
 
 
-async def claim_pending_outcomes(
-    conn: asyncpg.Connection, limit: int = 20
-) -> list[asyncpg.Record]:
+async def claim_pending_outcomes(conn: asyncpg.Connection, limit: int = 20) -> list[asyncpg.Record]:
     async with conn.transaction():
         await conn.execute(SKIP_UNREPLIABLE_OUTCOMES)
         return await conn.fetch(CLAIM_OUTCOME_BATCH, limit)

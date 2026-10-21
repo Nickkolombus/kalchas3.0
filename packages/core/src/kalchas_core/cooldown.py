@@ -192,8 +192,7 @@ class CooldownBook:
             waited = current_minute - state.last_alert_minute
             if 0 <= waited < self.team_stack_minutes:
                 return CooldownDecision.block(
-                    f"Team already alerted at {state.last_alert_minute}' "
-                    f"(S{state.strategy_slot})",
+                    f"Team already alerted at {state.last_alert_minute}' (S{state.strategy_slot})",
                     "TEAM_STACK",
                     state.last_alert_minute + self.team_stack_minutes,
                 )

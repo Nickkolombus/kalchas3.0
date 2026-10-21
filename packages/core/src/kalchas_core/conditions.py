@@ -212,7 +212,9 @@ def extra_condition_from_row(raw: Mapping[str, Any]) -> ExtraCondition | None:
     """Parse one stored/admin row. Legacy stat_key rows become value comparisons."""
     if not isinstance(raw, Mapping):
         return None
-    left_metric = _metric_key(raw.get("left_metric") or raw.get("stat_key") or raw.get("metric_key"))
+    left_metric = _metric_key(
+        raw.get("left_metric") or raw.get("stat_key") or raw.get("metric_key")
+    )
     if not left_metric:
         return None
     left_scope = _scope_key(raw.get("left_scope") or raw.get("scope") or "triggering")
@@ -227,9 +229,7 @@ def extra_condition_from_row(raw: Mapping[str, Any]) -> ExtraCondition | None:
         right_kind = "value"
     right_scope = _scope_key(raw.get("right_scope") or "opponent")
     try:
-        right_value = float(
-            raw.get("right_value", raw.get("value", raw.get("threshold", 0)))
-        )
+        right_value = float(raw.get("right_value", raw.get("value", raw.get("threshold", 0))))
     except (TypeError, ValueError):
         right_value = 0.0
     if right_value != right_value:

@@ -833,6 +833,7 @@ def test_process_match_marks_full_time_from_comments(monkeypatch) -> None:
         sink=MemoryAlertSink(),
         persist=persist,
     )
+
     def _boom(*args: object, **kwargs: object) -> list:
         raise AssertionError("Full-time matches must not evaluate alerts")
 

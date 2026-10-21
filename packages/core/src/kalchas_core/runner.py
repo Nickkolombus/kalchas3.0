@@ -215,9 +215,7 @@ def evaluate_match(
         shot_profiles = {Side.HOME: home_profile, Side.AWAY: away_profile}
         for side in (Side.HOME, Side.AWAY):
             team = ro3.team(side)
-            has_evidence = (
-                shot_profiles[side].shots_on_target >= RULE_OF_THREE_MIN_SHOTS_ON_TARGET
-            )
+            has_evidence = shot_profiles[side].shots_on_target >= RULE_OF_THREE_MIN_SHOTS_ON_TARGET
             if has_evidence and _clears_fire(team.unrealised_goals, th[1]):
                 candidates.append(
                     AlertCandidate(

@@ -66,9 +66,7 @@ def record_visitor_ping(dsn: str, visitor_id: str, country: str | None) -> None:
         conn.execute(PRUNE_STALE, {"stale_seconds": STALE_AFTER_SECONDS})
 
 
-def get_live_presence(
-    dsn: str, *, active_seconds: int = DEFAULT_ACTIVE_SECONDS
-) -> dict[str, Any]:
+def get_live_presence(dsn: str, *, active_seconds: int = DEFAULT_ACTIVE_SECONDS) -> dict[str, Any]:
     """Active visitor count plus a by-country breakdown, most-populous first.
 
     Blank/unknown country (no `CF-IPCountry` on the request -- e.g. a direct
@@ -77,8 +75,10 @@ def get_live_presence(
     """
     eng = sync_engine(dsn)
     with eng.connect() as conn:
-        rows = conn.execute(
-            SELECT_ACTIVE_BY_COUNTRY, {"active_seconds": active_seconds}
-        ).mappings().all()
+        rows = (
+            conn.execute(SELECT_ACTIVE_BY_COUNTRY, {"active_seconds": active_seconds})
+            .mappings()
+            .all()
+        )
     countries = [{"code": str(r["country"]), "count": int(r["n"])} for r in rows]
     return {"count": sum(c["count"] for c in countries), "countries": countries}

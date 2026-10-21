@@ -237,16 +237,19 @@ def test_admin_various_requires_session(monkeypatch) -> None:
     monkeypatch.setenv("ADMIN_PASSWORD", "s3cret")
     client = TestClient(app)
     assert client.get("/api/admin/various").status_code == 401
-    assert client.put(
-        "/api/admin/various",
-        json={
-            "ht1_start": 28,
-            "ht1_end": 44,
-            "ht2_start": 72,
-            "ht2_end": 88,
-            "include_injury_time": True,
-        },
-    ).status_code == 401
+    assert (
+        client.put(
+            "/api/admin/various",
+            json={
+                "ht1_start": 28,
+                "ht1_end": 44,
+                "ht2_start": 72,
+                "ht2_end": 88,
+                "include_injury_time": True,
+            },
+        ).status_code
+        == 401
+    )
 
 
 def test_admin_various_put_saves(monkeypatch) -> None:

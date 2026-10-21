@@ -88,10 +88,7 @@ class TestRawPressure:
             DEFAULTS,
         )
         expected = (
-            math.sqrt(2) * 26.0
-            + math.sqrt(1) * 16.0
-            + math.sqrt(2) * 10.0
-            + math.sqrt(8) * 4.0
+            math.sqrt(2) * 26.0 + math.sqrt(1) * 16.0 + math.sqrt(2) * 10.0 + math.sqrt(8) * 4.0
         )
         assert raw == pytest.approx(expected)
         assert raw * time_multiplier(28, DEFAULTS) == pytest.approx(70.4, abs=0.2)

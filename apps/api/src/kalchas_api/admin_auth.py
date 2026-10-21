@@ -23,7 +23,9 @@ def admin_configured() -> bool:
 
 
 def _sign(payload: str) -> str:
-    return hmac.new(admin_password().encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.new(
+        admin_password().encode("utf-8"), payload.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
 
 
 def mint_token() -> str:

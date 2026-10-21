@@ -313,7 +313,9 @@ def factors_from_payload(
     side = (team or str(raw.get("team") or "") or None) or None
     if side:
         side = side.lower()
-    trigger_odds = kick.get("home") if side == "home" else kick.get("away") if side == "away" else None
+    trigger_odds = (
+        kick.get("home") if side == "home" else kick.get("away") if side == "away" else None
+    )
     sweet = raw.get("sweet_spot")
     sweet_spot = None if sweet is None else bool(sweet)
     urg = _board_side(board, "rule_of_three")
@@ -511,9 +513,11 @@ def _open_vocabulary_groups(
         ("League", lambda row: row.get("league")),
         (
             "Country",
-            lambda row: (row.get("factors") or {}).get("country")
-            if isinstance(row.get("factors"), Mapping)
-            else None,
+            lambda row: (
+                (row.get("factors") or {}).get("country")
+                if isinstance(row.get("factors"), Mapping)
+                else None
+            ),
         ),
     )
     out: list[dict[str, Any]] = []
@@ -551,6 +555,7 @@ def _open_vocabulary_groups(
 
 def csv_row(item: Mapping[str, Any]) -> dict[str, Any]:
     factors = item.get("factors") if isinstance(item.get("factors"), Mapping) else {}
+
     def side(block: Any, which: str) -> Any:
         if not isinstance(block, Mapping):
             return ""

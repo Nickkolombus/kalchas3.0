@@ -59,9 +59,7 @@ async def deliver_loop(
                             await mark_failed(conn, int(row["id"]), str(exc))
             async with pool.acquire() as conn:
                 outcomes = await claim_pending_outcomes(conn)
-            await _deliver_outcomes(
-                bot, pool, chat_id, outcomes, free_chat_id=free_chat_id
-            )
+            await _deliver_outcomes(bot, pool, chat_id, outcomes, free_chat_id=free_chat_id)
         except Exception:
             logger.exception("delivery cycle failed")
         await asyncio.sleep(poll_sec)
@@ -305,9 +303,7 @@ async def _try_send_free_fire(
                 last_free_at=last_free_at,
             ):
                 return None
-            free_id = await _send_alert(
-                bot, free_chat_id, photo_bytes, caption, fallback
-            )
+            free_id = await _send_alert(bot, free_chat_id, photo_bytes, caption, fallback)
             await mark_free_sent(conn, alert_id, free_id)
             return free_id
         finally:

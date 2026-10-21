@@ -39,7 +39,12 @@ def test_old_payload_still_exposes_stats_and_odds() -> None:
             "tslg": "12' - —",
             "tslg_home": 12,
             "sot": {"home": 3, "away": 1},
-            "odds": {"home": 1.7, "draw": 3.6, "away": 5.2, "kickoff": {"home": 1.7, "draw": 3.6, "away": 5.2}},
+            "odds": {
+                "home": 1.7,
+                "draw": 3.6,
+                "away": 5.2,
+                "kickoff": {"home": 1.7, "draw": 3.6, "away": 5.2},
+            },
         },
         strategy="omega",
         team="home",
@@ -152,9 +157,7 @@ def test_pattern_summary_hit_rate_by_league_and_country() -> None:
 
 
 def test_pattern_summary_leagues_beyond_top_n_fold_into_other() -> None:
-    rows = [
-        {"state": "Confirmed", "league": f"League {i}", "factors": {}} for i in range(14)
-    ]
+    rows = [{"state": "Confirmed", "league": f"League {i}", "factors": {}} for i in range(14)]
     patterns = {block["title"]: block["rows"] for block in pattern_summary(rows)}
     league_rows = patterns["League"]
     assert len(league_rows) == 13  # top 12 + one "Other" row

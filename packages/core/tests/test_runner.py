@@ -110,9 +110,10 @@ def _busy_board_timeline():
 
 
 def test_home_away_odds_prefers_nested_kickoff() -> None:
-    assert home_away_odds(
-        {"kickoff": {"home": 1.9, "away": 4.2}, "home": 9.9, "away": 9.9}
-    ) == (1.9, 4.2)
+    assert home_away_odds({"kickoff": {"home": 1.9, "away": 4.2}, "home": 9.9, "away": 9.9}) == (
+        1.9,
+        4.2,
+    )
     assert home_away_odds({"home": 2.1, "away": 3.4}) == (2.1, 3.4)
     assert home_away_odds({"kickoff": {"home": 1.8}}) == (None, None)
     assert home_away_odds({"home": 1.0, "away": 3.4}) == (None, None)
@@ -202,9 +203,7 @@ def test_extra_phi_condition_blocks_delta5_alert_and_board_fire() -> None:
     conditions = {4: rows}
     native = evaluate_match(timeline, slots=(4,), thresholds={4: 3.0})
     assert len(native) == 1
-    blocked = evaluate_match(
-        timeline, slots=(4,), thresholds={4: 3.0}, conditions=conditions
-    )
+    blocked = evaluate_match(timeline, slots=(4,), thresholds={4: 3.0}, conditions=conditions)
     assert blocked == []
     board = board_snapshot(timeline, thresholds={4: 3.0}, conditions=conditions)
     home = board["strategy_status"]["delta_5min"]["teams"]["home"]

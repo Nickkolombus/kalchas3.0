@@ -147,9 +147,11 @@ def list_open_alerts_in_window_sync(dsn: str, *, window_seconds: int) -> list[di
     max_age = now - MAX_ALERT_AGE
     eng = sync_engine(dsn)
     with eng.connect() as conn:
-        rows = conn.execute(
-            LIST_OPEN_IN_WINDOW, {"cutoff": cutoff, "max_age": max_age}
-        ).mappings().all()
+        rows = (
+            conn.execute(LIST_OPEN_IN_WINDOW, {"cutoff": cutoff, "max_age": max_age})
+            .mappings()
+            .all()
+        )
     out: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)

@@ -95,9 +95,7 @@ def render_alert_photo(row: Mapping[str, Any]) -> BytesIO | None:
 
         sb = draw.textbbox((0, 0), score, font=score_font)
         score_w = sb[2] - sb[0]
-        clock_box = (
-            draw.textbbox((0, 0), clock, font=clock_font) if clock else (0, 0, 0, 0)
-        )
+        clock_box = draw.textbbox((0, 0), clock, font=clock_font) if clock else (0, 0, 0, 0)
         score_h = sb[3] - sb[1]
         clock_h = (clock_box[3] - clock_box[1] + 8) if clock else 0
         block = score_h + clock_h

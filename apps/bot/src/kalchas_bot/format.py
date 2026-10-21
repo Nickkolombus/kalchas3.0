@@ -354,9 +354,7 @@ def _bold_bigger(home: int, away: int, *, percent: bool) -> str:
     return f"{home_s} - {away_s}"
 
 
-def _h2h_lines(
-    payload: Mapping[str, Any], home: str, away: str, *, side: str
-) -> list[str]:
+def _h2h_lines(payload: Mapping[str, Any], home: str, away: str, *, side: str) -> list[str]:
     raw = payload.get("h2h")
     if not isinstance(raw, Mapping):
         return []
@@ -434,9 +432,7 @@ def _minute(raw: object) -> str:
     return _plain_minute(raw)
 
 
-def _value_over_ceiling(
-    raw: object, *, key: str, payload: Mapping[str, Any]
-) -> str:
+def _value_over_ceiling(raw: object, *, key: str, payload: Mapping[str, Any]) -> str:
     if raw is None or raw == "":
         return ""
     try:

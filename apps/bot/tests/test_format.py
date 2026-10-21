@@ -58,9 +58,7 @@ def test_delta_5min_caption():
     assert "DA: <b>6</b> - 1" in text
     assert "Corners: <b>2</b> - 0" in text
     assert "Possession: <b>58%</b> - 42%" in text
-    assert (
-        "· Patriotas average 1.3 goals per meeting vs Boca Juniors 0.3, last 8." in text
-    )
+    assert "· Patriotas average 1.3 goals per meeting vs Boca Juniors 0.3, last 8." in text
     assert "· 5W-1D-2L for Patriotas." in text
     assert "KO " not in text
     assert "TSLG" not in text
@@ -456,7 +454,10 @@ def test_joint_delta5_and_urg_uses_last_5_minutes():
                 "away_team": "Away",
                 "minute": 40,
                 "value": 8.0,
-                "payload": {"last_5min": _window(35, 40, (3, 0)), "last_10min": _window(30, 40, (1, 1))},
+                "payload": {
+                    "last_5min": _window(35, 40, (3, 0)),
+                    "last_10min": _window(30, 40, (1, 1)),
+                },
             },
             {
                 "strategy_slot": 1,

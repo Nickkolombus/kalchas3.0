@@ -493,15 +493,10 @@ class TestOddsPrior:
         from_league = evaluate(timeline, league_id="152")
         from_odds = evaluate(timeline, league_id="152", home_odds=1.4, away_odds=7.0)
         league_p0 = league_prior("152")
-        mixed = (
-            LEAGUE_PRIOR_SHARE * league_p0
-            + (1.0 - LEAGUE_PRIOR_SHARE) * _odds_prior(1.4, 7.0)
-        )
+        mixed = LEAGUE_PRIOR_SHARE * league_p0 + (1.0 - LEAGUE_PRIOR_SHARE) * _odds_prior(1.4, 7.0)
         assert from_odds.home.prior == pytest.approx(mixed)
         assert from_odds.home.prior != from_league.home.prior
-        assert abs(from_odds.home.prior - league_p0) < abs(
-            _odds_prior(1.4, 7.0) - league_p0
-        )
+        assert abs(from_odds.home.prior - league_p0) < abs(_odds_prior(1.4, 7.0) - league_p0)
 
     def test_the_favourite_still_starts_slightly_higher(self) -> None:
         result = evaluate(busy(60), league_id="152", home_odds=1.4, away_odds=7.0)
@@ -523,12 +518,8 @@ class TestOddsPrior:
         ) == pytest.approx(2.90)
 
     def test_premier_league_name_requires_country(self) -> None:
-        wales = goals_per_game_for(
-            None, league_name="Premier League", country_name="Wales"
-        )
-        england = goals_per_game_for(
-            None, league_name="Premier League", country_name="England"
-        )
+        wales = goals_per_game_for(None, league_name="Premier League", country_name="Wales")
+        england = goals_per_game_for(None, league_name="Premier League", country_name="England")
         unnamed = goals_per_game_for(None, league_name="Premier League")
         assert wales == pytest.approx(2.90)
         assert england == pytest.approx(2.85)
@@ -536,9 +527,7 @@ class TestOddsPrior:
 
     def test_an_underdog_does_not_replace_the_league_bar(self) -> None:
         """Briton Ferry case: 4.20 home odds must stay near the league P0."""
-        league_p0 = league_prior(
-            "341", league_name="Premier League", country_name="Wales"
-        )
+        league_p0 = league_prior("341", league_name="Premier League", country_name="Wales")
         mixed = evaluate(
             busy(60),
             league_id="341",
@@ -548,8 +537,7 @@ class TestOddsPrior:
             away_odds=1.65,
         ).home.prior
         assert mixed == pytest.approx(
-            LEAGUE_PRIOR_SHARE * league_p0
-            + (1.0 - LEAGUE_PRIOR_SHARE) * _odds_prior(4.2, 1.65)
+            LEAGUE_PRIOR_SHARE * league_p0 + (1.0 - LEAGUE_PRIOR_SHARE) * _odds_prior(4.2, 1.65)
         )
         assert mixed > 0.06
 

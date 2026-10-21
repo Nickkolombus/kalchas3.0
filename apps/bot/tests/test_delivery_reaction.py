@@ -12,13 +12,9 @@ from telegram.error import TelegramError
 @pytest.mark.asyncio
 async def test_react_falls_back_to_next_emoji() -> None:
     bot = Mock()
-    bot.set_message_reaction = AsyncMock(
-        side_effect=[TelegramError("REACTION_INVALID"), None]
-    )
+    bot.set_message_reaction = AsyncMock(side_effect=[TelegramError("REACTION_INVALID"), None])
     await _react_on_fire(bot, "-100", 12, ("😢", "👎"))
-    emojis = [
-        call.kwargs["reaction"][0].emoji for call in bot.set_message_reaction.await_args_list
-    ]
+    emojis = [call.kwargs["reaction"][0].emoji for call in bot.set_message_reaction.await_args_list]
     assert emojis == ["😢", "👎"]
 
 
@@ -49,14 +45,10 @@ async def test_confirmed_outcome_replies_and_reacts() -> None:
         free_chat_id="-1002",
     )
     assert bot.send_message.await_count == 2
-    paid_ids = [
-        call.kwargs["message_id"] for call in bot.set_message_reaction.await_args_list
-    ]
+    paid_ids = [call.kwargs["message_id"] for call in bot.set_message_reaction.await_args_list]
     assert 9 in paid_ids
     assert 4 in paid_ids
-    ticks = [
-        call.kwargs["reaction"][0].emoji for call in bot.set_message_reaction.await_args_list
-    ]
+    ticks = [call.kwargs["reaction"][0].emoji for call in bot.set_message_reaction.await_args_list]
     assert ticks[0] == "✅"
 
 
@@ -81,9 +73,7 @@ async def test_expired_outcome_reacts_without_reply() -> None:
         free_chat_id="-1002",
     )
     bot.send_message.assert_not_called()
-    emojis = [
-        call.kwargs["reaction"][0].emoji for call in bot.set_message_reaction.await_args_list
-    ]
+    emojis = [call.kwargs["reaction"][0].emoji for call in bot.set_message_reaction.await_args_list]
     ids = [call.kwargs["message_id"] for call in bot.set_message_reaction.await_args_list]
     assert emojis == ["😢", "😢"]
     assert ids == [9, 4]
