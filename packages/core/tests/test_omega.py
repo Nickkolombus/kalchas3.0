@@ -180,8 +180,10 @@ class TestSettings:
         )
 
     def test_the_minimum_minute_covers_both_windows(self) -> None:
-        settings = OmegaSettings(slow_window=10, derivative_window=3)
-        assert settings.minimum_minute == 13
+        """The slow window is read `fast_window` minutes back, so minimum_minute
+        needs fast + slow + derivative, not just slow + derivative."""
+        settings = OmegaSettings(fast_window=5, slow_window=10, derivative_window=3)
+        assert settings.minimum_minute == 18
 
 
 class TestEvaluate:
@@ -375,11 +377,17 @@ class TestZeroAccelerationWithRisingBaseline:
 
 
 class TestLateBurstIsPositiveAcceleration:
-    """A burst confined to the fast window used to read as zero accel.
+    """A burst confined to the fast window, with nothing before it in the
+    now-disjoint slow period, reads as a spike: positive acceleration
+    against a flat (not rising) baseline.
 
-    Both raw slopes matched, so unnormalised accel cancelled. After dividing
-    by window length the same raw slope is a higher *rate* on the fast window,
-    which is the correct surge reading.
+    Under the old nested-window design the burst leaked into both series --
+    the fast window's minutes were a strict subset of the slow window's --
+    so the two raw slopes matched and the result claimed a *rising baseline*
+    even though nothing preceded the burst. With disjoint windows the slow
+    series is genuinely the period before the burst, reads near zero, and
+    the result correctly tells "accelerating" (yes) apart from "on an
+    established rising trend" (no) -- see `classify`.
     """
 
     def test_a_burst_inside_the_fast_window_accelerates(self) -> None:
@@ -387,16 +395,16 @@ class TestLateBurstIsPositiveAcceleration:
         assert result is not None
         home = result.home
         assert home is not None
-        assert home.fast_slope == pytest.approx(home.slow_slope)
+        assert home.fast_slope > 0
+        assert home.slow_slope == pytest.approx(0.0, abs=0.01)
         assert home.acceleration > 0
-        assert home.baseline_slope > 0
 
-    def test_and_is_labelled_a_confirmed_surge(self) -> None:
+    def test_and_is_labelled_a_spike_not_a_confirmed_surge(self) -> None:
         result = evaluate(late_burst(), settings=LOOSE)
         assert result is not None
         home = result.home
         assert home is not None
-        assert home.state is OmegaState.CONFIRMED_SURGE
+        assert home.state is OmegaState.SPIKE_ONLY
 
 
 class TestWindowNormalisation:
@@ -414,11 +422,15 @@ class TestWindowNormalisation:
         assert home.level > home.fast_level
 
     def test_steady_activity_is_near_zero_acceleration(self) -> None:
+        """Disjoint fast/slow sampling points are less correlated than the
+        old same-endpoint design, so a little of the fixture's own
+        integer-truncation quantisation survives into the difference --
+        hence a slightly wider band than a perfectly smooth signal would need."""
         result = evaluate(steady(), settings=LOOSE)
         assert result is not None
         home = result.home
         assert home is not None
-        assert abs(home.acceleration) < 0.15
+        assert abs(home.acceleration) < 0.2
 
     def test_a_quadratic_surge_reads_positive(self) -> None:
         result = evaluate(surging(), settings=LOOSE)

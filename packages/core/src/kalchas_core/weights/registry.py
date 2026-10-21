@@ -137,18 +137,17 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
             name="Omega (Ω Surge)",
             short="Ω",
             equation=(
-                "ω = (D5'/W_fast) − (D10'/W_slow),  baseline = D10'/W_slow,  level = PI₁₀\n"
+                "ω = recent rate − rate in the period just before it (not overlapping)\n"
                 "Trigger (per team): ω > min_accel AND baseline > min_baseline_slope"
-                " AND PI₁₀ ≥ pi_level_min AND shots_fast ≥ min_shots\n"
-                "θ, α = display angles via atan(·/k_scale)"
+                " AND PI₁₀ ≥ pi_level_min AND shots_fast ≥ min_shots"
             ),
             blurb=(
-                "Per-team pressure acceleration: fast-window rate minus slow-window "
-                "rate (each slope divided by its window), gated by a rising baseline, "
-                "a PI floor, and at least one shot in the fast window. Tune those "
-                "gates here - the Thresholds tab Fire slider is unused. θ/α are "
-                "display angles via atan(ω / k_scale). Default scale makes 35°+ rare; "
-                "fire is 30°."
+                "Per-team pressure acceleration: how much busier the last few minutes "
+                "are than the period right before them, gated by a rising trend, a "
+                "pressure floor, and at least one shot. Tune the gates below on this "
+                "tab — the Fire threshold field on the Thresholds tab doesn't apply "
+                "to Omega. θ/α (shown on the board and in alerts) are the same gates "
+                "expressed as degrees; default scale keeps 35°+ rare and fire at 30°."
             ),
         ),
         "kscore": StrategyInfo(
@@ -585,10 +584,10 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 0.0,
                 5.0,
                 0.01,
-                "Engine fire gate (TeamOmega.meets): window-normalised fast-minus-slow "
-                "rate must be strictly above this. Default 0.866 ≈ 30° at k_scale 1.5 "
-                "(θ = atan(ω / k_scale) × 180/π). Raise to ignore weak tilts; lower "
-                "to catch earlier surges. Not the unused Fire slider on Thresholds.",
+                "How much faster pressure has to be building right now than it was "
+                "in the period just before, before Omega fires. Default 0.866 is "
+                "about 30° on the board. Raise to ignore weak tilts; lower to catch "
+                "earlier surges.",
                 "0.866 (~30°)",
             ),
             WeightSpec(
@@ -598,10 +597,10 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 -1.0,
                 2.0,
                 0.01,
-                "Engine gate: normalised slow-window rate must be strictly above this "
-                "so the surge sits on a rising trend, not a spike inside a fade. "
-                "Default 0.08 requires a confirmed climb. Negative allows earlier "
-                "(noisier) signals.",
+                "Requires the period just before the surge to already be trending "
+                "upward, so a burst with nothing behind it reads as a spike, not a "
+                "confirmed surge. Default 0.08 needs a real climb; negative allows "
+                "earlier, noisier calls.",
                 "0.08 (confirmed climb)",
             ),
             WeightSpec(
@@ -611,9 +610,9 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 0.0,
                 80.0,
                 1.0,
-                "Engine gate: slow-window Pressure Index (0–100) floor per team. "
-                "Default 40 requires real pressure before Omega can fire. "
-                "0 is no floor - a surge from nothing still qualifies.",
+                "Floor on how much real pressure (0–100, same scale as Δ10′) already "
+                "exists before Omega can fire. Default 40. 0 removes the floor — "
+                "a surge from nothing would still qualify.",
                 "40",
             ),
             WeightSpec(
@@ -623,8 +622,9 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 0.0,
                 5.0,
                 1.0,
-                "Engine gate: SOT + SOFF in the fast PI window. Default 1 blocks "
-                "dangerous-attack-only pressure. 0 turns the shot gate off.",
+                "Shots on or off target required in the recent window. Default 1 "
+                "stops Omega firing on dangerous attacks alone, the noisiest stat "
+                "the feed carries. 0 turns this gate off.",
                 "1",
             ),
             WeightSpec(
@@ -634,10 +634,9 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 0.1,
                 50.0,
                 0.1,
-                "Maps linear ω to θ/α degrees for the board and alerts: "
-                "θ = atan(ω / k_scale) × 180/π. Does not change whether Omega "
-                "fires (that is min_accel). Larger k flattens the same ω so 35°+ "
-                "stays rare. Default 1.5.",
+                "Only changes how the board and alerts display the angle (θ/α) — "
+                "not whether Omega fires (that's min_accel above). Larger values "
+                "flatten the scale so 35°+ stays rare. Default 1.5.",
                 "1.5",
             ),
             WeightSpec(
@@ -647,7 +646,7 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 2.0,
                 15.0,
                 1.0,
-                "Minutes of Pressure Index used for the fast line. Shorter is "
+                "Minutes of Pressure Index used for the recent reading. Shorter is "
                 "twitchier; longer smooths noise. Must stay below the slow window.",
                 "5",
             ),
@@ -658,8 +657,10 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 5.0,
                 25.0,
                 1.0,
-                "Minutes of Pressure Index used for the baseline. The match is too "
-                "young to evaluate until slow_window + deriv_window minutes have elapsed.",
+                "Minutes of Pressure Index used for the baseline — read for the "
+                "period immediately before the fast window, not overlapping it. "
+                "The match is too young to evaluate until fast_window + slow_window "
+                "+ deriv_window minutes have elapsed.",
                 "10",
             ),
             WeightSpec(

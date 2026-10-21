@@ -4,27 +4,42 @@ Every other strategy measures how much pressure a team is applying. Omega
 measures whether that pressure is *building*, which is a different question and
 answers it with a second derivative.
 
-Two pressure series are tracked per team: a fast one over a short window and a
-slow one over a long window. Each is differentiated over a few minutes, then
-normalised by its window length so the slopes share a common per-minute scale:
+Two pressure series are tracked per team: a fast one over a short recent
+window, and a slow one over a longer window ending `fast_window` minutes
+*earlier* -- the period immediately before the fast window, not a longer
+window that contains it. Each is differentiated over a few minutes, then
+normalised by its own window length so the slopes share a common per-minute
+scale:
 
     accel    = d(fast)/dt / fast_window - d(slow)/dt / slow_window
     baseline = d(slow)/dt / slow_window
-    level    = slow(now)
+    level    = slow(anchor)     # anchor = now - fast_window
 
-`accel` is positive when short-term pressure intensity is pulling away from the
-longer trend -- the team is not merely applying pressure but increasing it.
+`accel` is positive when the most recent window is busier than the window
+right before it -- the team is not merely applying pressure but increasing it.
 Requiring `baseline` to be positive as well is what separates a genuine surge
 from a brief spike inside a fading passage of play, and `level` sets a floor so
 a surge from nothing does not qualify.
 
+**Disjoint windows, not nested.** An earlier version read both series as of
+`now`, so the fast window's minutes were a strict subset of the slow window's
+-- any recent burst inflated both series simultaneously, in proportion to
+window length, regardless of whether it reflected a real build-up or a single
+isolated spike. That's a known pitfall with differencing overlapping windows:
+shared data correlates the two series by construction, which is exactly the
+kind of artifact that produces a confident-looking signal with no real
+predictive power. Reading the slow series `fast_window` minutes further back
+makes it the genuinely separate "just before" period, so `accel` measures
+"busier now than right before" instead of partly measuring how much a shared
+burst got diluted by window length.
+
 Without the per-window normalisation, the slow series sat on a higher absolute
-scale (it counts more events), so a steady build-up often produced *negative*
-accel. 3.0 divides each slope by its window length before differencing; a
-linear rise then reads near zero, and a real surge stays positive. Thresholds
-and the display angle scale were retuned onto that normalised unit. Raw
-`fast_slope` / `slow_slope` on ``TeamOmega`` remain the unnormalised
-derivatives for diagnostics.
+scale (it counts more events over a longer span), so a steady build-up often
+produced *negative* accel. 3.0 divides each slope by its window length before
+differencing; a linear rise then reads near zero, and a real surge stays
+positive. Thresholds and the display angle scale were retuned onto that
+normalised unit. Raw `fast_slope` / `slow_slope` on ``TeamOmega`` remain the
+unnormalised derivatives for diagnostics.
 
 Theta and alpha are the same two quantities expressed as angles, via
 `arctan(x / k)`. They exist because a slope in pressure-per-minute is hard to
@@ -38,9 +53,10 @@ Removed: an admin-settings loader that read thresholds from a database on
 every evaluation, the HTML message building, and a writeback that stashed
 values on the match dictionary for other strategies.
 
-When all of a team's activity falls inside the fast window, the two *raw*
-slopes match. After normalisation that still yields positive accel (fast rate
-above slow rate), which is the intended reading for a concentrated burst.
+A burst confined entirely to the fast window, with nothing in the disjoint
+slow period before it, now reads as a clean positive accel against a
+near-zero baseline -- a real "pressure just started" signal, not the former
+nested-window artifact where the same burst inflated both series together.
 ``classify`` labels ``theta == 0`` with a rising baseline as ``SOFTENING``,
 not ``COLLAPSING``.
 """
@@ -193,8 +209,12 @@ class OmegaSettings:
 
     @property
     def minimum_minute(self) -> int:
-        """Before this, the slow series has no room to be differentiated."""
-        return self.slow_window + self.derivative_window
+        """Before this, the (now time-shifted) slow series has no room to
+        be differentiated. The slow window is read `fast_window` minutes
+        before `now`, so it needs that much extra history on top of its own
+        window and the derivative step.
+        """
+        return self.fast_window + self.slow_window + self.derivative_window
 
     @classmethod
     def from_stored(
@@ -358,8 +378,14 @@ def _evaluate_side(
         return None
 
     step = settings.derivative_window
+    # The slow window is read as of `fast_window` minutes ago, not `now`, so
+    # it is the disjoint period immediately before the fast window rather
+    # than a longer window that contains it. See the module docstring.
+    anchor = minute - settings.fast_window
+    if anchor - step < 0:
+        return None
     fast_slope = (fast[minute] - fast[minute - step]) / step
-    slow_slope = (slow[minute] - slow[minute - step]) / step
+    slow_slope = (slow[anchor] - slow[anchor - step]) / step
     # Per-window rates so a longer slow window does not dominate the difference.
     fast_rate = fast_slope / settings.fast_window
     slow_rate = slow_slope / settings.slow_window
@@ -379,7 +405,7 @@ def _evaluate_side(
     return TeamOmega(
         acceleration=round(acceleration, _ACCELERATION_PRECISION),
         baseline_slope=round(slow_rate, _ACCELERATION_PRECISION),
-        level=round(slow[minute], _LEVEL_PRECISION),
+        level=round(slow[anchor], _LEVEL_PRECISION),
         theta=round(theta, _ANGLE_PRECISION),
         alpha=round(alpha, _ANGLE_PRECISION),
         fast_slope=round(fast_slope, _ACCELERATION_PRECISION),
