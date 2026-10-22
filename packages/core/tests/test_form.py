@@ -166,24 +166,32 @@ class TestFormBarHelpers:
         kept = played_fixtures(rows)
         assert [(f.home_score, f.away_score) for f in kept] == [(2, 1), (1, 1), (0, 0)]
 
-    def test_scoring_rate_is_not_rounded(self) -> None:
-        form = calculate_team_form([fx(1, 2, 1, 0), fx(1, 3, 1, 0), fx(4, 1, 0, 0)], team_id=1)
-        assert form.goals_per_game == 0.7
-        assert form.scoring_rate == 2 / 3
+    def test_per_game_goals_and_medians(self) -> None:
+        # Team 1: home 1-0, home 3-0, away 0-0, away 1-2 (scored 1 as away side).
+        fixtures = [fx(1, 2, 1, 0), fx(1, 3, 3, 0), fx(4, 1, 0, 0), fx(5, 1, 2, 1)]
+        form = calculate_team_form(fixtures, team_id=1, window=10)
+        assert form.scored_by_game == (1, 3, 0, 1)
+        assert form.conceded_by_game == (0, 0, 0, 2)
+        assert form.median_scored == 1.0
+        assert form.median_conceded == 0.0
 
     def test_cache_payload_round_trips(self) -> None:
         from kalchas_core.form import form_cache_payload, form_from_cache_payload
 
-        form = calculate_team_form([fx(1, 2, 1, 0), fx(1, 3, 1, 0), fx(4, 1, 0, 0)], team_id=1)
-        back = form_from_cache_payload(form_cache_payload(form))
+        form = calculate_team_form([fx(1, 2, 1, 0), fx(1, 3, 3, 0), fx(4, 1, 0, 2)], team_id=1)
+        payload = form_cache_payload(form)
+        assert payload == {"scored": [1, 3, 2], "conceded": [0, 0, 0]}
+        back = form_from_cache_payload(payload)
         assert back is not None
         assert back.games_played == 3
-        assert back.scoring_rate == form.scoring_rate
+        assert back.median_scored == form.median_scored
+        assert back.median_conceded == form.median_conceded
 
     def test_unreadable_or_legacy_cache_payloads_are_a_miss(self) -> None:
         from kalchas_core.form import form_from_cache_payload
 
         assert form_from_cache_payload(None) is None
-        assert form_from_cache_payload({"games_played": 10, "goals_per_game": 1.4}) is None
-        assert form_from_cache_payload({"games_played": "x", "goals_for": 3}) is None
-        assert form_from_cache_payload({"games_played": 0, "goals_for": 0}).games_played == 0
+        assert form_from_cache_payload({"games_played": 10, "goals_for": 14}) is None  # v2
+        assert form_from_cache_payload({"scored": [1, 2], "conceded": [1]}) is None
+        assert form_from_cache_payload({"scored": ["x"], "conceded": [1]}) is None
+        assert form_from_cache_payload({"scored": [], "conceded": []}).games_played == 0

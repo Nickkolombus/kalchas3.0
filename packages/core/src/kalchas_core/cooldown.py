@@ -27,9 +27,10 @@ DEFAULT_TEAM_STACK_MINUTES = 10
 DEFAULT_BYPASS_DELTA: Mapping[int, float] = {
     1: 0.5,
     2: 10.0,
-    3: 4.0,
     7: 5.0,
 }
+"""No entry for slot 3: Form Bar's gap grows by a fraction of a goal per
+minute, so a value-rise bypass inside a cooldown would never trigger."""
 
 
 @dataclass(frozen=True, slots=True)

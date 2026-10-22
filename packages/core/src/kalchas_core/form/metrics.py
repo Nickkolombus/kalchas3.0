@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from statistics import median
 from typing import Any, Final
 
 DEFAULT_FORM_WINDOW: Final = 5
@@ -67,16 +68,22 @@ class TeamForm:
     current_streak: Streak = field(default_factory=Streak)
     home_record: VenueRecord = field(default_factory=VenueRecord)
     away_record: VenueRecord = field(default_factory=VenueRecord)
+    scored_by_game: tuple[int, ...] = ()
+    """Goals this team scored in each game of the window, newest first."""
+    conceded_by_game: tuple[int, ...] = ()
+    """Goals this team conceded in each game of the window, newest first."""
 
     @property
     def form_points(self) -> int:
         return self.wins * 3 + self.draws
 
     @property
-    def scoring_rate(self) -> float:
-        """Unrounded goals/game. `goals_per_game` is rounded to 0.1 for display,
-        which is too coarse for a prior: 0.45 vs 0.5 is a 10% shift."""
-        return self.goals_for / self.games_played if self.games_played else 0.0
+    def median_scored(self) -> float:
+        return float(median(self.scored_by_game)) if self.scored_by_game else 0.0
+
+    @property
+    def median_conceded(self) -> float:
+        return float(median(self.conceded_by_game)) if self.conceded_by_game else 0.0
 
 
 EMPTY_FORM = TeamForm()
@@ -111,33 +118,46 @@ def played_fixtures(rows: Sequence[dict[str, Any]]) -> list[FinishedFixture]:
 
 
 def form_cache_key(team_id: int) -> str:
-    """``panel_cache`` key for a team's Form Bar form. ``v2``: v1 rows were
-    written by a status filter that dropped every fixture, so all read as
-    zero games -- a new key skips them instead of serving them out their TTL."""
-    return f"team_form_v2_{team_id}"
+    """``panel_cache`` key for a team's Form Bar form. ``v3``: Form Bar needs
+    each game's scored/conceded for medians; v2 rows only held totals, and v1
+    rows were written by a status filter that dropped every fixture. A new key
+    skips both instead of serving them out their TTL."""
+    return f"team_form_v3_{team_id}"
 
 
-def form_cache_payload(form: TeamForm) -> dict[str, int]:
+def form_cache_payload(form: TeamForm) -> dict[str, list[int]]:
     """What the scanner and API store in ``panel_cache`` for Form Bar."""
-    return {"games_played": form.games_played, "goals_for": form.goals_for}
+    return {"scored": list(form.scored_by_game), "conceded": list(form.conceded_by_game)}
 
 
 def form_from_cache_payload(payload: Any) -> TeamForm | None:
     """Inverse of `form_cache_payload`. `None` for anything unreadable, so the
     caller refetches instead of trusting it."""
-    if not isinstance(payload, dict) or "goals_for" not in payload:
+    if not isinstance(payload, dict):
+        return None
+    scored, conceded = payload.get("scored"), payload.get("conceded")
+    if not isinstance(scored, list) or not isinstance(conceded, list):
+        return None
+    if len(scored) != len(conceded):
         return None
     try:
-        games = int(payload.get("games_played") or 0)
-        goals_for = int(payload.get("goals_for") or 0)
+        scored_t = tuple(int(g) for g in scored)
+        conceded_t = tuple(int(g) for g in conceded)
     except (TypeError, ValueError):
         return None
-    if games <= 0:
+    games = len(scored_t)
+    if games == 0:
         return EMPTY_FORM
+    goals_for, goals_against = sum(scored_t), sum(conceded_t)
     return TeamForm(
         games_played=games,
         goals_for=goals_for,
+        goals_against=goals_against,
+        goal_difference=goals_for - goals_against,
         goals_per_game=round(goals_for / games, 1),
+        goals_against_per_game=round(goals_against / games, 1),
+        scored_by_game=scored_t,
+        conceded_by_game=conceded_t,
     )
 
 
@@ -163,6 +183,8 @@ def calculate_team_form(
     home_goals = away_goals = 0
     home_games = away_games = 0
     results: list[str] = []
+    scored_by_game: list[int] = []
+    conceded_by_game: list[int] = []
 
     for i, match in enumerate(recent):
         try:
@@ -179,6 +201,8 @@ def calculate_team_form(
 
             goals_for += team_score
             goals_against += opp_score
+            scored_by_game.append(team_score)
+            conceded_by_game.append(opp_score)
 
             if team_score > opp_score:
                 wins += 1
@@ -226,6 +250,8 @@ def calculate_team_form(
         current_streak=current_streak,
         home_record=VenueRecord(home_games, home_wins, home_goals),
         away_record=VenueRecord(away_games, away_wins, away_goals),
+        scored_by_game=tuple(scored_by_game),
+        conceded_by_game=tuple(conceded_by_game),
     )
 
 

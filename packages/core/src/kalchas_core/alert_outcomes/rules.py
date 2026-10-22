@@ -73,7 +73,7 @@ FALLBACK_RULE: Final = StrategyRule(
 DEFAULT_RULES: Final[tuple[StrategyRule, ...]] = (
     StrategyRule(1, "Rule of 3", 999, 0, True, True),  # internal; public label is UrG
     StrategyRule(2, "InPlay Pressure", 20, 2, False, False),
-    StrategyRule(3, "Form Bar", 20, 2, False, False),
+    StrategyRule(3, "Form Bar", 20, 2, False, False, enabled=False),
     StrategyRule(4, "Δ(5min)", 20, 2, False, False),
     StrategyRule(6, "Omega", 20, 2, False, True),
     StrategyRule(7, "K-Score", 20, 2, False, True),

@@ -7,7 +7,7 @@ from typing import Any
 import kalchas_db.panel_cache as panel_cache
 import kalchas_football
 import pytest
-from kalchas_api.app import _team_form_for_board
+from kalchas_api.team_form import team_form_for_board
 from kalchas_football import RateLimitBudgetExceeded
 
 ROWS = [
@@ -47,11 +47,11 @@ def _client_returning(monkeypatch, get) -> None:
 
 def test_provider_rows_become_form(monkeypatch, saved) -> None:
     _client_returning(monkeypatch, lambda action, params=None: ROWS)
-    form = _team_form_for_board("postgres://unused", 10)
+    form = team_form_for_board("postgres://unused", 10)
     assert form is not None
     assert form.games_played == 3
-    assert form.goals_for == 4
-    assert saved == {"team_form_v2_10": {"games_played": 3, "goals_for": 4}}
+    assert form.scored_by_game == (2, 1, 1)
+    assert saved == {"team_form_v3_10": {"scored": [2, 1, 1], "conceded": [0, 0, 0]}}
 
 
 def test_an_exhausted_budget_is_not_cached(monkeypatch, saved) -> None:
@@ -59,5 +59,16 @@ def test_an_exhausted_budget_is_not_cached(monkeypatch, saved) -> None:
         raise RateLimitBudgetExceeded(30.0)
 
     _client_returning(monkeypatch, exhausted)
-    assert _team_form_for_board("postgres://unused", 10) is None
+    assert team_form_for_board("postgres://unused", 10) is None
+    assert saved == {}
+
+
+def test_cache_only_reads_never_call_the_provider(monkeypatch, saved) -> None:
+    """The match panel promises no provider calls."""
+
+    def must_not_fetch(action, params=None):
+        raise AssertionError("provider called from a cache-only read")
+
+    _client_returning(monkeypatch, must_not_fetch)
+    assert team_form_for_board("postgres://unused", 10, fetch=False) is None
     assert saved == {}

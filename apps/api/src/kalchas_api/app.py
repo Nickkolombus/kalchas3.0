@@ -29,6 +29,7 @@ from kalchas_api.signals import (
     goals_from_events,
     public_alert_signal,
 )
+from kalchas_api.team_form import team_form_for_board
 from kalchas_api.tips import admin_router as tips_admin_router
 from kalchas_api.tips import public_router as tips_public_router
 
@@ -93,8 +94,11 @@ class SideValue(BaseModel):
 
 
 class TeamStrategyCell(BaseModel):
-    value: float
+    value: float | None
+    """`None` = no reading (Form Bar without enough recent games)."""
     triggered: bool = False
+    note: str | None = None
+    delivered: bool = False
 
 
 class StrategyBlock(BaseModel):
@@ -519,9 +523,12 @@ def _strategy_blocks(raw: dict[str, Any]) -> dict[str, StrategyBlock]:
         teams: dict[str, TeamStrategyCell] = {}
         for side in ("home", "away"):
             cell = teams_in.get(side) or {}
+            value = cell.get("value", 0)
             teams[side] = TeamStrategyCell(
-                value=float(cell.get("value", 0) or 0),
+                value=None if value is None else float(value or 0),
                 triggered=bool(cell.get("triggered")),
+                note=str(cell["note"]) if cell.get("note") else None,
+                delivered=bool(cell.get("delivered")),
             )
         out[key] = StrategyBlock(
             teams=teams,
@@ -529,68 +536,6 @@ def _strategy_blocks(raw: dict[str, Any]) -> dict[str, StrategyBlock]:
             match=block.get("match"),
         )
     return out
-
-
-_TEAM_FORM_CACHE_HOURS = 12
-"""Matches the scanner's TEAM_FORM_CACHE_HOURS -- a team's form only changes
-when it plays a new finished fixture, so this just bounds staleness."""
-
-
-def _team_form_for_board(dsn: str, team_id: Any) -> Any:
-    """Recent scoring form for Form Bar's prior, read-through `panel_cache`.
-
-    Independent of the scanner's own `_team_form_for` -- same pattern as the
-    H2H endpoint above having its own cache-then-fetch path rather than
-    sharing one with the scanner's alert-time H2H lookup. `None` below
-    `MIN_FIXTURES_FOR_FORM`, same contract as the scanner's version.
-    """
-    from kalchas_core.form import (
-        MIN_FIXTURES_FOR_FORM,
-        calculate_team_form,
-        form_cache_key,
-        form_cache_payload,
-        form_from_cache_payload,
-        played_fixtures,
-    )
-
-    try:
-        tid = int(team_id)
-    except (TypeError, ValueError):
-        return None
-    if tid <= 0:
-        return None
-
-    from kalchas_db.panel_cache import load_panel_cache, save_panel_cache
-
-    cache_key = form_cache_key(tid)
-    try:
-        cached = load_panel_cache(dsn, cache_key, ttl_hours=_TEAM_FORM_CACHE_HOURS)
-    except Exception:  # noqa: BLE001 - missing table must not block the board
-        cached = None
-    form = form_from_cache_payload(cached)
-    if form is not None:
-        return form if form.games_played >= MIN_FIXTURES_FOR_FORM else None
-
-    from kalchas_football import FootballAPIClient, RateLimitBudgetExceeded
-
-    try:
-        client = FootballAPIClient()
-        try:
-            raw_fixtures = client.get_team_fixtures(tid)
-        finally:
-            client.close()
-    except RateLimitBudgetExceeded:
-        return None
-    except Exception:
-        logger.exception("team fixtures fetch failed for %s", tid)
-        return None
-
-    form = calculate_team_form(played_fixtures(raw_fixtures or []), tid, window=10)
-    try:
-        save_panel_cache(dsn, cache_key, form_cache_payload(form))
-    except Exception:
-        logger.exception("failed caching team form for %s", tid)
-    return form if form.games_played >= MIN_FIXTURES_FOR_FORM else None
 
 
 def _enrich_live_row(
@@ -637,8 +582,8 @@ def _enrich_live_row(
             league_id=_optional_league_id(row.get("league_id")),
             league_name=str(row["league_name"]) if row.get("league_name") else None,
             country_name=str(row["country_name"]) if row.get("country_name") else None,
-            home_team_form=_team_form_for_board(dsn, row.get("home_team_id")),
-            away_team_form=_team_form_for_board(dsn, row.get("away_team_id")),
+            home_team_form=team_form_for_board(dsn, row.get("home_team_id")),
+            away_team_form=team_form_for_board(dsn, row.get("away_team_id")),
             home_odds=home_odds,
             away_odds=away_odds,
             live_home_odds=live_home,

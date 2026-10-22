@@ -32,7 +32,7 @@ from kalchas_core.weights import WeightSet
 DEFAULT_THRESHOLDS: dict[int, float] = {
     1: 1.5,  # Rule of Three unrealised goals
     2: 75.0,  # Pressure Index
-    3: 6.0,  # Form Bar signed score threshold
+    3: 1.0,  # Form Bar: goals behind expected pace
     4: 7.0,  # Delta 5min
     6: 0.0,  # Omega uses its own gate; threshold unused
     7: 60.0,  # K-Score
@@ -111,7 +111,7 @@ def _condition_match(
             "rule_of_three": float(ro3.team(side).unrealised_goals) if ro3 is not None else 0.0,
             "pressure_index": float(pi.team(side).pressure) if pi is not None else 0.0,
             "delta_5min": float(d5.team(side).pressure) if d5 is not None else 0.0,
-            "delta_goal": float(dg.team(side).threat) if dg is not None else 0.0,
+            "delta_goal": dg.team(side).gap if dg is not None else None,
             "npei": float(npei_snap.team(side).score) if npei_snap is not None else 0.0,
             "omega": float(omega_team.theta) if omega_team is not None else 0.0,
             "kscore": float(ks.team(side).score) if ks is not None else 0.0,
@@ -250,22 +250,14 @@ def evaluate_match(
 
     if 3 in slots:
         dg = delta_goal.evaluate(
-            timeline,
+            minute,
             home_score=home_goals,
             away_score=away_goals,
-            league_id=league_id,
             home_recent_form=home_team_form,
             away_recent_form=away_team_form,
-            home_odds=home_odds,
-            away_odds=away_odds,
             threshold=th[3],
-            weights=w,
         )
-        if (
-            dg is not None
-            and dg.triggering_team is not None
-            and _clears_fire(dg.trigger_value, th[3])
-        ):
+        if dg.triggering_team is not None and _clears_fire(dg.trigger_value, th[3]):
             side = dg.triggering_team
             candidates.append(
                 AlertCandidate(
@@ -273,7 +265,7 @@ def evaluate_match(
                     "delta_goal",
                     side,
                     float(dg.trigger_value),
-                    {"threat": dg.trigger_value},
+                    dg.team(side).detail(minute),
                 )
             )
 
@@ -372,16 +364,12 @@ def evaluate_match(
             )
         if dg is None:
             dg = delta_goal.evaluate(
-                timeline,
+                minute,
                 home_score=home_goals,
                 away_score=away_goals,
-                league_id=league_id,
                 home_recent_form=home_team_form,
                 away_recent_form=away_team_form,
-                home_odds=home_odds,
-                away_odds=away_odds,
                 threshold=th[3],
-                weights=w,
             )
         if om is None:
             om = omega.evaluate(timeline, weights=w)
@@ -436,6 +424,22 @@ def _team_cell(value: float, *, triggered: bool, digits: int = 1) -> dict[str, A
     return cell
 
 
+def _form_bar_cell(team: delta_goal.TeamPace, minute: int, *, triggered: bool) -> dict[str, Any]:
+    """Form Bar's cell: `value` is goals behind pace, `None` with no form (the
+    board shows a dash, not a 0). `note` is the human reading; `delivered`
+    swaps the number for a word on the board."""
+    gap = team.gap
+    cell: dict[str, Any] = {
+        "value": None if gap is None else round(gap, 1),
+        "note": team.note(minute),
+    }
+    if team.delivered:
+        cell["delivered"] = True
+    if triggered:
+        cell["triggered"] = True
+    return cell
+
+
 def board_snapshot(
     timeline: MatchTimeline,
     *,
@@ -469,15 +473,11 @@ def board_snapshot(
     pi = pressure_index.evaluate(timeline, home_goals=home_goals, away_goals=away_goals, weights=w)
     d5 = delta_5min.evaluate(timeline, weights=w)
     dg = delta_goal.evaluate(
-        timeline,
+        minute,
         home_score=home_goals,
         away_score=away_goals,
-        league_id=league_id,
         home_recent_form=home_team_form,
         away_recent_form=away_team_form,
-        home_odds=home_odds,
-        away_odds=away_odds,
-        weights=w,
         threshold=th[3],
     )
     om = omega.evaluate(timeline, weights=w)
@@ -584,11 +584,11 @@ def board_snapshot(
         },
         "delta_goal": {
             "teams": {
-                "home": _team_cell(
-                    dg.home.threat, triggered=_fired(3, Side.HOME, dg.home.qualifies)
+                "home": _form_bar_cell(
+                    dg.home, minute, triggered=_fired(3, Side.HOME, dg.home.qualifies)
                 ),
-                "away": _team_cell(
-                    dg.away.threat, triggered=_fired(3, Side.AWAY, dg.away.qualifies)
+                "away": _form_bar_cell(
+                    dg.away, minute, triggered=_fired(3, Side.AWAY, dg.away.qualifies)
                 ),
             },
             "threshold": th[3],

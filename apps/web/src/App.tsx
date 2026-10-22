@@ -23,7 +23,13 @@ const TELEGRAM_FREE_JOIN_URL = "https://t.me/Kalchas_Tips_Free";
 const TELEGRAM_PAID_JOIN_URL = "https://im.page/kalchas";
 
 type SideValue = { home: number; away: number };
-type TeamCell = { value: number; triggered?: boolean };
+/** `value` is null when there is no reading (Form Bar without enough recent games). */
+type TeamCell = {
+  value: number | null;
+  triggered?: boolean;
+  note?: string | null;
+  delivered?: boolean;
+};
 type StrategyBlock = {
   teams: { home?: TeamCell; away?: TeamCell };
   threshold?: number;
@@ -285,13 +291,13 @@ const STRAT_COLS: {
   },
   {
     key: "delta_goal",
-    label: "L Bar",
+    label: "F Bar",
     name: "Form Bar",
     digits: 1,
     signed: true,
     tone: "lbar",
-    scale: { min: -10, max: 10 },
-    tip: "Are they more likely to score right now than their own recent form suggests. 0 is on their own pace. +6 is clearly above it. Needs 3+ recent fixtures, or reads blank.",
+    scale: { min: -2, max: 2 },
+    tip: "Goals behind the pace their form sets: their median scored and the opponent's median conceded over the last 10 games, spread over 90 minutes. +1 is a goal behind. Delivered means they already have their expected share. Needs 5+ recent games, or reads blank.",
   },
   {
     key: "npei",
@@ -1068,6 +1074,23 @@ function windowHover(key: string, match: LiveMatch) {
   };
 }
 
+/** Form Bar's word for a team that already has its expected goals (matches the API's note). */
+const FORM_BAR_DONE = "Done";
+
+function stratCellText(
+  cell: TeamCell | undefined,
+  digits: number,
+  extras: { suffix?: string; signed?: boolean },
+): string {
+  return cell?.delivered ? FORM_BAR_DONE : fmtStrat(cell?.value, digits, extras);
+}
+
+/** Form Bar's per-team reading ("0 of 1.5 expected · 1.0 by 60′") under each hover row. */
+function noteHover(home: TeamCell | undefined, away: TeamCell | undefined) {
+  if (!home?.note && !away?.note) return {};
+  return { homeNote: home?.note ?? undefined, awayNote: away?.note ?? undefined };
+}
+
 function StratCell({
   match,
   block,
@@ -1095,13 +1118,14 @@ function StratCell({
             tip={col.tip}
             homeName={match.home_team}
             awayName={match.away_team}
-            homeValue={fmtStrat(home?.value, col.digits, extras)}
-            awayValue={fmtStrat(away?.value, col.digits, extras)}
+            homeValue={stratCellText(home, col.digits, extras)}
+            awayValue={stratCellText(away, col.digits, extras)}
             homeLead={lead.home}
             awayLead={lead.away}
             homePct={hoverBarPct(home?.value, col.scale)}
             awayPct={hoverBarPct(away?.value, col.scale)}
             {...windowHover(col.key, match)}
+            {...noteHover(home, away)}
           />
         }
       >
@@ -1110,13 +1134,13 @@ function StratCell({
             className={`band-line team-row${fires && home?.triggered ? " trig" : ""}${stratValueStepClass(col.key, home?.value, block?.threshold, fires && home?.triggered)}`}
           >
             <span className="tag">H</span>
-            <span className="val">{fmtStrat(home?.value, col.digits, extras)}</span>
+            <span className="val">{stratCellText(home, col.digits, extras)}</span>
           </div>
           <div
             className={`band-line team-row${fires && away?.triggered ? " trig" : ""}${stratValueStepClass(col.key, away?.value, block?.threshold, fires && away?.triggered)}`}
           >
             <span className="tag">A</span>
-            <span className="val">{fmtStrat(away?.value, col.digits, extras)}</span>
+            <span className="val">{stratCellText(away, col.digits, extras)}</span>
           </div>
         </div>
       </HoverTip>
@@ -1160,7 +1184,7 @@ const STRAT_STEP_FALLBACK: Record<string, number> = {
   rule_of_three: 1.2,
   delta_5min: 6.8,
   pressure_index: 68,
-  delta_goal: 5,
+  delta_goal: 1,
   npei: 55,
   omega: 30,
   kscore: 60,

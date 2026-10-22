@@ -23,7 +23,6 @@ from kalchas_core.events import (
     tally_red_cards,
 )
 from kalchas_core.form import (
-    MIN_FIXTURES_FOR_FORM,
     TeamForm,
     calculate_team_form,
     form_cache_key,
@@ -40,6 +39,7 @@ from kalchas_core.runner import (
     live_home_away_odds,
 )
 from kalchas_core.strategies.delta_5min import last_5min_block
+from kalchas_core.strategies.delta_goal import FORM_WINDOW
 from kalchas_core.strategies.pressure_index import last_10min_block
 from kalchas_core.sweet_spot import SweetSpotWindows
 from kalchas_core.weights import WeightSet
@@ -68,9 +68,6 @@ from kalchas_scanner.store import MinuteStore
 logger = logging.getLogger("kalchas.scanner")
 
 TERMINAL_STATUS = frozenset({"FT", "AET", "PEN", "CANC", "PST", "AWD"})
-
-TEAM_FORM_WINDOW = 10
-"""Form Bar's lookback: up to this many recent finished fixtures."""
 
 TEAM_FORM_CACHE_HOURS = 12
 """A team's form only changes when it plays a new finished fixture, so this
@@ -118,7 +115,8 @@ def _tally_yellow(
 class ScannerConfig:
     interval_sec: int = 60
     min_minute: int = 5
-    slots: tuple[int, ...] = (1, 2, 3, 4, 6, 7)
+    slots: tuple[int, ...] = (1, 2, 4, 6, 7)
+    """Slot 3 (Form Bar) is off until an admin enables it."""
     max_matches_per_cycle: int = 400
     max_stats_http_per_cycle: int = 15
     stale_cleanup_minutes: int = 360
@@ -371,9 +369,9 @@ class Scanner:
         }
 
     def _team_form_for(self, team_id: int) -> TeamForm | None:
-        """Recent scoring form for Form Bar's prior. `None` below the
-        `MIN_FIXTURES_FOR_FORM` floor -- Form Bar reports nothing for that
-        side rather than guessing. Cached in-process and in `panel_cache`
+        """Recent goals scored/conceded for Form Bar. `None` only when nothing
+        could be fetched; Form Bar itself decides whether a short history is
+        enough to read (`FORM_BAR_MIN_GAMES`). Cached in-process and in `panel_cache`
         (across restarts/replicas), both for `TEAM_FORM_CACHE_HOURS`. A failed
         fetch (budget exhausted, provider error) is only remembered for
         `TEAM_FORM_RETRY_SEC`, so it never sticks as "no form".
@@ -393,9 +391,8 @@ class Scanner:
         if form is None:
             self._team_form_by_id[tid] = (now + TEAM_FORM_RETRY_SEC, None)
             return None
-        usable = form if form.games_played >= MIN_FIXTURES_FOR_FORM else None
-        self._team_form_by_id[tid] = (now + TEAM_FORM_CACHE_HOURS * 3600, usable)
-        return usable
+        self._team_form_by_id[tid] = (now + TEAM_FORM_CACHE_HOURS * 3600, form)
+        return form
 
     def _team_form_from_cache_or_fetch(self, team_id: int) -> TeamForm | None:
         """`None` only when nothing could be fetched; a team with no played
@@ -425,9 +422,7 @@ class Scanner:
             logger.exception("team fixtures fetch failed for %s", team_id)
             return None
 
-        form = calculate_team_form(
-            played_fixtures(raw_fixtures or []), team_id, window=TEAM_FORM_WINDOW
-        )
+        form = calculate_team_form(played_fixtures(raw_fixtures or []), team_id, window=FORM_WINDOW)
 
         if dsn:
             try:
@@ -722,6 +717,8 @@ class Scanner:
             if cand.strategy_key == "omega":
                 payload["theta"] = detail.get("theta")
                 payload["k_scale"] = detail.get("k_scale")
+            elif cand.strategy_key == "delta_goal":
+                payload["form_bar"] = detail
             if timeline is not None:
                 last_5 = last_5min_block(timeline)
                 last_10 = last_10min_block(timeline)

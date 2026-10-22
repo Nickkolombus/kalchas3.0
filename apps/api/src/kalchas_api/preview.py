@@ -7,10 +7,13 @@ from typing import Any
 
 from kalchas_core.alert_outcomes import match_is_terminal
 from kalchas_core.events import count_cards_by_side
+from kalchas_core.form import TeamForm
 from kalchas_core.match import MatchTimeline
 from kalchas_core.runner import board_snapshot, home_away_odds, live_home_away_odds
 from kalchas_core.weights import WeightSet
 from kalchas_db.settings import SLOT_BY_KEY
+
+from kalchas_api.team_form import team_form_for_board
 
 
 def _parse_jsonb(value: Any) -> dict[str, Any]:
@@ -55,6 +58,8 @@ def _snapshot_row(
     *,
     conditions: dict[int, list] | None = None,
     events: list[dict[str, Any]] | None = None,
+    home_team_form: TeamForm | None = None,
+    away_team_form: TeamForm | None = None,
 ) -> dict[str, Any] | None:
     if not history:
         return None
@@ -75,6 +80,8 @@ def _snapshot_row(
         league_id=_optional_league_id(row.get("league_id")),
         league_name=str(row["league_name"]) if row.get("league_name") else None,
         country_name=str(row["country_name"]) if row.get("country_name") else None,
+        home_team_form=home_team_form,
+        away_team_form=away_team_form,
         home_odds=home_odds,
         away_odds=away_odds,
         live_home_odds=live_home,
@@ -150,6 +157,10 @@ def preview_live_matches(
         match_key = str(row["match_id"])
         history = load_match_history_sync(dsn, match_key)
         events = load_match_events_sync(dsn, match_key)
+        forms = {
+            "home_team_form": team_form_for_board(dsn, row.get("home_team_id"), fetch=False),
+            "away_team_form": team_form_for_board(dsn, row.get("away_team_id"), fetch=False),
+        }
         preview = _snapshot_row(
             row,
             history,
@@ -158,6 +169,7 @@ def preview_live_matches(
             strategy_key,
             conditions=preview_conditions,
             events=events,
+            **forms,
         )
         if preview is None:
             continue
@@ -169,6 +181,7 @@ def preview_live_matches(
             strategy_key,
             conditions=saved_conditions,
             events=events,
+            **forms,
         )
         preview["baseline"] = {
             "strategy": (saved or {}).get("strategy"),

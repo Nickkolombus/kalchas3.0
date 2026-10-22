@@ -9,8 +9,20 @@ from kalchas_core.runner import (
     live_home_away_odds,
 )
 
-HIGH_FORM = TeamForm(games_played=10, goals_for=32, goals_against=18, goals_per_game=3.2)
-LOW_FORM = TeamForm(games_played=10, goals_for=20, goals_against=22, goals_per_game=2.0)
+
+def _form(scored: list[int], conceded: list[int]) -> TeamForm:
+    return TeamForm(
+        games_played=len(scored),
+        goals_for=sum(scored),
+        goals_against=sum(conceded),
+        scored_by_game=tuple(scored),
+        conceded_by_game=tuple(conceded),
+    )
+
+
+# Median scored 2 / conceded 1, and median scored 1 / conceded 2.
+STRONG_FORM = _form([2, 2, 3, 1, 2, 0, 2], [1, 0, 1, 2, 1, 1, 0])
+LEAKY_FORM = _form([1, 0, 1, 2, 1, 1, 0], [2, 2, 3, 1, 2, 0, 2])
 
 
 def test_quiet_match_yields_no_candidates() -> None:
@@ -124,45 +136,68 @@ def test_home_away_odds_prefers_nested_kickoff() -> None:
     assert home_away_odds(None) == (None, None)
 
 
-def test_board_snapshot_delta_goal_uses_team_form_and_odds() -> None:
-    timeline = _busy_board_timeline()
-    high_form = board_snapshot(timeline, home_goals=1, away_goals=0, home_team_form=HIGH_FORM)
-    low_form = board_snapshot(timeline, home_goals=1, away_goals=0, home_team_form=LOW_FORM)
-    assert (
-        high_form["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
-        != low_form["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
+def _quiet_timeline(minute: int):
+    return timeline_from(
+        {m: {"home": {}, "away": {}} for m in range(minute - 10, minute + 1)},
+        current_minute=minute,
     )
 
-    # league_id alone drives only baseline_for (event normalisation), not the
-    # prior any more -- with no form on either side, both stay N/A (0.0).
-    league_only = board_snapshot(timeline, home_goals=1, away_goals=0, league_id="152")
-    with_odds_no_form = board_snapshot(
-        timeline,
-        home_goals=1,
-        away_goals=0,
-        league_id="152",
-        home_odds=1.4,
-        away_odds=7.0,
-    )
-    assert (
-        league_only["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
-        == with_odds_no_form["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
-        == 0.0
-    )
 
-    # With form present, odds nudge the reading away from the form-only one.
-    with_form_and_odds = board_snapshot(
-        timeline,
-        home_goals=1,
-        away_goals=0,
-        home_team_form=HIGH_FORM,
-        home_odds=1.4,
-        away_odds=7.0,
+def test_board_snapshot_form_bar_cell_is_goals_behind_pace() -> None:
+    board = board_snapshot(
+        _quiet_timeline(60),
+        home_goals=0,
+        away_goals=1,
+        home_team_form=STRONG_FORM,
+        away_team_form=LEAKY_FORM,
     )
-    assert (
-        with_form_and_odds["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
-        != high_form["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
+    teams = board["strategy_status"]["delta_goal"]["teams"]
+    # Home expects 2 (1.3 by 60'), has 0. Away expects 1 (0.7 by 60'), has 1: done.
+    assert teams["home"]["value"] == 1.3
+    assert teams["home"]["note"] == "0 of 2 expected · 1.3 by 60′"
+    assert "delivered" not in teams["home"]
+    assert teams["away"]["value"] == -0.3
+    assert teams["away"]["delivered"] is True
+    assert board["strategy_status"]["delta_goal"]["threshold"] == 1.0
+
+
+def test_board_snapshot_form_bar_without_form_is_blank_not_zero() -> None:
+    board = board_snapshot(_quiet_timeline(60), home_goals=1, away_goals=0)
+    home = board["strategy_status"]["delta_goal"]["teams"]["home"]
+    assert home["value"] is None
+    assert home["note"] == "Not enough recent games"
+
+
+def test_form_bar_fires_one_goal_behind_with_its_reading() -> None:
+    cands = evaluate_match(
+        _quiet_timeline(60),
+        slots=(3,),
+        home_team_form=STRONG_FORM,
+        away_team_form=LEAKY_FORM,
     )
+    assert [(c.strategy_slot, c.side.value, c.value) for c in cands] == [(3, "home", 1.33)]
+    assert cands[0].detail["note"] == "0 of 2 expected · 1.3 by 60′"
+
+
+def test_form_bar_pressure_conditions_only_bite_when_switched_on() -> None:
+    """The seeded Δ10′/Δ5′/UrG/Omega rows start switched off."""
+    row = {
+        "left_scope": "triggering",
+        "left_metric": "pressure_index",
+        "operator": ">=",
+        "right_kind": "value",
+        "right_value": 75,
+        "enabled": False,
+    }
+    kwargs = {
+        "slots": (3,),
+        "home_team_form": STRONG_FORM,
+        "away_team_form": LEAKY_FORM,
+    }
+    off = evaluate_match(_quiet_timeline(60), conditions={3: [row]}, **kwargs)
+    on = evaluate_match(_quiet_timeline(60), conditions={3: [{**row, "enabled": True}]}, **kwargs)
+    assert len(off) == 1
+    assert on == []
 
 
 def _gated_delta5_timeline():
@@ -189,7 +224,7 @@ def test_delta_5min_alert_respects_fire_threshold() -> None:
 
 
 def test_admin_fire_thresholds_silence_alerts_below_the_bar() -> None:
-    """UrG, PI, L Bar, Δ5', and K-Score all honor the admin fire number.
+    """UrG, PI, Form Bar, Δ5', and K-Score all honor the admin fire number.
 
     Omega is excluded: its fire slider is unused; it gates on formula weights.
     """

@@ -88,17 +88,19 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
             name="Form Bar",
             short="Bar",
             equation=(
-                "Lift L = P_goal(5m) / P0_form\n"
-                "Bar score = clamp(10·(L − 1), −10, +10)   # 0 = on the team's own bar\n"
-                "Band: below L<0.85, normal 0.85–1.15, above L>1.15"
+                "xG = (median scored, last 10 · opponent median conceded, last 10) / 2\n"
+                "Expected by now = xG · min(minute, 90) / 90\n"
+                "Bar = expected by now − scored   # + behind pace, − ahead\n"
+                "Delivered: scored ≥ xG (and ≥ 1 goal) — no alert"
             ),
             blurb=(
-                "Form Bar: short-horizon scoring chance versus the team's own recent "
-                "scoring rate (goals/game over its last finished fixtures, up to 10, "
-                "down to a floor of 3 — fewer and the team has no bar at all, not a "
-                "league-wide guess). Kickoff odds may nudge that prior by 15%; they "
-                "do not replace it. Score is usually near 0 (on the bar); positive is "
-                "above, negative below, clamped to +/-10."
+                "Form Bar: how many goals this team should have by now, from its own "
+                "median goals scored and the opponent's median goals conceded over "
+                "their last 10 played games, against what it has actually scored. "
+                "Needs 5+ recent games (if only the opponent is short, its own median "
+                "alone). No live match stats: attach Δ5′/Δ10′/UrG/Omega as extra "
+                "conditions below to require pressure. The fire threshold is goals "
+                "behind pace."
             ),
         ),
         "delta_5min": StrategyInfo(
@@ -331,116 +333,10 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 "Pressure multiplier in the final 15 minutes.",
             ),
         ),
-        "delta_goal": _specs(
-            WeightSpec(
-                "weight_sot",
-                "Shot on target weight",
-                1.0,
-                0.1,
-                3.0,
-                0.1,
-                "Adaptive weight for SOT in the energy score (learning layer tunes around this).",
-            ),
-            WeightSpec(
-                "weight_sofft",
-                "Shot off target weight",
-                0.6,
-                0.0,
-                2.0,
-                0.1,
-                "Adaptive weight for shots off target.",
-            ),
-            WeightSpec(
-                "weight_corners",
-                "Corner weight",
-                0.7,
-                0.0,
-                2.0,
-                0.1,
-                "Adaptive weight for corners.",
-            ),
-            WeightSpec(
-                "weight_da",
-                "Dangerous attack weight",
-                0.25,
-                0.0,
-                1.5,
-                0.05,
-                "Adaptive weight for dangerous attacks.",
-            ),
-            WeightSpec(
-                "threat_w_p",
-                "Threat weight: P (probability)",
-                0.4,
-                0.1,
-                0.8,
-                0.05,
-                "Share of the composite score from the 5-min goal probability.",
-            ),
-            WeightSpec(
-                "threat_w_ps",
-                "Threat weight: PS (pressure score)",
-                0.25,
-                0.05,
-                0.6,
-                0.05,
-                "Share of the composite score from sustained pressure.",
-            ),
-            WeightSpec(
-                "threat_w_l",
-                "Threat weight: L (lift)",
-                0.15,
-                0.0,
-                0.5,
-                0.05,
-                "Share of the composite score from lift over baseline.",
-            ),
-            WeightSpec(
-                "pattern_sustained",
-                "Pattern bonus: sustained attack",
-                0.05,
-                0.0,
-                0.2,
-                0.01,
-                "Added when three consecutive windows show consistent activity.",
-            ),
-            WeightSpec(
-                "pattern_corner_seq",
-                "Pattern bonus: corner sequence",
-                0.03,
-                0.0,
-                0.2,
-                0.01,
-                "Added when multiple corners fire inside 10 minutes.",
-            ),
-            WeightSpec(
-                "pattern_shot_burst",
-                "Pattern bonus: shot burst",
-                0.04,
-                0.0,
-                0.2,
-                0.01,
-                "Added when shots cluster inside the most recent window.",
-            ),
-            WeightSpec(
-                "time_urgency_mult",
-                "Late-game urgency multiplier",
-                0.3,
-                0.0,
-                1.0,
-                0.05,
-                "Extra probability boost proportional to minute × scoreline-closeness.",
-            ),
-            WeightSpec(
-                "alert_threshold",
-                "Alert threshold (−10…+10 bar score)",
-                6.0,
-                0.0,
-                10.0,
-                0.5,
-                "Fire when the signed Form Bar score reaches this level (above the bar).",
-            ),
-        ),
+        # Form Bar is goals-vs-form arithmetic with no tunable coefficients; its
+        # fire threshold lives in strategy_thresholds like every slot's. Kept as
+        # an empty entry because admin endpoints (presets, conditions) key on it.
+        "delta_goal": _specs(),
         "delta_5min": _specs(
             WeightSpec(
                 "sot_weight",
@@ -827,17 +723,6 @@ BUILTIN_PRESETS: Mapping[str, Mapping[str, Mapping[str, float]]] = MappingProxyT
         },
         "delta_goal": {
             "Balanced (default)": {},
-            "SOT-driven": {
-                "weight_sot": 1.4,
-                "weight_sofft": 0.4,
-                "weight_corners": 0.5,
-                "weight_da": 0.2,
-            },
-            "Pattern-sensitive": {
-                "pattern_sustained": 0.10,
-                "pattern_corner_seq": 0.07,
-                "pattern_shot_burst": 0.08,
-            },
         },
         "delta_5min": {
             "Balanced (default)": {},

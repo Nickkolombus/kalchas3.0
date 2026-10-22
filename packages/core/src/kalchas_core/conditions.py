@@ -115,7 +115,7 @@ CONDITION_METRICS: tuple[tuple[str, str], ...] = (
     ("rule_of_three", "UrG"),
     ("delta_5min", "Δ5′"),
     ("pressure_index", "Δ10′"),
-    ("delta_goal", "L Bar"),
+    ("delta_goal", "F Bar"),
     ("omega", "Ω"),
     ("kscore", "K Index"),
     ("shots_on_target", "SOT"),

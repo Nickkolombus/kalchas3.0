@@ -13,8 +13,8 @@ const HOVER_SHOW_DELAY_MS = 420;
 export type HoverScale = { min: number; max: number };
 
 export function hoverLead(
-  home?: { value?: number; triggered?: boolean },
-  away?: { value?: number; triggered?: boolean },
+  home?: { value?: number | null; triggered?: boolean },
+  away?: { value?: number | null; triggered?: boolean },
 ): { home: boolean; away: boolean } {
   if (home?.triggered || away?.triggered) {
     return { home: Boolean(home?.triggered), away: Boolean(away?.triggered) };

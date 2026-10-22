@@ -478,3 +478,23 @@ def test_joint_delta5_and_urg_uses_last_5_minutes():
 
 def test_joint_with_a_third_strategy_stays_on_10_minutes():
     assert joint_window_span(["delta_5min", "rule_of_three", "omega"]) == 10
+
+
+def test_form_bar_shows_goals_behind_pace_and_the_reading():
+    text = format_alert_html(
+        {
+            "home_team": "Home",
+            "away_team": "Away",
+            "minute": 60,
+            "score": "0-1",
+            "strategy_key": "delta_goal",
+            "team": "home",
+            "value": 1.33,
+            "payload": {
+                "league": "Test",
+                "form_bar": {"note": "0 of 2 expected · 1.3 by 60′", "gap": 1.33},
+            },
+        }
+    )
+    assert "(Form Bar): 1.3 behind pace for <b>Home</b>" in text
+    assert "0 of 2 expected · 1.3 by 60′" in text

@@ -12,7 +12,12 @@ import {
 } from "./HoverTip";
 
 type SideValue = { home: number; away: number };
-type TeamCell = { value: number; triggered?: boolean };
+type TeamCell = {
+  value: number | null;
+  triggered?: boolean;
+  note?: string | null;
+  delivered?: boolean;
+};
 type StrategyBlock = {
   teams: { home?: TeamCell; away?: TeamCell };
   threshold?: number;
@@ -220,8 +225,8 @@ const STRAT_ROWS: {
     digits: 1,
     signed: true,
     tone: "lbar",
-    scale: { min: -10, max: 10 },
-    tip: "Are they more likely to score right now than their own recent form suggests. 0 is on their own pace. +6 is clearly above it. Needs 3+ recent fixtures, or reads blank.",
+    scale: { min: -2, max: 2 },
+    tip: "Goals behind the pace their form sets: their median scored and the opponent's median conceded over the last 10 games, spread over 90 minutes. +1 is a goal behind. Done means they already have their expected share. Needs 5+ recent games.",
   },
   {
     key: "npei",
@@ -1727,8 +1732,16 @@ export function MatchOverlay({
                       awayName={panel.away_team}
                       tone={row.tone}
                       scale={row.scale}
-                      homeNote={window ? windowRecipe(window, "home") : undefined}
-                      awayNote={window ? windowRecipe(window, "away") : undefined}
+                      homeNote={
+                        window
+                          ? windowRecipe(window, "home")
+                          : (block?.teams?.home?.note ?? undefined)
+                      }
+                      awayNote={
+                        window
+                          ? windowRecipe(window, "away")
+                          : (block?.teams?.away?.note ?? undefined)
+                      }
                       windowHeading={
                         window && span ? windowLabel(window, span) : undefined
                       }

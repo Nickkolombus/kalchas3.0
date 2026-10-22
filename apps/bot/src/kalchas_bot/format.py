@@ -36,7 +36,7 @@ ALERT_CEILING: dict[str, tuple[float | None, int, str]] = {
     "rule_of_three": (None, 1, ""),
     "delta_5min": (12.0, 1, ""),
     "pressure_index": (100.0, 0, ""),
-    "delta_goal": (10.0, 1, ""),
+    "delta_goal": (None, 1, " behind pace"),
     "npei": (100.0, 0, ""),
     "omega": (None, 0, "°"),
     "kscore": (100.0, 0, ""),
@@ -298,6 +298,11 @@ def _stat_block(key: str, payload: Mapping[str, Any], minute: object) -> list[st
         windowed = _window_stat_lines(payload.get("last_10min"), minute, span=10)
         if windowed or isinstance(payload.get("last_10min"), Mapping):
             return windowed
+    if key == "delta_goal":
+        form_bar = payload.get("form_bar")
+        note = form_bar.get("note") if isinstance(form_bar, Mapping) else None
+        if note:
+            return [_esc(note), *_stat_rows(payload)]
     return _stat_rows(payload)
 
 

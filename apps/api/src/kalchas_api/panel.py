@@ -6,8 +6,11 @@ import json
 from typing import Any
 
 from kalchas_core.events import count_cards_by_side
+from kalchas_core.form import TeamForm
 from kalchas_core.match import MatchTimeline
 from kalchas_core.runner import board_snapshot, home_away_odds, live_home_away_odds
+
+from kalchas_api.team_form import team_form_for_board
 
 
 def _json_obj(value: Any) -> dict[str, Any]:
@@ -121,6 +124,8 @@ def timeline_series(
     live_away_odds: float | None = None,
     yellow_cards: Any = (0, 0),
     red_cards: Any = (0, 0),
+    home_team_form: TeamForm | None = None,
+    away_team_form: TeamForm | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     series: list[dict[str, Any]] = []
     latest_board: dict[str, Any] | None = None
@@ -139,6 +144,8 @@ def timeline_series(
             league_id=league_id,
             league_name=league_name,
             country_name=country_name,
+            home_team_form=home_team_form,
+            away_team_form=away_team_form,
             home_odds=home_odds,
             away_odds=away_odds,
             live_home_odds=live_home_odds,
@@ -201,6 +208,8 @@ def build_match_panel(dsn: str, match_id: str) -> dict[str, Any] | None:
         live_away_odds=live_away,
         yellow_cards=yellow,
         red_cards=red,
+        home_team_form=team_form_for_board(dsn, row.get("home_team_id"), fetch=False),
+        away_team_form=team_form_for_board(dsn, row.get("away_team_id"), fetch=False),
     )
     events = [
         {
