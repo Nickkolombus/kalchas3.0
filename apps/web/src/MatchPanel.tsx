@@ -216,12 +216,12 @@ const STRAT_ROWS: {
   },
   {
     key: "delta_goal",
-    label: "League Bar",
+    label: "Form Bar",
     digits: 1,
     signed: true,
     tone: "lbar",
     scale: { min: -10, max: 10 },
-    tip: "Are they more likely to score than a typical side in this league, right now. 0 is average. +6 is clearly above.",
+    tip: "Are they more likely to score right now than their own recent form suggests. 0 is on their own pace. +6 is clearly above it. Needs 3+ recent fixtures, or reads blank.",
   },
   {
     key: "npei",

@@ -224,7 +224,7 @@ const STRATEGY_CARD: Record<string, string> = {
   rule_of_three: "Unrealised Goals",
   delta_5min: "Δ5′",
   pressure_index: "Δ10′",
-  delta_goal: "League Bar",
+  delta_goal: "Form Bar",
   npei: "ΦI",
   omega: "Ωmega",
   kscore: "K Index",
@@ -286,12 +286,12 @@ const STRAT_COLS: {
   {
     key: "delta_goal",
     label: "L Bar",
-    name: "League Bar",
+    name: "Form Bar",
     digits: 1,
     signed: true,
     tone: "lbar",
     scale: { min: -10, max: 10 },
-    tip: "Are they more likely to score than a typical side in this league, right now. 0 is average. +6 is clearly above.",
+    tip: "Are they more likely to score right now than their own recent form suggests. 0 is on their own pace. +6 is clearly above it. Needs 3+ recent fixtures, or reads blank.",
   },
   {
     key: "npei",

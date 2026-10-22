@@ -25,7 +25,8 @@ ALERT_NAME_HINTS: Final[tuple[tuple[str, int], ...]] = (
     ("inplay pressure", 2),
     ("in-play pressure", 2),
     ("in play pressure", 2),
-    # slot 3 — League Bar (legacy: Delta Goal / Pressure-to-Goal)
+    # slot 3 — Form Bar (legacy names: League Bar / Delta Goal / Pressure-to-Goal)
+    ("form bar", 3),
     ("league bar", 3),
     ("pressure to goal", 3),
     ("enhanced pressure to goal", 3),
@@ -72,7 +73,7 @@ FALLBACK_RULE: Final = StrategyRule(
 DEFAULT_RULES: Final[tuple[StrategyRule, ...]] = (
     StrategyRule(1, "Rule of 3", 999, 0, True, True),  # internal; public label is UrG
     StrategyRule(2, "InPlay Pressure", 20, 2, False, False),
-    StrategyRule(3, "League Bar", 20, 2, False, False),
+    StrategyRule(3, "Form Bar", 20, 2, False, False),
     StrategyRule(4, "Δ(5min)", 20, 2, False, False),
     StrategyRule(6, "Omega", 20, 2, False, True),
     StrategyRule(7, "K-Score", 20, 2, False, True),

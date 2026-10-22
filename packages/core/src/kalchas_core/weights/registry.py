@@ -85,18 +85,20 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
         ),
         "delta_goal": StrategyInfo(
             slot="3",
-            name="League Bar",
+            name="Form Bar",
             short="Bar",
             equation=(
-                "Lift L = P_goal(5m) / P0_league\n"
-                "Bar score = clamp(10·(L − 1), −10, +10)   # 0 = on the league bar\n"
+                "Lift L = P_goal(5m) / P0_form\n"
+                "Bar score = clamp(10·(L − 1), −10, +10)   # 0 = on the team's own bar\n"
                 "Band: below L<0.85, normal 0.85–1.15, above L>1.15"
             ),
             blurb=(
-                "League Bar: short-horizon scoring chance versus the league's "
-                "goals-per-game rate. Kickoff odds may nudge that prior by 15%; "
-                "they do not replace it. Score is usually near 0 (on the bar); "
-                "positive is above, negative below, clamped to +/-10."
+                "Form Bar: short-horizon scoring chance versus the team's own recent "
+                "scoring rate (goals/game over its last finished fixtures, up to 10, "
+                "down to a floor of 3 — fewer and the team has no bar at all, not a "
+                "league-wide guess). Kickoff odds may nudge that prior by 15%; they "
+                "do not replace it. Score is usually near 0 (on the bar); positive is "
+                "above, negative below, clamped to +/-10."
             ),
         ),
         "delta_5min": StrategyInfo(
@@ -436,7 +438,7 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 0.0,
                 10.0,
                 0.5,
-                "Fire when the signed League Bar score reaches this level (above the bar).",
+                "Fire when the signed Form Bar score reaches this level (above the bar).",
             ),
         ),
         "delta_5min": _specs(

@@ -13,6 +13,7 @@ from kalchas_core.conditions import (
     favourite_from_kickoff,
     passes_extra_conditions,
 )
+from kalchas_core.form import TeamForm
 from kalchas_core.match import MatchTimeline, Side
 from kalchas_core.npei import compute_npei
 from kalchas_core.strategies import (
@@ -31,7 +32,7 @@ from kalchas_core.weights import WeightSet
 DEFAULT_THRESHOLDS: dict[int, float] = {
     1: 1.5,  # Rule of Three unrealised goals
     2: 75.0,  # Pressure Index
-    3: 6.0,  # League Bar signed score threshold
+    3: 6.0,  # Form Bar signed score threshold
     4: 7.0,  # Delta 5min
     6: 0.0,  # Omega uses its own gate; threshold unused
     7: 60.0,  # K-Score
@@ -186,6 +187,8 @@ def evaluate_match(
     league_id: str | int | None = None,
     league_name: str | None = None,
     country_name: str | None = None,
+    home_team_form: TeamForm | None = None,
+    away_team_form: TeamForm | None = None,
     home_odds: float | None = None,
     away_odds: float | None = None,
     live_home_odds: float | None = None,
@@ -251,8 +254,8 @@ def evaluate_match(
             home_score=home_goals,
             away_score=away_goals,
             league_id=league_id,
-            league_name=league_name,
-            country_name=country_name,
+            home_recent_form=home_team_form,
+            away_recent_form=away_team_form,
             home_odds=home_odds,
             away_odds=away_odds,
             threshold=th[3],
@@ -373,8 +376,8 @@ def evaluate_match(
                 home_score=home_goals,
                 away_score=away_goals,
                 league_id=league_id,
-                league_name=league_name,
-                country_name=country_name,
+                home_recent_form=home_team_form,
+                away_recent_form=away_team_form,
                 home_odds=home_odds,
                 away_odds=away_odds,
                 threshold=th[3],
@@ -443,6 +446,8 @@ def board_snapshot(
     league_id: str | int | None = None,
     league_name: str | None = None,
     country_name: str | None = None,
+    home_team_form: TeamForm | None = None,
+    away_team_form: TeamForm | None = None,
     home_odds: float | None = None,
     away_odds: float | None = None,
     live_home_odds: float | None = None,
@@ -468,8 +473,8 @@ def board_snapshot(
         home_score=home_goals,
         away_score=away_goals,
         league_id=league_id,
-        league_name=league_name,
-        country_name=country_name,
+        home_recent_form=home_team_form,
+        away_recent_form=away_team_form,
         home_odds=home_odds,
         away_odds=away_odds,
         weights=w,

@@ -1,4 +1,4 @@
-"""League Bar (Strategy 3, key ``delta_goal``).
+"""Form Bar (Strategy 3, key ``delta_goal``).
 
 New in 3.0. Kalchas 2.2 had no tests for this strategy at all, despite it
 being the most intricate of them: the calculation sat in a 380-line method
@@ -7,7 +7,11 @@ appended to a JSON learning store as it went.
 
 The port was verified against 2.2 by differential comparison over 1,248
 matches, agreeing on the trigger decision, tier, team and every intermediate
-value in the chain (`scripts/verify_delta_goal_port.py`).
+value in the chain (`scripts/verify_delta_goal_port.py`) -- back when the
+prior was still the competition-wide scoring rate. That prior has since been
+replaced with each team's own recent-form goals/game; internal identifiers
+(``LeagueBar``, ``league_bar_score``, ...) keep their names regardless, as
+noted in the module docstring.
 """
 
 from __future__ import annotations
@@ -16,16 +20,16 @@ import math
 
 import pytest
 from conftest import timeline_from
+from kalchas_core.form import TeamForm
 from kalchas_core.match import MatchTimeline, Side
 from kalchas_core.strategies.delta_goal import (
     DEFAULT_BASELINE,
-    GLOBAL_AVERAGE_GOALS_PER_GAME,
     LEAGUE_BAR_NORMAL_HIGH,
     LEAGUE_BAR_NORMAL_LOW,
     LEAGUE_BASELINES,
-    LEAGUE_GOALS_PER_GAME,
     LEAGUE_PRIOR_SHARE,
     MAX_THREAT_SCORE,
+    MIN_FIXTURES_FOR_FORM,
     MINIMUM_MINUTE,
     AttackingPatterns,
     EventBaseline,
@@ -37,11 +41,10 @@ from kalchas_core.strategies.delta_goal import (
     baseline_for,
     detect_patterns,
     evaluate,
-    goals_per_game_for,
     league_bar_for,
     league_bar_score,
-    league_prior,
     sigmoid,
+    team_form_prior,
     threat_score,
     tier_for,
     window_events,
@@ -49,6 +52,15 @@ from kalchas_core.strategies.delta_goal import (
 from kalchas_core.weights import WeightSet
 
 DEFAULTS = WeightSet.defaults()
+
+# A middling team: roughly the old global-average scoring rate (2.65), well
+# past the 3-fixture floor. Most tests that don't care about the exact prior
+# use this so the bar has something real to compute against.
+FORM = TeamForm(games_played=10, goals_for=27, goals_against=20, goals_per_game=2.7)
+HIGH_FORM = TeamForm(games_played=10, goals_for=32, goals_against=18, goals_per_game=3.2)
+LOW_FORM = TeamForm(games_played=10, goals_for=20, goals_against=22, goals_per_game=2.0)
+TOO_FEW_FORM = TeamForm(games_played=2, goals_for=6, goals_against=4, goals_per_game=3.0)
+assert TOO_FEW_FORM.games_played < MIN_FIXTURES_FOR_FORM, "fixture must sit below the floor"
 
 
 def busy(minute: int, *, per_minute: int = 2, span: int = 30) -> MatchTimeline:
@@ -80,25 +92,19 @@ class TestSigmoid:
         assert sigmoid(-1) < sigmoid(0) < sigmoid(1)
 
 
-class TestLeaguePrior:
-    def test_a_known_league_uses_its_own_scoring_rate(self) -> None:
-        bundesliga = league_prior("175")
-        serie_a = league_prior("207")
-        assert bundesliga > serie_a, "the higher-scoring league should have a higher prior"
-
-    def test_an_unknown_league_falls_back_to_the_global_average(self) -> None:
-        assert (
-            league_prior("nonexistent")
-            == pytest.approx(league_prior(None))
-            == pytest.approx((GLOBAL_AVERAGE_GOALS_PER_GAME / 2) / 18)
-        )
+class TestTeamFormPrior:
+    def test_a_higher_scoring_team_gets_a_higher_prior(self) -> None:
+        assert team_form_prior(HIGH_FORM.goals_per_game) > team_form_prior(LOW_FORM.goals_per_game)
 
     def test_the_prior_is_a_plausible_five_minute_probability(self) -> None:
-        for league in LEAGUE_GOALS_PER_GAME:
-            assert 0.0 < league_prior(league) < 0.12
+        for form in (FORM, HIGH_FORM, LOW_FORM):
+            assert 0.0 < team_form_prior(form.goals_per_game) < 0.2
 
-    def test_integer_league_ids_resolve(self) -> None:
-        assert league_prior(175) == league_prior("175")
+    def test_it_is_a_pure_function_of_the_rate_not_the_rest_of_the_form(self) -> None:
+        same_rate_different_record = TeamForm(games_played=10, goals_per_game=FORM.goals_per_game)
+        assert team_form_prior(FORM.goals_per_game) == team_form_prior(
+            same_rate_different_record.goals_per_game
+        )
 
 
 class TestBaselines:
@@ -118,7 +124,11 @@ class TestBaselines:
             assert baseline.dangerous_attacks > 0
 
     def test_a_cagey_league_makes_the_same_activity_score_higher(self) -> None:
-        """Normalising by a lower baseline raises the score for equal events."""
+        """Normalising by a lower baseline raises the score for equal events.
+
+        Pressure/events are always real regardless of form, so this needs no
+        `home_recent_form` -- only `league_id`, which still drives `baseline_for`.
+        """
         timeline = busy(30)
         cagey = evaluate(timeline, league_id="207")
         open_league = evaluate(timeline, league_id="302")
@@ -367,21 +377,28 @@ class TestEvaluate:
 
     def test_a_quiet_match_does_not_trigger(self) -> None:
         timeline = timeline_from({m: {} for m in range(10, 41)}, current_minute=40)
-        result = evaluate(timeline)
+        result = evaluate(timeline, home_recent_form=FORM, away_recent_form=FORM)
         assert result.triggering_team is None
 
     def test_a_dominant_team_triggers(self) -> None:
-        result = evaluate(busy(70), league_id="152", threshold=3.0)
+        result = evaluate(busy(70), league_id="152", threshold=3.0, home_recent_form=FORM)
         assert result.triggering_team is Side.HOME
         assert result.trigger_value > 0
         assert -MAX_THREAT_SCORE <= result.trigger_value <= MAX_THREAT_SCORE
 
     def test_the_quiet_team_does_not_trigger(self) -> None:
-        result = evaluate(busy(70), league_id="152", threshold=3.0)
+        result = evaluate(
+            busy(70),
+            league_id="152",
+            threshold=3.0,
+            home_recent_form=FORM,
+            away_recent_form=FORM,
+        )
         assert not result.away.qualifies
 
     def test_the_full_chain_is_reported(self) -> None:
-        team = evaluate(busy(70), league_id="152", threshold=3.0).home
+        team = evaluate(busy(70), league_id="152", threshold=3.0, home_recent_form=FORM).home
+        assert team.has_form
         assert team.pressure_index > 0
         assert 0 < team.pressure_score < 100
         assert 0 < team.confidence <= 1
@@ -389,26 +406,43 @@ class TestEvaluate:
         assert team.lift > 1
 
     def test_confidence_rises_with_activity(self) -> None:
-        quiet = evaluate(busy(40, per_minute=0), league_id="152")
-        loud = evaluate(busy(40, per_minute=3), league_id="152")
+        quiet = evaluate(busy(40, per_minute=0), league_id="152", home_recent_form=FORM)
+        loud = evaluate(busy(40, per_minute=3), league_id="152", home_recent_form=FORM)
         assert loud.home.confidence > quiet.home.confidence
 
     def test_a_high_threshold_suppresses_the_alert(self) -> None:
         timeline = busy(70)
-        assert evaluate(timeline, threshold=3.0).triggering_team is Side.HOME
-        assert evaluate(timeline, threshold=10.1).triggering_team is None
+        assert evaluate(timeline, threshold=3.0, home_recent_form=FORM).triggering_team is Side.HOME
+        assert evaluate(timeline, threshold=10.1, home_recent_form=FORM).triggering_team is None
 
     def test_the_strongest_team_is_reported_even_without_a_trigger(self) -> None:
         """The dashboard needs a reading when nothing alerts."""
-        result = evaluate(busy(70), threshold=10.1)
+        result = evaluate(busy(70), threshold=10.1, home_recent_form=FORM, away_recent_form=FORM)
         assert result.triggering_team is None
         assert result.strongest_team is Side.HOME
 
     def test_the_higher_tier_wins_over_the_higher_score(self) -> None:
-        result = evaluate(busy(70), threshold=3.0)
+        result = evaluate(busy(70), threshold=3.0, home_recent_form=FORM, away_recent_form=FORM)
         side = result.triggering_team
         assert side is not None
         assert result.team(side).tier is not None
+
+    def test_a_side_with_too_little_form_history_is_not_available(self) -> None:
+        """Fewer than `MIN_FIXTURES_FOR_FORM` finished fixtures -> N/A, not a
+        league-wide guess."""
+        result = evaluate(busy(70), threshold=0.0, home_recent_form=TOO_FEW_FORM)
+        assert not result.home.has_form
+        assert result.home.tier is None
+        assert not result.home.qualifies
+        # Events/pressure are still real even without a usable prior.
+        assert result.home.pressure_index > 0
+
+    def test_a_missing_form_is_not_a_missing_reading(self) -> None:
+        """No form supplied at all behaves exactly like too-little history."""
+        result = evaluate(busy(70), threshold=0.0)
+        assert not result.home.has_form
+        assert not result.away.has_form
+        assert result.triggering_team is None
 
 
 class TestEvidenceGate:
@@ -451,7 +485,9 @@ class TestEvidenceGate:
         assert not result.home.has_evidence
 
     def test_a_tier_without_evidence_does_not_qualify(self) -> None:
-        result = evaluate(self._dangerous_attacks_only(per_minute=0), threshold=0.0)
+        result = evaluate(
+            self._dangerous_attacks_only(per_minute=0), threshold=0.0, home_recent_form=FORM
+        )
         assert result.home.tier is not None, "the score clears the threshold"
         assert not result.home.qualifies, "but the evidence gate blocks it"
         assert result.triggering_team is None
@@ -479,65 +515,67 @@ class TestDangerousAttacksCanClearEvidenceViaSustainedAttack:
         assert result.home.patterns.sustained_attack
 
     def test_and_therefore_pass_the_gate_with_no_shots_at_all(self) -> None:
-        result = evaluate(self._dangerous_attacks_only(per_minute=2), threshold=0.0)
+        result = evaluate(
+            self._dangerous_attacks_only(per_minute=2), threshold=0.0, home_recent_form=FORM
+        )
         assert result.home.events.shots_on_target == 0
         assert result.home.has_evidence
-        # DA-only pressure can still sit below the league bar → no alert tier.
+        # DA-only pressure can still sit below the bar → no alert tier.
         assert result.home.league_bar is LeagueBar.BELOW
         assert not result.home.qualifies
 
 
 class TestOddsPrior:
-    def test_odds_only_nudge_the_league_prior(self) -> None:
+    def test_odds_only_nudge_the_form_prior(self) -> None:
         timeline = busy(60)
-        from_league = evaluate(timeline, league_id="152")
-        from_odds = evaluate(timeline, league_id="152", home_odds=1.4, away_odds=7.0)
-        league_p0 = league_prior("152")
-        mixed = LEAGUE_PRIOR_SHARE * league_p0 + (1.0 - LEAGUE_PRIOR_SHARE) * _odds_prior(1.4, 7.0)
+        from_form = evaluate(timeline, home_recent_form=FORM)
+        from_odds = evaluate(timeline, home_recent_form=FORM, home_odds=1.4, away_odds=7.0)
+        form_p0 = team_form_prior(FORM.goals_per_game)
+        mixed = LEAGUE_PRIOR_SHARE * form_p0 + (1.0 - LEAGUE_PRIOR_SHARE) * _odds_prior(1.4, 7.0)
         assert from_odds.home.prior == pytest.approx(mixed)
-        assert from_odds.home.prior != from_league.home.prior
-        assert abs(from_odds.home.prior - league_p0) < abs(_odds_prior(1.4, 7.0) - league_p0)
+        assert from_odds.home.prior != from_form.home.prior
+        assert abs(from_odds.home.prior - form_p0) < abs(_odds_prior(1.4, 7.0) - form_p0)
 
     def test_the_favourite_still_starts_slightly_higher(self) -> None:
-        result = evaluate(busy(60), league_id="152", home_odds=1.4, away_odds=7.0)
+        result = evaluate(
+            busy(60),
+            home_recent_form=FORM,
+            away_recent_form=FORM,
+            home_odds=1.4,
+            away_odds=7.0,
+        )
         assert result.home.prior > result.away.prior
 
-    def test_even_odds_give_both_teams_the_same_prior(self) -> None:
-        result = evaluate(busy(60), home_odds=2.5, away_odds=2.5)
+    def test_even_odds_give_both_teams_the_same_prior_when_form_matches(self) -> None:
+        result = evaluate(
+            busy(60), home_recent_form=FORM, away_recent_form=FORM, home_odds=2.5, away_odds=2.5
+        )
         assert result.home.prior == pytest.approx(result.away.prior)
 
-    def test_one_missing_side_of_the_market_uses_the_league_only(self) -> None:
+    def test_one_missing_side_of_the_market_uses_the_form_only(self) -> None:
         timeline = busy(60)
-        partial = evaluate(timeline, league_id="152", home_odds=1.4)
-        assert partial.home.prior == pytest.approx(league_prior("152"))
+        partial = evaluate(timeline, home_recent_form=FORM, home_odds=1.4)
+        assert partial.home.prior == pytest.approx(team_form_prior(FORM.goals_per_game))
 
-    def test_wales_premier_is_not_the_global_fallback(self) -> None:
-        assert league_prior("341") != league_prior(None)
-        assert goals_per_game_for(
-            None, league_name="Premier League", country_name="Wales"
-        ) == pytest.approx(2.90)
+    def test_odds_alone_do_not_substitute_for_a_missing_form(self) -> None:
+        """A side with no usable recent form stays N/A even with both odds
+        supplied -- odds only nudge an existing prior, per the module docstring."""
+        result = evaluate(busy(60), home_odds=1.4, away_odds=7.0)
+        assert not result.home.has_form
+        assert result.home.tier is None
 
-    def test_premier_league_name_requires_country(self) -> None:
-        wales = goals_per_game_for(None, league_name="Premier League", country_name="Wales")
-        england = goals_per_game_for(None, league_name="Premier League", country_name="England")
-        unnamed = goals_per_game_for(None, league_name="Premier League")
-        assert wales == pytest.approx(2.90)
-        assert england == pytest.approx(2.85)
-        assert unnamed == pytest.approx(GLOBAL_AVERAGE_GOALS_PER_GAME)
-
-    def test_an_underdog_does_not_replace_the_league_bar(self) -> None:
-        """Briton Ferry case: 4.20 home odds must stay near the league P0."""
-        league_p0 = league_prior("341", league_name="Premier League", country_name="Wales")
+    def test_a_stronger_team_does_not_replace_the_form_bar(self) -> None:
+        """Lopsided odds (4.20 / 1.65) must still land near the team's own P0,
+        not swamp it -- mirrors the old league-bar guard, now against form."""
+        form_p0 = team_form_prior(HIGH_FORM.goals_per_game)
         mixed = evaluate(
             busy(60),
-            league_id="341",
-            league_name="Premier League",
-            country_name="Wales",
+            home_recent_form=HIGH_FORM,
             home_odds=4.2,
             away_odds=1.65,
         ).home.prior
         assert mixed == pytest.approx(
-            LEAGUE_PRIOR_SHARE * league_p0 + (1.0 - LEAGUE_PRIOR_SHARE) * _odds_prior(4.2, 1.65)
+            LEAGUE_PRIOR_SHARE * form_p0 + (1.0 - LEAGUE_PRIOR_SHARE) * _odds_prior(4.2, 1.65)
         )
         assert mixed > 0.06
 
@@ -564,8 +602,8 @@ class TestScoreline:
     def test_the_scoreline_reaches_lift(self) -> None:
         """Urgency from a close scoreline still moves lift (and thus the bar)."""
         timeline = busy(85, per_minute=1)
-        level = evaluate(timeline, home_score=1, away_score=1, threshold=3.0)
-        rout = evaluate(timeline, home_score=4, away_score=0, threshold=3.0)
+        level = evaluate(timeline, home_score=1, away_score=1, threshold=3.0, home_recent_form=FORM)
+        rout = evaluate(timeline, home_score=4, away_score=0, threshold=3.0, home_recent_form=FORM)
         assert level.home.lift > rout.home.lift
         assert level.home.threat >= rout.home.threat
 

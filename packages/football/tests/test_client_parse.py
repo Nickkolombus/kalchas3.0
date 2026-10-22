@@ -668,3 +668,71 @@ def test_get_head_to_head_uses_last_slice(monkeypatch) -> None:
     assert meetings[0]["match_id"] == "12"
     assert meetings[-1]["match_id"] == "3"
     client.close()
+
+
+def test_parse_team_fixtures_from_provider_shape() -> None:
+    """Plain list, unlike H2H's firstTeam_VS_secondTeam wrapper."""
+    from kalchas_football.client import parse_team_fixtures
+
+    rows = parse_team_fixtures(
+        [
+            {
+                "match_id": "1",
+                "match_hometeam_id": "10",
+                "match_awayteam_id": "20",
+                "match_hometeam_score": "2",
+                "match_awayteam_score": "1",
+                "match_date": "2025-03-01",
+                "match_status": "Finished",
+            },
+            {"not_a_match": True},
+        ]
+    )
+    assert len(rows) == 1
+    assert rows[0] == {
+        "match_id": "1",
+        "match_date": "2025-03-01",
+        "match_status": "Finished",
+        "home_team_id": 10,
+        "away_team_id": 20,
+        "home_score": 2,
+        "away_score": 1,
+    }
+
+
+def test_get_team_fixtures_sorts_newest_first(monkeypatch) -> None:
+    from kalchas_football.client import FootballAPIClient
+
+    client = FootballAPIClient(api_key="test-key")
+    seen_params: dict = {}
+
+    def fake_get(action, params=None):
+        seen_params.update(params or {})
+        return [
+            {
+                "match_id": str(i),
+                "match_hometeam_id": "10",
+                "match_awayteam_id": "20",
+                "match_hometeam_score": "1",
+                "match_awayteam_score": "0",
+                "match_date": f"2024-01-{i:02d}",
+                "match_status": "Finished",
+            }
+            for i in range(1, 6)
+        ]
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    fixtures = client.get_team_fixtures(10, days_back=90)
+    assert seen_params["team_id"] == 10
+    assert "from" in seen_params and "to" in seen_params
+    assert [f["match_id"] for f in fixtures] == ["5", "4", "3", "2", "1"]
+    client.close()
+
+
+def test_get_team_fixtures_rejects_a_bad_team_id() -> None:
+    from kalchas_football.client import FootballAPIClient
+
+    client = FootballAPIClient(api_key="test-key")
+    assert client.get_team_fixtures(0) == []
+    assert client.get_team_fixtures(-5) == []
+    client.close()

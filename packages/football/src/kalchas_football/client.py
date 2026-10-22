@@ -735,6 +735,38 @@ def parse_h2h_meetings(data: Any) -> list[dict[str, Any]]:
     return out
 
 
+def parse_team_fixtures(data: Any) -> list[dict[str, Any]]:
+    """Flatten ``get_events&team_id=`` into canonical fixture dicts.
+
+    Same raw provider shape as the live feed (a plain list), unlike H2H's
+    special ``firstTeam_VS_secondTeam`` wrapper. Includes fixtures of any
+    status -- the caller filters to finished ones before computing form, the
+    same split as ``parse_h2h_meetings`` vs. the form module that reads it.
+    """
+    rows = data if isinstance(data, list) else []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        match_id = str(row.get("match_id") or "").strip()
+        home_id = _coerce_int(row.get("match_hometeam_id"))
+        away_id = _coerce_int(row.get("match_awayteam_id"))
+        if not match_id and not home_id and not away_id:
+            continue
+        out.append(
+            {
+                "match_id": match_id,
+                "match_date": str(row.get("match_date") or ""),
+                "match_status": str(row.get("match_status") or ""),
+                "home_team_id": home_id,
+                "away_team_id": away_id,
+                "home_score": _coerce_int(row.get("match_hometeam_score")),
+                "away_score": _coerce_int(row.get("match_awayteam_score")),
+            }
+        )
+    return out
+
+
 def _h2h_goal_events(row: dict[str, Any]) -> list[dict[str, Any]]:
     raw = row.get("goalscorer") or row.get("goal_events") or []
     if not isinstance(raw, list):
@@ -964,3 +996,38 @@ class FootballAPIClient:
         if last > 0:
             return meetings[:last]
         return meetings
+
+    def get_team_fixtures(
+        self,
+        team_id: int,
+        *,
+        days_back: int = 120,
+    ) -> list[dict[str, Any]]:
+        """``action=get_events&team_id=`` over a date range. Newest first.
+
+        ``get_events`` needs ``from``/``to`` -- there is no "last N fixtures"
+        shape on this provider, so this reaches back `days_back` days and
+        lets the caller slice to however many finished ones it wants (via
+        `kalchas_core.form.calculate_team_form`'s `window`).
+        """
+        try:
+            tid = int(team_id)
+        except (TypeError, ValueError):
+            return []
+        if tid <= 0:
+            return []
+        from datetime import UTC, datetime, timedelta
+
+        today = datetime.now(UTC).date()
+        start = today - timedelta(days=days_back)
+        try:
+            data = self._get(
+                "get_events",
+                {"team_id": tid, "from": start.isoformat(), "to": today.isoformat()},
+            )
+        except RateLimitBudgetExceeded:
+            logger.warning("skipping get_events for team %s; hourly HTTP budget exhausted", tid)
+            return []
+        fixtures = parse_team_fixtures(data)
+        fixtures.sort(key=lambda row: str(row.get("match_date") or ""), reverse=True)
+        return fixtures

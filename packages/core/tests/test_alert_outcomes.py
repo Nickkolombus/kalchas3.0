@@ -51,7 +51,7 @@ class TestMatchRule:
     def test_hint_pressure_to_goal_resolves_slot_3(self) -> None:
         rule = match_rule(["Pressure to Goal (5m)"], DEFAULT_RULES)
         assert rule.strategy_slot == 3
-        assert rule.strategy_name == "League Bar"
+        assert rule.strategy_name == "Form Bar"
 
     def test_hint_omega_resolves_slot_6(self) -> None:
         assert match_rule(["Ω Surge"], DEFAULT_RULES).strategy_slot == 6

@@ -22,7 +22,7 @@ ALERT_NAMES: dict[str, str] = {
     "rule_of_three": "Unrealised goals",
     "delta_5min": "5-minute pressure",
     "pressure_index": "Sustained pressure",
-    "delta_goal": "League Bar",
+    "delta_goal": "Form Bar",
     "npei": "Efficiency",
     "omega": "Omega",
     "kscore": "K-Score",

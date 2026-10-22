@@ -1,12 +1,16 @@
 """Strategy runner smoke test."""
 
 from conftest import timeline_from
+from kalchas_core.form import TeamForm
 from kalchas_core.runner import (
     board_snapshot,
     evaluate_match,
     home_away_odds,
     live_home_away_odds,
 )
+
+HIGH_FORM = TeamForm(games_played=10, goals_for=32, goals_against=18, goals_per_game=3.2)
+LOW_FORM = TeamForm(games_played=10, goals_for=20, goals_against=22, goals_per_game=2.0)
 
 
 def test_quiet_match_yields_no_candidates() -> None:
@@ -120,16 +124,19 @@ def test_home_away_odds_prefers_nested_kickoff() -> None:
     assert home_away_odds(None) == (None, None)
 
 
-def test_board_snapshot_delta_goal_uses_league_and_odds() -> None:
+def test_board_snapshot_delta_goal_uses_team_form_and_odds() -> None:
     timeline = _busy_board_timeline()
-    bundesliga = board_snapshot(timeline, home_goals=1, away_goals=0, league_id="175")
-    la_liga = board_snapshot(timeline, home_goals=1, away_goals=0, league_id="302")
+    high_form = board_snapshot(timeline, home_goals=1, away_goals=0, home_team_form=HIGH_FORM)
+    low_form = board_snapshot(timeline, home_goals=1, away_goals=0, home_team_form=LOW_FORM)
     assert (
-        bundesliga["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
-        != la_liga["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
+        high_form["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
+        != low_form["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
     )
+
+    # league_id alone drives only baseline_for (event normalisation), not the
+    # prior any more -- with no form on either side, both stay N/A (0.0).
     league_only = board_snapshot(timeline, home_goals=1, away_goals=0, league_id="152")
-    with_odds = board_snapshot(
+    with_odds_no_form = board_snapshot(
         timeline,
         home_goals=1,
         away_goals=0,
@@ -139,7 +146,22 @@ def test_board_snapshot_delta_goal_uses_league_and_odds() -> None:
     )
     assert (
         league_only["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
-        != with_odds["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
+        == with_odds_no_form["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
+        == 0.0
+    )
+
+    # With form present, odds nudge the reading away from the form-only one.
+    with_form_and_odds = board_snapshot(
+        timeline,
+        home_goals=1,
+        away_goals=0,
+        home_team_form=HIGH_FORM,
+        home_odds=1.4,
+        away_odds=7.0,
+    )
+    assert (
+        with_form_and_odds["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
+        != high_form["strategy_status"]["delta_goal"]["teams"]["home"]["value"]
     )
 
 

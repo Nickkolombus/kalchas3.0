@@ -531,6 +531,87 @@ def _strategy_blocks(raw: dict[str, Any]) -> dict[str, StrategyBlock]:
     return out
 
 
+_TEAM_FORM_CACHE_HOURS = 12
+"""Matches the scanner's TEAM_FORM_CACHE_HOURS -- a team's form only changes
+when it plays a new finished fixture, so this just bounds staleness."""
+
+
+def _team_form_for_board(dsn: str, team_id: Any) -> Any:
+    """Recent scoring form for Form Bar's prior, read-through `panel_cache`.
+
+    Independent of the scanner's own `_team_form_for` -- same pattern as the
+    H2H endpoint above having its own cache-then-fetch path rather than
+    sharing one with the scanner's alert-time H2H lookup. `None` below
+    `MIN_FIXTURES_FOR_FORM`, same contract as the scanner's version.
+    """
+    from kalchas_core.form import (
+        MIN_FIXTURES_FOR_FORM,
+        FinishedFixture,
+        TeamForm,
+        calculate_team_form,
+    )
+
+    try:
+        tid = int(team_id)
+    except (TypeError, ValueError):
+        return None
+    if tid <= 0:
+        return None
+
+    from kalchas_db.panel_cache import load_panel_cache, save_panel_cache
+
+    cache_key = f"team_form_{tid}"
+    try:
+        cached = load_panel_cache(dsn, cache_key, ttl_hours=_TEAM_FORM_CACHE_HOURS)
+    except Exception:  # noqa: BLE001 - missing table must not block the board
+        cached = None
+    if cached is not None:
+        try:
+            games = int(cached.get("games_played") or 0)
+            goals_per_game = float(cached.get("goals_per_game") or 0.0)
+        except (TypeError, ValueError):
+            return None
+        return TeamForm(games_played=games, goals_per_game=goals_per_game) if games else None
+
+    from kalchas_core.alert_outcomes import match_is_terminal
+    from kalchas_football import FootballAPIClient, RateLimitBudgetExceeded
+
+    try:
+        client = FootballAPIClient()
+        try:
+            raw_fixtures = client.get_team_fixtures(tid)
+        finally:
+            client.close()
+    except RateLimitBudgetExceeded:
+        return None
+    except Exception:
+        logger.exception("team fixtures fetch failed for %s", tid)
+        return None
+
+    finished = [
+        FinishedFixture(
+            home_team_id=int(row.get("home_team_id") or 0),
+            away_team_id=int(row.get("away_team_id") or 0),
+            home_score=int(row.get("home_score") or 0),
+            away_score=int(row.get("away_score") or 0),
+            match_date=str(row.get("match_date") or ""),
+            match_id=str(row.get("match_id") or ""),
+        )
+        for row in (raw_fixtures or [])
+        if match_is_terminal(str(row.get("match_status") or ""))
+    ]
+    form = calculate_team_form(finished, tid, window=10)
+    try:
+        save_panel_cache(
+            dsn,
+            cache_key,
+            {"games_played": form.games_played, "goals_per_game": form.goals_per_game},
+        )
+    except Exception:
+        logger.exception("failed caching team form for %s", tid)
+    return form if form.games_played >= MIN_FIXTURES_FOR_FORM else None
+
+
 def _enrich_live_row(
     dsn: str,
     row: dict[str, Any],
@@ -575,6 +656,8 @@ def _enrich_live_row(
             league_id=_optional_league_id(row.get("league_id")),
             league_name=str(row["league_name"]) if row.get("league_name") else None,
             country_name=str(row["country_name"]) if row.get("country_name") else None,
+            home_team_form=_team_form_for_board(dsn, row.get("home_team_id")),
+            away_team_form=_team_form_for_board(dsn, row.get("away_team_id")),
             home_odds=home_odds,
             away_odds=away_odds,
             live_home_odds=live_home,
