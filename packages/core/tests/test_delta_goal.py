@@ -24,6 +24,7 @@ from kalchas_core.form import TeamForm
 from kalchas_core.match import MatchTimeline, Side
 from kalchas_core.strategies.delta_goal import (
     DEFAULT_BASELINE,
+    FORM_PRIOR_MIN_GOALS_PER_GAME,
     LEAGUE_BAR_NORMAL_HIGH,
     LEAGUE_BAR_NORMAL_LOW,
     LEAGUE_BASELINES,
@@ -105,6 +106,30 @@ class TestTeamFormPrior:
         assert team_form_prior(FORM.goals_per_game) == team_form_prior(
             same_rate_different_record.goals_per_game
         )
+
+    def test_a_goalless_run_is_floored_not_a_zero_prior(self) -> None:
+        """P0 = 0 would make lift = P / 0 and pin the bar at +10."""
+        assert team_form_prior(0.0) == team_form_prior(FORM_PRIOR_MIN_GOALS_PER_GAME) > 0.0
+        assert team_form_prior(0.2) == team_form_prior(0.0)
+        assert team_form_prior(1.0) > team_form_prior(FORM_PRIOR_MIN_GOALS_PER_GAME)
+
+    def test_a_goalless_team_reads_like_a_team_on_the_floor(self) -> None:
+        """Lift stays finite -- the same reading as a 0.5/game side, not P / 1e-6."""
+        goalless = TeamForm(games_played=5, goals_for=0, goals_against=7)
+        on_floor = TeamForm(games_played=6, goals_for=3, goals_against=7)
+        timeline = busy(70, per_minute=0, span=10)
+        a = evaluate(timeline, home_recent_form=goalless).home
+        b = evaluate(timeline, home_recent_form=on_floor).home
+        assert a.prior > 0.0
+        assert a.prior == pytest.approx(b.prior)
+        assert a.lift == pytest.approx(b.lift)
+        assert a.lift < 10.0
+
+    def test_evaluate_uses_the_unrounded_rate(self) -> None:
+        """14 in 9 is 1.56/game; `goals_per_game` rounds it to 1.6."""
+        form = TeamForm(games_played=9, goals_for=14, goals_against=9, goals_per_game=1.6)
+        result = evaluate(busy(70), home_recent_form=form)
+        assert result.home.prior == pytest.approx(team_form_prior(14 / 9))
 
 
 class TestBaselines:

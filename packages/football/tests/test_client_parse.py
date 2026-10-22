@@ -693,6 +693,7 @@ def test_parse_team_fixtures_from_provider_shape() -> None:
         "match_id": "1",
         "match_date": "2025-03-01",
         "match_status": "Finished",
+        "status_short": "FT",
         "home_team_id": 10,
         "away_team_id": 20,
         "home_score": 2,
@@ -726,6 +727,22 @@ def test_get_team_fixtures_sorts_newest_first(monkeypatch) -> None:
     assert seen_params["team_id"] == 10
     assert "from" in seen_params and "to" in seen_params
     assert [f["match_id"] for f in fixtures] == ["5", "4", "3", "2", "1"]
+    client.close()
+
+
+def test_get_team_fixtures_lets_a_budget_miss_propagate(monkeypatch) -> None:
+    """Callers cache the result for hours; `[]` here would read as 'no fixtures'."""
+    import pytest
+    from kalchas_football.client import FootballAPIClient, RateLimitBudgetExceeded
+
+    client = FootballAPIClient(api_key="test-key")
+
+    def fake_get(action, params=None):
+        raise RateLimitBudgetExceeded(5.0)
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    with pytest.raises(RateLimitBudgetExceeded):
+        client.get_team_fixtures(10)
     client.close()
 
 

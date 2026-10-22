@@ -740,8 +740,12 @@ def parse_team_fixtures(data: Any) -> list[dict[str, Any]]:
 
     Same raw provider shape as the live feed (a plain list), unlike H2H's
     special ``firstTeam_VS_secondTeam`` wrapper. Includes fixtures of any
-    status -- the caller filters to finished ones before computing form, the
-    same split as ``parse_h2h_meetings`` vs. the form module that reads it.
+    status -- the caller filters to played ones before computing form
+    (``kalchas_core.form.played_fixtures``), the same split as
+    ``parse_h2h_meetings`` vs. the form module that reads it. ``status_short``
+    is the provider's ``match_status`` text normalised (``"Finished"`` ->
+    ``FT``), the same mapping the live feed uses; filter on that, not the raw
+    text.
     """
     rows = data if isinstance(data, list) else []
     out: list[dict[str, Any]] = []
@@ -758,6 +762,7 @@ def parse_team_fixtures(data: Any) -> list[dict[str, Any]]:
                 "match_id": match_id,
                 "match_date": str(row.get("match_date") or ""),
                 "match_status": str(row.get("match_status") or ""),
+                "status_short": _parse_elapsed(row.get("match_status"))[1],
                 "home_team_id": home_id,
                 "away_team_id": away_id,
                 "home_score": _coerce_int(row.get("match_hometeam_score")),
@@ -1009,6 +1014,11 @@ class FootballAPIClient:
         shape on this provider, so this reaches back `days_back` days and
         lets the caller slice to however many finished ones it wants (via
         `kalchas_core.form.calculate_team_form`'s `window`).
+
+        Unlike the other getters, lets `RateLimitBudgetExceeded` propagate:
+        callers cache the result for hours, and an empty list here would be
+        cached as "this team has no fixtures" when it really means "not
+        fetched".
         """
         try:
             tid = int(team_id)
@@ -1020,14 +1030,10 @@ class FootballAPIClient:
 
         today = datetime.now(UTC).date()
         start = today - timedelta(days=days_back)
-        try:
-            data = self._get(
-                "get_events",
-                {"team_id": tid, "from": start.isoformat(), "to": today.isoformat()},
-            )
-        except RateLimitBudgetExceeded:
-            logger.warning("skipping get_events for team %s; hourly HTTP budget exhausted", tid)
-            return []
+        data = self._get(
+            "get_events",
+            {"team_id": tid, "from": start.isoformat(), "to": today.isoformat()},
+        )
         fixtures = parse_team_fixtures(data)
         fixtures.sort(key=lambda row: str(row.get("match_date") or ""), reverse=True)
         return fixtures

@@ -20,6 +20,11 @@ DEFAULT_SCORING_GAP: Final = 1.0
 DEFAULT_POSITION_GAP: Final = 5
 MIN_FIXTURES_FOR_FORM: Final = 3
 
+PLAYED_STATUS_CODES: Final = frozenset({"FT", "AET", "PEN"})
+"""Finished *and actually played*. Postponed / cancelled / abandoned /
+awarded rows count as finished elsewhere, but carry no real score, so they
+would read as 0-0 here."""
+
 
 @dataclass(frozen=True, slots=True)
 class FinishedFixture:
@@ -67,8 +72,73 @@ class TeamForm:
     def form_points(self) -> int:
         return self.wins * 3 + self.draws
 
+    @property
+    def scoring_rate(self) -> float:
+        """Unrounded goals/game. `goals_per_game` is rounded to 0.1 for display,
+        which is too coarse for a prior: 0.45 vs 0.5 is a 10% shift."""
+        return self.goals_for / self.games_played if self.games_played else 0.0
+
 
 EMPTY_FORM = TeamForm()
+
+
+def played_fixtures(rows: Sequence[dict[str, Any]]) -> list[FinishedFixture]:
+    """Canonical team-fixture rows (``kalchas_football.parse_team_fixtures``)
+    down to the ones actually played, order kept.
+
+    Keyed on the normalised ``status_short`` (``FT``/``AET``/``PEN``), not the
+    provider's ``match_status`` text (``"Finished"``, ``"After Pen."``, ...).
+    Rows missing either score are dropped rather than read as 0.
+    """
+    out: list[FinishedFixture] = []
+    for row in rows:
+        if str(row.get("status_short") or "") not in PLAYED_STATUS_CODES:
+            continue
+        home_score, away_score = row.get("home_score"), row.get("away_score")
+        if home_score is None or away_score is None:
+            continue
+        out.append(
+            FinishedFixture(
+                home_team_id=int(row.get("home_team_id") or 0),
+                away_team_id=int(row.get("away_team_id") or 0),
+                home_score=int(home_score),
+                away_score=int(away_score),
+                match_date=str(row.get("match_date") or ""),
+                match_id=str(row.get("match_id") or ""),
+            )
+        )
+    return out
+
+
+def form_cache_key(team_id: int) -> str:
+    """``panel_cache`` key for a team's Form Bar form. ``v2``: v1 rows were
+    written by a status filter that dropped every fixture, so all read as
+    zero games -- a new key skips them instead of serving them out their TTL."""
+    return f"team_form_v2_{team_id}"
+
+
+def form_cache_payload(form: TeamForm) -> dict[str, int]:
+    """What the scanner and API store in ``panel_cache`` for Form Bar."""
+    return {"games_played": form.games_played, "goals_for": form.goals_for}
+
+
+def form_from_cache_payload(payload: Any) -> TeamForm | None:
+    """Inverse of `form_cache_payload`. `None` for anything unreadable, so the
+    caller refetches instead of trusting it."""
+    if not isinstance(payload, dict) or "goals_for" not in payload:
+        return None
+    try:
+        games = int(payload.get("games_played") or 0)
+        goals_for = int(payload.get("goals_for") or 0)
+    except (TypeError, ValueError):
+        return None
+    if games <= 0:
+        return EMPTY_FORM
+    return TeamForm(
+        games_played=games,
+        goals_for=goals_for,
+        goals_per_game=round(goals_for / games, 1),
+    )
 
 
 def calculate_team_form(

@@ -8,11 +8,7 @@ import time
 from dataclasses import dataclass, field, replace
 
 from kalchas_core.alert_factors import compact_board, sweet_spot_flag
-from kalchas_core.alert_outcomes import (
-    AlertOutcomeEvaluator,
-    evaluator_from_rule_rows,
-    match_is_terminal,
-)
+from kalchas_core.alert_outcomes import AlertOutcomeEvaluator, evaluator_from_rule_rows
 from kalchas_core.cooldown import (
     DEFAULT_BASE_COOLDOWN,
     DEFAULT_BYPASS_DELTA,
@@ -26,7 +22,15 @@ from kalchas_core.events import (
     count_cards_by_side,
     tally_red_cards,
 )
-from kalchas_core.form import MIN_FIXTURES_FOR_FORM, FinishedFixture, TeamForm, calculate_team_form
+from kalchas_core.form import (
+    MIN_FIXTURES_FOR_FORM,
+    TeamForm,
+    calculate_team_form,
+    form_cache_key,
+    form_cache_payload,
+    form_from_cache_payload,
+    played_fixtures,
+)
 from kalchas_core.h2h import DEFAULT_LAST, compute_h2h_stats, h2h_meeting_averages
 from kalchas_core.runner import (
     DEFAULT_THRESHOLDS,
@@ -72,6 +76,9 @@ TEAM_FORM_CACHE_HOURS = 12
 """A team's form only changes when it plays a new finished fixture, so this
 just bounds staleness rather than tracking real freshness -- cheap on the
 hourly HTTP budget, and 2.2's equivalent cached for less (30 minutes)."""
+
+TEAM_FORM_RETRY_SEC = 600
+"""How long a failed team-form fetch waits before the next try."""
 
 
 def _side_counts(block: dict | None, key: str) -> dict[str, int]:
@@ -145,7 +152,9 @@ class Scanner:
     _stats_http_window_at: float = 0.0
     _outcome_evaluator: AlertOutcomeEvaluator = field(default_factory=AlertOutcomeEvaluator)
     _h2h_alert_by_pair: dict[tuple[int, int], dict | None] = field(default_factory=dict)
-    _team_form_by_id: dict[int, TeamForm | None] = field(default_factory=dict)
+    _team_form_by_id: dict[int, tuple[float, TeamForm | None]] = field(default_factory=dict)
+    """team id -> (monotonic expiry, form). The scanner runs for days, so this
+    must expire, not just fill once per process."""
 
     def _hydrate_if_needed(self, match_id: str) -> None:
         if self.store.has(match_id):
@@ -364,9 +373,10 @@ class Scanner:
     def _team_form_for(self, team_id: int) -> TeamForm | None:
         """Recent scoring form for Form Bar's prior. `None` below the
         `MIN_FIXTURES_FOR_FORM` floor -- Form Bar reports nothing for that
-        side rather than guessing. Cached in-process for this run, and in
-        `panel_cache` across runs/replicas since a team's form only changes
-        when it plays a new finished fixture.
+        side rather than guessing. Cached in-process and in `panel_cache`
+        (across restarts/replicas), both for `TEAM_FORM_CACHE_HOURS`. A failed
+        fetch (budget exhausted, provider error) is only remembered for
+        `TEAM_FORM_RETRY_SEC`, so it never sticks as "no form".
         """
         try:
             tid = int(team_id)
@@ -374,17 +384,24 @@ class Scanner:
             return None
         if tid <= 0:
             return None
-        if tid in self._team_form_by_id:
-            return self._team_form_by_id[tid]
+        now = time.monotonic()
+        hit = self._team_form_by_id.get(tid)
+        if hit is not None and hit[0] > now:
+            return hit[1]
 
         form = self._team_form_from_cache_or_fetch(tid)
-        usable = form if form is not None and form.games_played >= MIN_FIXTURES_FOR_FORM else None
-        self._team_form_by_id[tid] = usable
+        if form is None:
+            self._team_form_by_id[tid] = (now + TEAM_FORM_RETRY_SEC, None)
+            return None
+        usable = form if form.games_played >= MIN_FIXTURES_FOR_FORM else None
+        self._team_form_by_id[tid] = (now + TEAM_FORM_CACHE_HOURS * 3600, usable)
         return usable
 
     def _team_form_from_cache_or_fetch(self, team_id: int) -> TeamForm | None:
+        """`None` only when nothing could be fetched; a team with no played
+        fixtures is a real `EMPTY_FORM`, and is cached as one."""
         dsn = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
-        cache_key = f"team_form_{team_id}"
+        cache_key = form_cache_key(team_id)
 
         if dsn:
             try:
@@ -393,13 +410,9 @@ class Scanner:
                 cached = load_panel_cache(dsn, cache_key, ttl_hours=TEAM_FORM_CACHE_HOURS)
             except Exception:  # noqa: BLE001 - missing table must not block alerts
                 cached = None
-            if cached is not None:
-                try:
-                    games = int(cached.get("games_played") or 0)
-                    goals_per_game = float(cached.get("goals_per_game") or 0.0)
-                except (TypeError, ValueError):
-                    games, goals_per_game = 0, 0.0
-                return TeamForm(games_played=games, goals_per_game=goals_per_game)
+            form = form_from_cache_payload(cached)
+            if form is not None:
+                return form
 
         fetch = getattr(self.client, "get_team_fixtures", None)
         if not callable(fetch):
@@ -412,29 +425,15 @@ class Scanner:
             logger.exception("team fixtures fetch failed for %s", team_id)
             return None
 
-        finished = [
-            FinishedFixture(
-                home_team_id=int(row.get("home_team_id") or 0),
-                away_team_id=int(row.get("away_team_id") or 0),
-                home_score=int(row.get("home_score") or 0),
-                away_score=int(row.get("away_score") or 0),
-                match_date=str(row.get("match_date") or ""),
-                match_id=str(row.get("match_id") or ""),
-            )
-            for row in (raw_fixtures or [])
-            if match_is_terminal(str(row.get("match_status") or ""))
-        ]
-        form = calculate_team_form(finished, team_id, window=TEAM_FORM_WINDOW)
+        form = calculate_team_form(
+            played_fixtures(raw_fixtures or []), team_id, window=TEAM_FORM_WINDOW
+        )
 
         if dsn:
             try:
                 from kalchas_db.panel_cache import save_panel_cache
 
-                save_panel_cache(
-                    dsn,
-                    cache_key,
-                    {"games_played": form.games_played, "goals_per_game": form.goals_per_game},
-                )
+                save_panel_cache(dsn, cache_key, form_cache_payload(form))
             except Exception:
                 logger.exception("failed caching team form for %s", team_id)
         return form

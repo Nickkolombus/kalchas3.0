@@ -173,15 +173,22 @@ def sigmoid(x: float) -> float:
 _MINUTES_PER_HALF_WINDOW_COUNT: Final = 18
 """A 90-minute match holds eighteen 5-minute windows."""
 
+FORM_PRIOR_MIN_GOALS_PER_GAME: Final = 0.5
+"""Floor on the form rate behind P0. A team that scored nothing in its last
+few games would otherwise get P0 = 0, and lift = P / 0 pins the bar at +10
+on the first sign of pressure -- the team least likely to score would fire
+hardest. 0.5 is below almost any side's true long-run rate."""
+
 
 def team_form_prior(goals_per_game: float) -> float:
     """Chance of this team scoring in any given 5-minute window.
 
     `goals_per_game` is already this one team's own rate (unlike the former
     league-wide prior, which combined both teams and needed halving) --
-    spread straight across the eighteen windows in a match.
+    floored at `FORM_PRIOR_MIN_GOALS_PER_GAME`, then spread straight across
+    the eighteen windows in a match.
     """
-    return goals_per_game / _MINUTES_PER_HALF_WINDOW_COUNT
+    return max(goals_per_game, FORM_PRIOR_MIN_GOALS_PER_GAME) / _MINUTES_PER_HALF_WINDOW_COUNT
 
 
 @dataclass(frozen=True, slots=True)
@@ -748,7 +755,7 @@ def evaluate(
     def prior_for(side: Side, form: TeamForm | None) -> float | None:
         if form is None or form.games_played < MIN_FIXTURES_FOR_FORM:
             return None
-        base = team_form_prior(form.goals_per_game)
+        base = team_form_prior(form.scoring_rate)
         if home_odds and away_odds:
             odds_p = (
                 _odds_prior(home_odds, away_odds)

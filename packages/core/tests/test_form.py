@@ -134,3 +134,56 @@ class TestPositionInsights:
         from kalchas_core.form import position_insights
 
         assert position_insights([{"team_id": 1, "position": 1}], 1, 99, "H", "A") == []
+
+
+class TestFormBarHelpers:
+    """The pieces the scanner and API share to feed Form Bar's prior."""
+
+    def _row(self, status_short: str, hs: int | None, aws: int | None) -> dict:
+        return {
+            "match_id": "1",
+            "status_short": status_short,
+            "match_status": "whatever the provider said",
+            "home_team_id": 1,
+            "away_team_id": 2,
+            "home_score": hs,
+            "away_score": aws,
+        }
+
+    def test_only_played_fixtures_with_both_scores_survive(self) -> None:
+        from kalchas_core.form import played_fixtures
+
+        rows = [
+            self._row("FT", 2, 1),
+            self._row("AET", 1, 1),
+            self._row("PEN", 0, 0),
+            self._row("PST", None, None),
+            self._row("CANC", 0, 0),
+            self._row("AWD", 3, 0),
+            self._row("FT", 2, None),
+            self._row("", None, None),
+        ]
+        kept = played_fixtures(rows)
+        assert [(f.home_score, f.away_score) for f in kept] == [(2, 1), (1, 1), (0, 0)]
+
+    def test_scoring_rate_is_not_rounded(self) -> None:
+        form = calculate_team_form([fx(1, 2, 1, 0), fx(1, 3, 1, 0), fx(4, 1, 0, 0)], team_id=1)
+        assert form.goals_per_game == 0.7
+        assert form.scoring_rate == 2 / 3
+
+    def test_cache_payload_round_trips(self) -> None:
+        from kalchas_core.form import form_cache_payload, form_from_cache_payload
+
+        form = calculate_team_form([fx(1, 2, 1, 0), fx(1, 3, 1, 0), fx(4, 1, 0, 0)], team_id=1)
+        back = form_from_cache_payload(form_cache_payload(form))
+        assert back is not None
+        assert back.games_played == 3
+        assert back.scoring_rate == form.scoring_rate
+
+    def test_unreadable_or_legacy_cache_payloads_are_a_miss(self) -> None:
+        from kalchas_core.form import form_from_cache_payload
+
+        assert form_from_cache_payload(None) is None
+        assert form_from_cache_payload({"games_played": 10, "goals_per_game": 1.4}) is None
+        assert form_from_cache_payload({"games_played": "x", "goals_for": 3}) is None
+        assert form_from_cache_payload({"games_played": 0, "goals_for": 0}).games_played == 0

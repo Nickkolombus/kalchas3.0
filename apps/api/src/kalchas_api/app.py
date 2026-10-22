@@ -546,9 +546,11 @@ def _team_form_for_board(dsn: str, team_id: Any) -> Any:
     """
     from kalchas_core.form import (
         MIN_FIXTURES_FOR_FORM,
-        FinishedFixture,
-        TeamForm,
         calculate_team_form,
+        form_cache_key,
+        form_cache_payload,
+        form_from_cache_payload,
+        played_fixtures,
     )
 
     try:
@@ -560,20 +562,15 @@ def _team_form_for_board(dsn: str, team_id: Any) -> Any:
 
     from kalchas_db.panel_cache import load_panel_cache, save_panel_cache
 
-    cache_key = f"team_form_{tid}"
+    cache_key = form_cache_key(tid)
     try:
         cached = load_panel_cache(dsn, cache_key, ttl_hours=_TEAM_FORM_CACHE_HOURS)
     except Exception:  # noqa: BLE001 - missing table must not block the board
         cached = None
-    if cached is not None:
-        try:
-            games = int(cached.get("games_played") or 0)
-            goals_per_game = float(cached.get("goals_per_game") or 0.0)
-        except (TypeError, ValueError):
-            return None
-        return TeamForm(games_played=games, goals_per_game=goals_per_game) if games else None
+    form = form_from_cache_payload(cached)
+    if form is not None:
+        return form if form.games_played >= MIN_FIXTURES_FOR_FORM else None
 
-    from kalchas_core.alert_outcomes import match_is_terminal
     from kalchas_football import FootballAPIClient, RateLimitBudgetExceeded
 
     try:
@@ -588,25 +585,9 @@ def _team_form_for_board(dsn: str, team_id: Any) -> Any:
         logger.exception("team fixtures fetch failed for %s", tid)
         return None
 
-    finished = [
-        FinishedFixture(
-            home_team_id=int(row.get("home_team_id") or 0),
-            away_team_id=int(row.get("away_team_id") or 0),
-            home_score=int(row.get("home_score") or 0),
-            away_score=int(row.get("away_score") or 0),
-            match_date=str(row.get("match_date") or ""),
-            match_id=str(row.get("match_id") or ""),
-        )
-        for row in (raw_fixtures or [])
-        if match_is_terminal(str(row.get("match_status") or ""))
-    ]
-    form = calculate_team_form(finished, tid, window=10)
+    form = calculate_team_form(played_fixtures(raw_fixtures or []), tid, window=10)
     try:
-        save_panel_cache(
-            dsn,
-            cache_key,
-            {"games_played": form.games_played, "goals_per_game": form.goals_per_game},
-        )
+        save_panel_cache(dsn, cache_key, form_cache_payload(form))
     except Exception:
         logger.exception("failed caching team form for %s", tid)
     return form if form.games_played >= MIN_FIXTURES_FOR_FORM else None
