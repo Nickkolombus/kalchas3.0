@@ -3,6 +3,7 @@ import { AdminConditions, type ConditionCatalog, type ExtraCondition } from "./A
 import { AdminPreview } from "./AdminPreview";
 import { AdminResults } from "./AdminResults";
 import { AdminTips } from "./AdminTips";
+import { AdminVisitors } from "./AdminVisitors";
 
 type WeightRow = {
   key: string;
@@ -54,7 +55,7 @@ const DEFAULT_SWEET_SPOT: SweetSpotConfig = {
   include_injury_time: false,
 };
 
-type Tab = "thresholds" | "rules" | "weights" | "results" | "tips" | "various";
+type Tab = "thresholds" | "rules" | "weights" | "results" | "tips" | "various" | "visitors";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -431,6 +432,13 @@ export function AdminApp() {
         >
           Various
         </button>
+        <button
+          type="button"
+          className={tab === "visitors" ? "is-on" : ""}
+          onClick={() => setTab("visitors")}
+        >
+          Visitors
+        </button>
       </aside>
       <main className="admin-main">
         {tab === "thresholds" ? (
@@ -484,6 +492,7 @@ export function AdminApp() {
           />
         ) : null}
         {tab === "tips" ? <AdminTips api={api} /> : null}
+        {tab === "visitors" ? <AdminVisitors api={api} /> : null}
         {tab === "various" ? (
           <>
             <article className="admin-tab-panel">
@@ -585,7 +594,7 @@ export function AdminApp() {
             </div>
           </>
         ) : null}
-        {tab !== "results" && tab !== "various" ? (
+        {tab !== "results" && tab !== "various" && tab !== "visitors" ? (
         <>
         <nav className="admin-tabs" role="tablist" aria-label="Strategy">
           {items.map((row) => (

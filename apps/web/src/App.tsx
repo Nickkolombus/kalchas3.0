@@ -517,7 +517,33 @@ function visitorId(): string {
   }
 }
 
-function countryFlag(code: string): string {
+function liveUrl(visitor: string, matchId: string | null, referrer: string): string {
+  if (!visitor) return "/api/live";
+  const params = new URLSearchParams({ vid: visitor });
+  if (matchId) params.set("m", matchId);
+  if (referrer) params.set("ref", referrer);
+  return `/api/live?${params.toString()}`;
+}
+
+function logJoinClick(visitor: string, kind: "tg_free" | "tg_paid") {
+  if (!visitor) return;
+  const body = JSON.stringify({ vid: visitor, kind });
+  try {
+    // A beacon is fire-and-forget, so the click is logged even if the tab closes.
+    if (navigator.sendBeacon?.("/api/visit/event", new Blob([body], { type: "application/json" })))
+      return;
+  } catch {
+    // Fall through to fetch.
+  }
+  void fetch("/api/visit/event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
+export function countryFlag(code: string): string {
   const letters = code.trim().toUpperCase();
   // "" (no CF-IPCountry) and "XX"/"T1" (Cloudflare's unknown/Tor markers)
   // aren't real ISO codes -- regional-indicator math on them prints garbage.
@@ -1919,12 +1945,18 @@ export function App() {
     {},
   );
   const prevScoresRef = useRef<Map<string, string>>(new Map());
+  // Read inside the poll without re-creating it: the open match panel and,
+  // on the first poll only, where the visitor came from.
+  const selectedIdRef = useRef<string | null>(selectedId);
+  selectedIdRef.current = selectedId;
+  const referrerSentRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
       const res = await fetch(
-        visitor ? `/api/live?vid=${encodeURIComponent(visitor)}` : "/api/live",
+        liveUrl(visitor, selectedIdRef.current, referrerSentRef.current ? "" : document.referrer),
       );
+      referrerSentRef.current = true;
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as LiveResponse;
       const rows = Array.isArray(body.matches) ? body.matches : [];
@@ -2118,6 +2150,7 @@ export function App() {
                   href={TELEGRAM_FREE_JOIN_URL}
                   target="_blank"
                   rel="noreferrer"
+                  onClick={() => logJoinClick(visitor, "tg_free")}
                 >
                   Join free alerts
                   <span>Mon-Thu GMT, 1 per hour</span>
@@ -2127,6 +2160,7 @@ export function App() {
                   href={TELEGRAM_PAID_JOIN_URL}
                   target="_blank"
                   rel="noreferrer"
+                  onClick={() => logJoinClick(visitor, "tg_paid")}
                 >
                   Join full feed
                   <span>€2.99 a week</span>

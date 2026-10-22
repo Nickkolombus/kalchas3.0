@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
@@ -693,6 +693,58 @@ def admin_results_csv(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": "attachment; filename=kalchas-results.csv"},
     )
+
+
+@router.get("/visitors")
+def admin_visitors(
+    request: Request,
+    days: int = Query(default=7, ge=1, le=30),
+    humans: bool = True,
+    tz: str = "UTC",
+) -> dict[str, Any]:
+    """Visit log plus a per-day rollup over the last `days` local calendar days.
+
+    `tz` is the admin's own IANA zone so "a day" means their day. `humans`
+    hides visits the bot filter rejects; the daily rows still count them under
+    ``filtered``.
+    """
+    require_admin(request)
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    from kalchas_api.visitors import daily_summary, visit_item
+
+    zone: tzinfo
+    try:
+        zone = ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError):
+        zone, tz = UTC, "UTC"
+    today = datetime.now(zone).date()
+    first_day = today - timedelta(days=days - 1)
+    start = datetime.combine(first_day, datetime.min.time(), tzinfo=zone)
+    end = datetime.now(UTC) + timedelta(minutes=1)
+    from kalchas_db.visits import list_visits
+
+    dsn = _dsn()
+    try:
+        rows = list_visits(dsn, since=start, until=end)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"visitors unavailable: {exc}") from exc
+    everything = [visit_item(row) for row in rows]
+    shown = [item for item in everything if item["likely_human"] or not humans]
+    human_items = [item for item in everything if item["likely_human"]]
+    return {
+        "since": start.isoformat(),
+        "tz": tz,
+        "humans_only": humans,
+        "summary": {
+            "visits": len(everything),
+            "human_visits": len(human_items),
+            "human_visitors": len({item["visitor_id"] for item in human_items}),
+            "filtered": len(everything) - len(human_items),
+        },
+        "daily": daily_summary(everything, tz=zone, start=first_day, end=today, humans_only=humans),
+        "items": shown[:2000],
+    }
 
 
 @router.get("/various")

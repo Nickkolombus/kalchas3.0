@@ -32,6 +32,9 @@ from kalchas_api.signals import (
 from kalchas_api.team_form import team_form_for_board
 from kalchas_api.tips import admin_router as tips_admin_router
 from kalchas_api.tips import public_router as tips_public_router
+from kalchas_api.visitors import public_router as visit_public_router
+from kalchas_api.visitors import record_heartbeat as record_visit_heartbeat
+from kalchas_api.visitors import record_page_load as record_visit_page_load
 
 logger = logging.getLogger("kalchas.api")
 
@@ -701,14 +704,20 @@ def _current_presence() -> PresenceOut:
 
 
 @app.get("/api/live", response_model=LiveResponse)
-def live(request: Request, vid: str | None = None) -> LiveResponse:
+def live(
+    request: Request, vid: str | None = None, m: str | None = None, ref: str | None = None
+) -> LiveResponse:
     """Live board rows from scanner persistence + recomputed strategy cells.
 
     `vid` is a client-generated id (no account) so this same poll can also
     record the caller's own presence -- there is no separate heartbeat.
+    The same ping extends their visit in the admin visitor log, with `m` the
+    match panel they have open and `ref` the page's referrer (first poll only).
     Presence is read fresh on every call; only the board rows are cached.
     """
     _record_presence_ping(request, vid)
+    if vid:
+        record_visit_heartbeat(request, vid, m, ref)
     global _live_cache
     if not os.environ.get("PYTEST_CURRENT_TEST"):
         now = time.monotonic()
@@ -1177,7 +1186,8 @@ def _mount_web_ui() -> None:
         app.mount("/assets", StaticFiles(directory=assets), name="web-assets")
 
     @app.get("/", include_in_schema=False)
-    def spa_index() -> FileResponse:
+    def spa_index(request: Request) -> FileResponse:
+        record_visit_page_load(request, "/")
         return FileResponse(index)
 
     @app.get("/og.png", include_in_schema=False)
@@ -1188,7 +1198,7 @@ def _mount_web_ui() -> None:
         return FileResponse(path, media_type="image/png")
 
     @app.get("/{full_path:path}", include_in_schema=False)
-    def spa_fallback(full_path: str) -> FileResponse:
+    def spa_fallback(request: Request, full_path: str) -> FileResponse:
         reserved = {"api", "health", "docs", "redoc", "openapi.json", "assets", "tips.csv"}
         head = full_path.split("/", 1)[0]
         if head in reserved or full_path in reserved:
@@ -1202,10 +1212,12 @@ def _mount_web_ui() -> None:
             return FileResponse(candidate)
         if Path(full_path).suffix.lower() in {".png", ".ico", ".svg", ".jpg", ".jpeg", ".webp"}:
             raise HTTPException(status_code=404, detail="Not Found")
+        record_visit_page_load(request, full_path)
         return FileResponse(index)
 
 
 app.include_router(admin_router)
 app.include_router(tips_admin_router)
 app.include_router(tips_public_router)
+app.include_router(visit_public_router)
 _mount_web_ui()

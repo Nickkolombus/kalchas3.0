@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "kalchas-core",
     "kalchas-db",
+    "tzdata>=2024.1",
 ]
 
 [project.scripts]
