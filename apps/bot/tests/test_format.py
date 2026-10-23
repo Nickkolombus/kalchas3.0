@@ -496,5 +496,36 @@ def test_form_bar_shows_goals_behind_pace_and_the_reading():
             },
         }
     )
-    assert "(Form Bar): 1.3 behind pace for <b>Home</b>" in text
+    assert "<b>Form Bar</b>: <b>Home</b> recent form expects 1 more goal (+1.3)" in text
+    assert "(Form Bar)" not in text
     assert "0 of 2 expected · 1.3 by 60′" in text
+
+
+def test_form_bar_title_rounds_to_whole_goals():
+    row = {
+        "home_team": "Home",
+        "away_team": "Away",
+        "minute": 80,
+        "strategy_key": "delta_goal",
+        "team": "away",
+        "value": 2.6,
+        "payload": {},
+    }
+    assert "<b>Away</b> recent form expects 3 more goals (+2.6)" in format_alert_html(row)
+    # Below one goal still reads as one, never "0 more goals".
+    low = format_alert_html({**row, "value": 0.4})
+    assert "expects 1 more goal (+0.4)" in low
+
+
+def test_form_bar_no_goal_reply_uses_full_name():
+    text = format_outcome_html(
+        {
+            "home_team": "Home",
+            "away_team": "Away",
+            "strategy_key": "delta_goal",
+            "team": "home",
+            "state": "Expired",
+            "detail": {"success_window_minutes": 20},
+        }
+    )
+    assert text == "No goal arrived within 20′\n<b>Form Bar</b> for <b>Home</b>"

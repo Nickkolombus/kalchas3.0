@@ -36,7 +36,7 @@ ALERT_CEILING: dict[str, tuple[float | None, int, str]] = {
     "rule_of_three": (None, 1, ""),
     "delta_5min": (12.0, 1, ""),
     "pressure_index": (100.0, 0, ""),
-    "delta_goal": (None, 1, " behind pace"),
+    "delta_goal": (None, 1, ""),
     "npei": (100.0, 0, ""),
     "omega": (None, 0, "°"),
     "kscore": (100.0, 0, ""),
@@ -156,7 +156,8 @@ def format_outcome_html(row: Mapping[str, Any]) -> str:
     home = _esc(row.get("home_team") or detail.get("home_team"))
     away = _esc(row.get("away_team") or detail.get("away_team"))
     key = str(row.get("strategy_key") or "")
-    short = _esc(short_label_for(key))
+    # The board's "Bar" means nothing on its own in a Telegram reply.
+    short = _esc("Form Bar" if key == "delta_goal" else short_label_for(key))
     side = str(row.get("team") or detail.get("team") or "").lower()
     trigger = _trigger_name(side if side in ("home", "away") else "", home, away)
     state = str(row.get("state") or "")
@@ -234,6 +235,8 @@ def _title_line(
     *,
     trigger: str,
 ) -> str:
+    if key == "delta_goal":
+        return _form_bar_title(row.get("value"), trigger=trigger)
     shown = _value_over_ceiling(row.get("value"), key=key, payload=payload)
     if short == name:
         head = f"<b>{short}</b>: {shown}" if shown else f"<b>{short}</b>"
@@ -244,6 +247,19 @@ def _title_line(
     if trigger:
         return f"{head} for <b>{trigger}</b>"
     return head
+
+
+def _form_bar_title(raw: object, *, trigger: str) -> str:
+    """ "Form Bar: <team> recent form expects 1 more goal (+1.2)"."""
+    try:
+        gap = float(raw)
+    except (TypeError, ValueError):
+        gap = None
+    if gap is None or not trigger:
+        return f"<b>Form Bar</b> for <b>{trigger}</b>" if trigger else "<b>Form Bar</b>"
+    goals = max(1, int(gap + 0.5))
+    noun = "goal" if goals == 1 else "goals"
+    return f"<b>Form Bar</b>: <b>{trigger}</b> recent form expects {goals} more {noun} (+{gap:.1f})"
 
 
 def _strategy_sort_key(row: Mapping[str, Any]) -> tuple[int, int]:
