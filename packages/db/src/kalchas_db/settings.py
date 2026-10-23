@@ -67,7 +67,8 @@ LIST_RULES = text(
     """
     SELECT strategy_slot, strategy_name, success_window_minutes,
            expiration_buffer_minutes, infinite_ttl, team_specific, enabled,
-           cooldown_minutes, cooldown_bypass_delta, expire_at_half_end
+           cooldown_minutes, cooldown_bypass_delta, expire_at_half_end,
+           max_fire_minute
     FROM strategy_rules
     ORDER BY strategy_slot
     """
@@ -84,11 +85,13 @@ UPDATE_RULE = text(
         cooldown_minutes = :cooldown_minutes,
         cooldown_bypass_delta = :cooldown_bypass_delta,
         expire_at_half_end = :expire_at_half_end,
+        max_fire_minute = :max_fire_minute,
         updated_at = NOW()
     WHERE strategy_slot = :slot
     RETURNING strategy_slot, strategy_name, success_window_minutes,
               expiration_buffer_minutes, infinite_ttl, team_specific, enabled,
-              cooldown_minutes, cooldown_bypass_delta, expire_at_half_end
+              cooldown_minutes, cooldown_bypass_delta, expire_at_half_end,
+              max_fire_minute
     """
 )
 
@@ -162,6 +165,9 @@ def update_admin_rule(dsn: str, slot: int, fields: dict[str, Any]) -> dict[str, 
             else float(fields["cooldown_bypass_delta"])
         ),
         "expire_at_half_end": bool(fields.get("expire_at_half_end")),
+        "max_fire_minute": (
+            None if fields.get("max_fire_minute") is None else int(fields["max_fire_minute"])
+        ),
     }
     eng = sync_engine(dsn)
     with eng.begin() as conn:

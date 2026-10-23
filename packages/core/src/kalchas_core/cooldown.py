@@ -5,9 +5,10 @@ admin-settings lookups stay in the app layer. Core owns the decision tree:
 
 1. Global TSLG mute (any goal within ``goal_cooldown_minutes``)
 2. Red-card mute for the trigger team
-3. Team stack: one non-Omega speaking turn per side
-4. Per-strategy window with optional value-delta bypass
-5. Same-minute and reservation blocks
+3. Per-strategy late cut-off (no alerts past ``max_fire_minute``)
+4. Team stack: one non-Omega speaking turn per side
+5. Per-strategy window with optional value-delta bypass
+6. Same-minute and reservation blocks
 """
 
 from __future__ import annotations
@@ -42,6 +43,8 @@ class CooldownRules:
     mute_on_red_card: bool = True
     rearm_after_drop: bool = False
     rearm_drop_ratio: float = DEFAULT_REARM_DROP_RATIO
+    max_fire_minute: int | None = None
+    """Last match minute this strategy may fire at; `None` is no cut-off."""
 
     @staticmethod
     def for_slot(strategy_slot: int) -> CooldownRules:
@@ -234,6 +237,12 @@ class CooldownBook:
                     f"Strategy {strategy_slot} muted: {team} has red card",
                     "RED_CARD_MUTE",
                 )
+
+        if rules.max_fire_minute is not None and current_minute > rules.max_fire_minute:
+            return CooldownDecision.block(
+                f"Past cut-off ({current_minute}' > {rules.max_fire_minute}')",
+                f"S{strategy_slot}_LATE_CUTOFF",
+            )
 
         stacked = self._team_stack_block(mid, strategy_slot, current_minute, team)
         if stacked is not None:

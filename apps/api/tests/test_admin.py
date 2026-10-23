@@ -320,3 +320,56 @@ def test_admin_put_conditions_saves(monkeypatch) -> None:
     assert res.status_code == 200
     assert stored[0][0] == 4
     assert stored[0][1][0]["left_metric"] == "npei"
+
+
+def test_put_thresholds_saves_late_cutoff(monkeypatch) -> None:
+    import kalchas_api.runtime
+    import kalchas_db.settings
+
+    saved: dict[int, dict] = {}
+    current = {
+        "strategy_slot": 6,
+        "success_window_minutes": 20,
+        "expiration_buffer_minutes": 2,
+        "infinite_ttl": False,
+        "team_specific": True,
+        "expire_at_half_end": True,
+        "enabled": True,
+        "cooldown_minutes": 15,
+        "cooldown_bypass_delta": None,
+        "max_fire_minute": 85,
+    }
+    monkeypatch.setenv("ADMIN_PASSWORD", "s3cret")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
+    monkeypatch.setattr(kalchas_db.settings, "list_admin_rules", lambda dsn: [current])
+    monkeypatch.setattr(
+        kalchas_db.settings,
+        "update_admin_rule",
+        lambda dsn, slot, fields: saved.__setitem__(slot, dict(fields)) or fields,
+    )
+    monkeypatch.setattr(kalchas_db.settings, "upsert_thresholds", lambda dsn, values: None)
+    monkeypatch.setattr(kalchas_api.runtime, "clear_board_tuning_cache", lambda: None)
+    client = TestClient(app)
+    client.post("/api/admin/login", json={"password": "s3cret"})
+
+    item = {"slot": 6, "threshold": 1.0, "cooldown_minutes": 15, "max_fire_minute": 80}
+    assert client.put("/api/admin/thresholds", json={"items": [item]}).status_code == 200
+    assert saved[6]["max_fire_minute"] == 80
+
+    del item["max_fire_minute"]
+    assert client.put("/api/admin/thresholds", json={"items": [item]}).status_code == 200
+    assert saved[6]["max_fire_minute"] is None
+
+    item["max_fire_minute"] = 0
+    assert client.put("/api/admin/thresholds", json={"items": [item]}).status_code == 422
+
+    # Saving confirmation rules keeps the stored cut-off.
+    rule = {
+        "slot": 6,
+        "success_window_minutes": 20,
+        "expiration_buffer_minutes": 2,
+        "infinite_ttl": False,
+        "team_specific": True,
+    }
+    assert client.put("/api/admin/rules", json={"items": [rule]}).status_code == 200
+    assert saved[6]["max_fire_minute"] == 85

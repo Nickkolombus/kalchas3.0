@@ -815,6 +815,11 @@ class Scanner:
                     base_cooldown_minutes=int(row.get("cooldown_minutes") or default_cd),
                     value_delta_threshold=bypass,
                     rearm_after_drop=slot in {4, 6},
+                    max_fire_minute=(
+                        int(row["max_fire_minute"])
+                        if row.get("max_fire_minute") is not None
+                        else None
+                    ),
                 )
             if rules:
                 self.cooldown.rules = rules

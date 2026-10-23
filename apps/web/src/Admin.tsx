@@ -27,6 +27,7 @@ type StrategyConfig = {
   threshold: number;
   cooldown_minutes: number;
   cooldown_bypass_delta: number | null;
+  max_fire_minute: number | null;
   enabled: boolean;
   success_window_minutes: number;
   expiration_buffer_minutes: number;
@@ -177,6 +178,7 @@ export function AdminApp() {
             threshold: row.threshold,
             cooldown_minutes: row.cooldown_minutes,
             cooldown_bypass_delta: row.cooldown_bypass_delta,
+            max_fire_minute: row.max_fire_minute,
             enabled: row.enabled,
           })),
         }),
@@ -682,7 +684,28 @@ export function AdminApp() {
                     />
                   </label>
                 )}
+                <label>
+                  Don&apos;t fire after minute
+                  <input
+                    type="number"
+                    min={1}
+                    max={130}
+                    step={1}
+                    placeholder="Off"
+                    value={current.max_fire_minute ?? ""}
+                    onChange={(event) =>
+                      patch(current.slot, {
+                        max_fire_minute:
+                          event.target.value === "" ? null : Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
               </div>
+              <p className="admin-hint">
+                Leave the cut-off blank to fire at any minute. Stoppage time counts as
+                the minute the feed shows (90+4 is 94), so 85 also stops 90+ alerts.
+              </p>
             </article>
             <div className="admin-actions">
               <button type="button" disabled={busy} onClick={() => void saveThresholds()}>

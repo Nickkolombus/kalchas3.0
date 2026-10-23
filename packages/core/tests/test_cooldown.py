@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from kalchas_core.cooldown import CooldownBook, cooldown_key, normalize_match_id
+from kalchas_core.cooldown import CooldownBook, CooldownRules, cooldown_key, normalize_match_id
 
 
 def test_string_and_int_match_ids_equivalent() -> None:
@@ -150,3 +150,21 @@ def test_reservation_expires() -> None:
     # confirmed — not reserved; still in cooldown window
     d2 = book.decide("1", 2, 21, 71.0, team="home")
     assert d2.blocked_by == "S2_COOLDOWN"
+
+
+def test_late_cutoff_blocks_after_max_fire_minute() -> None:
+    book = CooldownBook(rules={6: CooldownRules(strategy_slot=6, max_fire_minute=85)})
+    assert book.decide("1", 6, 85, 1.5, team="home").can_send
+    late = book.decide("2", 6, 86, 1.5, team="home")
+    assert not late.can_send
+    assert late.blocked_by == "S6_LATE_CUTOFF"
+    # Stoppage time is the running clock, so 90+4 arrives as 94.
+    assert book.decide("3", 6, 94, 2.8, team="away").blocked_by == "S6_LATE_CUTOFF"
+    # Other strategies keep firing.
+    assert book.decide("2", 4, 92, 7.5, team="home").can_send
+
+
+def test_late_cutoff_off_by_default() -> None:
+    book = CooldownBook()
+    assert book.rules_for(6).max_fire_minute is None
+    assert book.decide("1", 6, 95, 1.5, team="home").can_send
