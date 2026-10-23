@@ -143,6 +143,13 @@ class TestReadings:
         assert home.expected_goals == 1.25
         assert home.note(90) == "0 of 1.25 expected · 1.2 by 90′"
 
+    def test_note_while_ahead(self) -> None:
+        # Expects 2.0; one goal by 30' is 1 against 0.67 expected by now.
+        home = evaluate(30, home_score=1, home_recent_form=STRONG, away_recent_form=LEAKY).home
+        assert home.gap == -0.33
+        assert not home.delivered
+        assert home.note(30) == "1 of 2 expected · 0.7 by 30′ · 0.3 ahead"
+
     def test_note_without_form(self) -> None:
         assert evaluate(60).home.note(60) == "Not enough recent games"
 

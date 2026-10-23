@@ -10,7 +10,7 @@ How many goals should this team have by now, given recent form on both sides?
 2. Expected by now: that, spread evenly over 90 minutes, up to the current
    minute (stoppage and extra time count as minute 90).
 3. Reading (``gap``) = expected by now − goals scored. Positive is behind its
-   own pace, negative ahead of it.
+   own pace, negative ahead of it (the board shows ``AHEAD_LABEL``).
 4. Once the team has scored at least its full-match expectation (and at least
    one goal), it has **delivered**: the board shows ``DELIVERED_LABEL``
    instead of a number, and Form Bar does not alert for it.
@@ -52,6 +52,10 @@ DEFAULT_ALERT_THRESHOLD: Final = 1.0
 DELIVERED_LABEL: Final = "Done"
 """Board word for a team that already has its expected goals. Short: the
 board cell is ~5 characters wide. The web board uses the same word."""
+
+AHEAD_LABEL: Final = "Ahead"
+"""Board word for a negative gap: more goals than the pace so far, but not
+yet the full expectation, so the team can still fall behind later."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +103,11 @@ class TeamPace:
         if self.delivered:
             return f"{DELIVERED_LABEL} · {self.scored} of {expected} expected"
         clock = min(max(minute, 0), MATCH_MINUTES)
-        return f"{self.scored} of {expected} expected · {self.expected_by_now:.1f} by {clock}′"
+        reading = f"{self.scored} of {expected} expected · {self.expected_by_now:.1f} by {clock}′"
+        gap = self.gap
+        if gap is not None and gap < 0:
+            return f"{reading} · {-gap:.1f} ahead"
+        return reading
 
     def detail(self, minute: int) -> dict[str, Any]:
         """Alert payload fields, for the Telegram text."""

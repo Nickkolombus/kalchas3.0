@@ -223,10 +223,9 @@ const STRAT_ROWS: {
     key: "delta_goal",
     label: "Form Bar",
     digits: 1,
-    signed: true,
     tone: "lbar",
     scale: { min: -2, max: 2 },
-    tip: "Goals behind the pace their form sets: their median scored and the opponent's median conceded over the last 10 games, spread over 90 minutes. +1 is a goal behind. Done means they already have their expected share. Needs 5+ recent games.",
+    tip: "Goals behind the pace their form sets: their median scored and the opponent's median conceded over the last 10 games, spread over 90 minutes. 1.0 is a goal behind. Ahead means they have scored more than their pace so far. Done means they already have their full expected share. Needs 5+ recent games, or reads blank.",
   },
   {
     key: "npei",
@@ -268,6 +267,13 @@ function fmtSignal(
   if (v === undefined || v === null || Number.isNaN(v)) return "—";
   const core = extras?.signed && v > 0 ? `+${fmt(v, digits)}` : fmt(v, digits);
   return extras?.suffix && core !== "—" ? `${core}${extras.suffix}` : core;
+}
+
+/** Form Bar's words, matching the board: Done once delivered, Ahead for a negative gap. */
+function formBarText(cell: TeamCell | undefined): string {
+  if (cell?.delivered) return "Done";
+  if (cell?.value == null) return "—";
+  return cell.value < 0 ? "Ahead" : fmt(cell.value, 1);
 }
 
 function catmullRomPath(points: { x: number; y: number }[], tension = 0.45): string {
@@ -390,6 +396,8 @@ function DualBar({
   homeNote,
   awayNote,
   windowHeading,
+  homeText,
+  awayText,
 }: {
   label: string;
   home: number;
@@ -409,6 +417,9 @@ function DualBar({
   homeNote?: string;
   awayNote?: string;
   windowHeading?: string;
+  /** Replaces the formatted number (Form Bar's Done / Ahead). */
+  homeText?: string;
+  awayText?: string;
 }) {
   const { homePct, awayPct } = dualBarFillPcts(home, away);
   const extras = { suffix, signed };
@@ -428,8 +439,8 @@ function DualBar({
             tip={tip}
             homeName={homeName}
             awayName={awayName}
-            homeValue={fmtSignal(home, digits, extras)}
-            awayValue={fmtSignal(away, digits, extras)}
+            homeValue={homeText ?? fmtSignal(home, digits, extras)}
+            awayValue={awayText ?? fmtSignal(away, digits, extras)}
             homeLead={lead.home}
             awayLead={lead.away}
             homePct={hoverBarPct(home, scale)}
@@ -456,7 +467,7 @@ function DualBar({
           className={`stat-bar-val home${homeTriggered ? " trig" : ""}`}
           style={inkHome ? { color: inkHome } : undefined}
         >
-          {fmtSignal(home, digits, extras)}
+          {homeText ?? fmtSignal(home, digits, extras)}
         </span>
         <div className="stat-bar-track" aria-hidden>
           <div className="stat-bar-half home">
@@ -470,7 +481,7 @@ function DualBar({
           className={`stat-bar-val away${awayTriggered ? " trig" : ""}`}
           style={inkAway ? { color: inkAway } : undefined}
         >
-          {fmtSignal(away, digits, extras)}
+          {awayText ?? fmtSignal(away, digits, extras)}
         </span>
       </div>
     </div>
@@ -1744,6 +1755,12 @@ export function MatchOverlay({
                       }
                       windowHeading={
                         window && span ? windowLabel(window, span) : undefined
+                      }
+                      homeText={
+                        row.key === "delta_goal" ? formBarText(block?.teams?.home) : undefined
+                      }
+                      awayText={
+                        row.key === "delta_goal" ? formBarText(block?.teams?.away) : undefined
                       }
                     />
                   );
