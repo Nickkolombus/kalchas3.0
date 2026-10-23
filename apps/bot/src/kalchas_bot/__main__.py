@@ -54,6 +54,9 @@ def build_app(token: str) -> Application:
 
 def main() -> None:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+    # httpx logs every request URL at INFO, and Telegram's URLs carry the bot
+    # token (api.telegram.org/bot<token>/...). Failures still log at WARNING.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     token = os.environ.get("TELEGRAM_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
         raise SystemExit("TELEGRAM_TOKEN is required")
