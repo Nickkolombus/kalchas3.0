@@ -78,6 +78,12 @@ TEAM_FORM_RETRY_SEC = 600
 """How long a failed team-form fetch waits before the next try."""
 
 
+def _in_first_half(status_short: str | None) -> bool:
+    """First half or half-time, for the first-half cut-off. From the status,
+    not the minute: first-half stoppage arrives as 46, 47, ..."""
+    return (status_short or "").strip().upper() in {"1H", "HT"}
+
+
 def _side_counts(block: dict | None, key: str) -> dict[str, int]:
     row = (block or {}).get(key) or {}
     try:
@@ -645,6 +651,7 @@ class Scanner:
                 goal_events=goals,
                 last_goal=tslg.get("last_goal") or None,
                 red_cards=reds,
+                first_half=_in_first_half(match.status_short),
             )
             if not decision.can_send:
                 logger.debug(
@@ -818,6 +825,11 @@ class Scanner:
                     max_fire_minute=(
                         int(row["max_fire_minute"])
                         if row.get("max_fire_minute") is not None
+                        else None
+                    ),
+                    max_fire_minute_1h=(
+                        int(row["max_fire_minute_1h"])
+                        if row.get("max_fire_minute_1h") is not None
                         else None
                     ),
                 )

@@ -168,3 +168,24 @@ def test_late_cutoff_off_by_default() -> None:
     book = CooldownBook()
     assert book.rules_for(6).max_fire_minute is None
     assert book.decide("1", 6, 95, 1.5, team="home").can_send
+
+
+def test_first_half_cutoff_only_bites_in_the_first_half() -> None:
+    book = CooldownBook(rules={2: CooldownRules(strategy_slot=2, max_fire_minute_1h=40)})
+    assert book.decide("1", 2, 40, 75.0, team="home", first_half=True).can_send
+    late = book.decide("2", 2, 41, 75.0, team="home", first_half=True)
+    assert late.blocked_by == "S2_1H_CUTOFF"
+    # First-half stoppage arrives as 47; still the first half.
+    assert book.decide("3", 2, 47, 75.0, team="home", first_half=True).blocked_by == (
+        "S2_1H_CUTOFF"
+    )
+    # The same minute in the second half is untouched.
+    assert book.decide("4", 2, 47, 75.0, team="home", first_half=False).can_send
+    # Other strategies keep firing late in the first half.
+    assert book.decide("5", 4, 44, 7.5, team="home", first_half=True).can_send
+
+
+def test_first_half_cutoff_off_by_default() -> None:
+    book = CooldownBook()
+    assert book.rules_for(2).max_fire_minute_1h is None
+    assert book.decide("1", 2, 45, 75.0, team="home", first_half=True).can_send

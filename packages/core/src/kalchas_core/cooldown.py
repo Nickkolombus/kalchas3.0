@@ -5,7 +5,8 @@ admin-settings lookups stay in the app layer. Core owns the decision tree:
 
 1. Global TSLG mute (any goal within ``goal_cooldown_minutes``)
 2. Red-card mute for the trigger team
-3. Per-strategy late cut-off (no alerts past ``max_fire_minute``)
+3. Per-strategy cut-offs: none past ``max_fire_minute_1h`` in the first half
+   (or at half-time), none past ``max_fire_minute`` at all
 4. Team stack: one non-Omega speaking turn per side
 5. Per-strategy window with optional value-delta bypass
 6. Same-minute and reservation blocks
@@ -45,6 +46,10 @@ class CooldownRules:
     rearm_drop_ratio: float = DEFAULT_REARM_DROP_RATIO
     max_fire_minute: int | None = None
     """Last match minute this strategy may fire at; `None` is no cut-off."""
+    max_fire_minute_1h: int | None = None
+    """Last first-half minute this strategy may fire at; `None` is no cut-off.
+    Needs the caller to say it is the first half: 45+3 arrives as minute 48,
+    the same number as the second half's 48'."""
 
     @staticmethod
     def for_slot(strategy_slot: int) -> CooldownRules:
@@ -214,8 +219,13 @@ class CooldownBook:
         last_goal: dict[str, Any] | None = None,
         red_cards: Mapping[str, int] | None = None,
         reserve: bool = True,
+        first_half: bool = False,
     ) -> CooldownDecision:
-        """Check whether an alert may fire. Optionally reserves the slot."""
+        """Check whether an alert may fire. Optionally reserves the slot.
+
+        ``first_half`` is the match period (first half or half-time), which
+        the minute alone cannot tell apart from the second half in stoppage.
+        """
         mid = normalize_match_id(match_id)
         now = self._clock()
 
@@ -237,6 +247,16 @@ class CooldownBook:
                     f"Strategy {strategy_slot} muted: {team} has red card",
                     "RED_CARD_MUTE",
                 )
+
+        if (
+            first_half
+            and rules.max_fire_minute_1h is not None
+            and current_minute > rules.max_fire_minute_1h
+        ):
+            return CooldownDecision.block(
+                f"Past first-half cut-off ({current_minute}' > {rules.max_fire_minute_1h}')",
+                f"S{strategy_slot}_1H_CUTOFF",
+            )
 
         if rules.max_fire_minute is not None and current_minute > rules.max_fire_minute:
             return CooldownDecision.block(

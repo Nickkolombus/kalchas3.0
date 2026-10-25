@@ -46,6 +46,7 @@ class ThresholdIn(BaseModel):
     cooldown_bypass_delta: float | None = None
     enabled: bool = True
     max_fire_minute: int | None = Field(default=None, ge=1, le=130)
+    max_fire_minute_1h: int | None = Field(default=None, ge=1, le=60)
 
 
 class ThresholdsPut(BaseModel):
@@ -224,6 +225,11 @@ def admin_config(request: Request) -> dict[str, Any]:
                     if row and row.get("max_fire_minute") is not None
                     else None
                 ),
+                "max_fire_minute_1h": (
+                    int(row["max_fire_minute_1h"])
+                    if row and row.get("max_fire_minute_1h") is not None
+                    else None
+                ),
                 "weights": weights.describe(key),
                 "presets": list(BUILTIN_PRESETS.get(key, {}).keys()),
                 "saved_presets": list_saved_names.get(key, []),
@@ -281,6 +287,7 @@ def put_thresholds(request: Request, body: ThresholdsPut) -> dict[str, bool]:
                 "cooldown_minutes": item.cooldown_minutes,
                 "cooldown_bypass_delta": item.cooldown_bypass_delta,
                 "max_fire_minute": item.max_fire_minute,
+                "max_fire_minute_1h": item.max_fire_minute_1h,
             },
         )
     upsert_thresholds(dsn, values)
@@ -312,6 +319,7 @@ def put_rules(request: Request, body: RulesPut) -> dict[str, bool]:
                 "cooldown_minutes": int(current.get("cooldown_minutes") or DEFAULT_BASE_COOLDOWN),
                 "cooldown_bypass_delta": current.get("cooldown_bypass_delta"),
                 "max_fire_minute": current.get("max_fire_minute"),
+                "max_fire_minute_1h": current.get("max_fire_minute_1h"),
             },
         )
         if updated is None:
