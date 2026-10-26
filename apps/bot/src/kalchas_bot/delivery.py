@@ -13,6 +13,7 @@ from telegram import Bot, ReactionTypeEmoji
 from telegram.error import TelegramError
 
 from kalchas_bot.banner import render_alert_photo
+from kalchas_bot.discord_channel import send_discord_alert
 from kalchas_bot.format import format_alert_html, format_joint_html, format_outcome_html
 from kalchas_bot.free_channel import allow_free_fire, gathering_open
 
@@ -25,6 +26,7 @@ async def deliver_loop(
     *,
     free_chat_id: str | None = None,
     unlimited_until: str | None = None,
+    discord_webhook_url: str | None = None,
     poll_sec: float = 2.0,
 ) -> None:
     """Claim pending outbox rows and send. Requires DATABASE_URL + migrated schema."""
@@ -51,6 +53,7 @@ async def deliver_loop(
                         group,
                         free_chat_id=free_chat_id,
                         unlimited_until=unlimited_until,
+                        discord_webhook_url=discord_webhook_url,
                     )
                 except Exception as exc:
                     logger.exception("send failed for match %s", group[0].get("match_id"))
@@ -100,6 +103,7 @@ async def _deliver_group(
     *,
     free_chat_id: str | None,
     unlimited_until: str | None,
+    discord_webhook_url: str | None = None,
 ) -> None:
     from kalchas_db.alerts import attach_free_message, mark_sent, sent_same_minute
 
@@ -151,6 +155,7 @@ async def _deliver_group(
             caption=caption,
             fallback=fallback,
             unlimited_until=unlimited_until,
+            discord_webhook_url=discord_webhook_url,
         )
     except Exception:
         logger.exception("free-channel send failed for match %s", first.get("match_id"))
@@ -271,6 +276,7 @@ async def _try_send_free_fire(
     caption: str,
     fallback: str,
     unlimited_until: str | None,
+    discord_webhook_url: str | None = None,
     now: datetime | None = None,
 ) -> int | None:
     """Post to free only if gathering is open, or this worker wins the 60-minute slot."""
@@ -286,6 +292,7 @@ async def _try_send_free_fire(
         free_id = await _send_alert(bot, free_chat_id, photo_bytes, caption, fallback)
         async with pool.acquire() as conn:
             await mark_free_sent(conn, alert_id, free_id)
+        await _cross_post_discord(discord_webhook_url, photo_bytes, caption)
         return free_id
     if not allow_free_fire(now=clock, unlimited_until=unlimited_until, last_free_at=None):
         return None
@@ -305,9 +312,20 @@ async def _try_send_free_fire(
                 return None
             free_id = await _send_alert(bot, free_chat_id, photo_bytes, caption, fallback)
             await mark_free_sent(conn, alert_id, free_id)
+            await _cross_post_discord(discord_webhook_url, photo_bytes, caption)
             return free_id
         finally:
             await unlock_free_gate(conn)
+
+
+async def _cross_post_discord(
+    webhook_url: str | None,
+    photo_bytes: bytes | None,
+    caption: str,
+) -> None:
+    if not webhook_url:
+        return
+    await send_discord_alert(webhook_url, photo_bytes=photo_bytes, caption=caption)
 
 
 async def _alert_payload(

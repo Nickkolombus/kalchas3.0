@@ -7,9 +7,11 @@ import logging
 import os
 
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, ChatMemberHandler, CommandHandler, ContextTypes
 
+from kalchas_bot.discord_channel import discord_webhook_url
 from kalchas_bot.paid_channel import paid_chat_id
+from kalchas_bot.paid_join import on_paid_chat_member
 
 logger = logging.getLogger("kalchas.bot")
 
@@ -33,6 +35,8 @@ async def _maybe_start_delivery(application: Application) -> None:
         return
     from kalchas_bot.delivery import deliver_loop
 
+    application.add_handler(ChatMemberHandler(on_paid_chat_member, ChatMemberHandler.CHAT_MEMBER))
+
     free_chat_id = (os.environ.get("TELEGRAM_FREE_CHANNEL") or "").strip() or None
     unlimited_until = (os.environ.get("TELEGRAM_FREE_UNLIMITED_UNTIL") or "").strip() or None
     application.bot_data["delivery_task"] = asyncio.create_task(
@@ -41,6 +45,7 @@ async def _maybe_start_delivery(application: Application) -> None:
             chat_id,
             free_chat_id=free_chat_id,
             unlimited_until=unlimited_until,
+            discord_webhook_url=discord_webhook_url(),
         )
     )
 

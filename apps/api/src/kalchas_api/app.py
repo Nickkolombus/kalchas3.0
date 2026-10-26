@@ -35,6 +35,7 @@ from kalchas_api.tips import public_router as tips_public_router
 from kalchas_api.visitors import public_router as visit_public_router
 from kalchas_api.visitors import record_heartbeat as record_visit_heartbeat
 from kalchas_api.visitors import record_page_load as record_visit_page_load
+from kalchas_api.whop_webhook import router as whop_webhook_router
 
 logger = logging.getLogger("kalchas.api")
 
@@ -1220,4 +1221,5 @@ app.include_router(admin_router)
 app.include_router(tips_admin_router)
 app.include_router(tips_public_router)
 app.include_router(visit_public_router)
+app.include_router(whop_webhook_router)
 _mount_web_ui()

@@ -487,6 +487,7 @@ version = "3.0.0"
 source = { editable = "apps/api" }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "kalchas-core" },
     { name = "kalchas-db" },
     { name = "tzdata" },
@@ -496,6 +497,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "kalchas-core", editable = "packages/core" },
     { name = "kalchas-db", editable = "packages/db" },
     { name = "tzdata", specifier = ">=2024.1" },
@@ -507,6 +509,7 @@ name = "kalchas-bot"
 version = "3.0.0"
 source = { editable = "apps/bot" }
 dependencies = [
+    { name = "httpx" },
     { name = "kalchas-core" },
     { name = "kalchas-db" },
     { name = "pillow" },
@@ -515,6 +518,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
     { name = "kalchas-core", editable = "packages/core" },
     { name = "kalchas-db", editable = "packages/db" },
     { name = "pillow", specifier = ">=11.0" },
