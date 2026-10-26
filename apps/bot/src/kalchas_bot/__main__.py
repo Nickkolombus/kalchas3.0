@@ -10,7 +10,7 @@ from telegram import Update
 from telegram.error import Conflict
 from telegram.ext import Application, ChatMemberHandler, CommandHandler, ContextTypes
 
-from kalchas_bot.discord_channel import discord_webhook_url
+from kalchas_bot.discord_channel import discord_paid_webhook_url, discord_webhook_url
 from kalchas_bot.paid_channel import paid_chat_id
 from kalchas_bot.paid_join import on_paid_chat_member
 
@@ -56,6 +56,7 @@ async def _maybe_start_delivery(application: Application) -> None:
             free_chat_id=free_chat_id,
             unlimited_until=unlimited_until,
             discord_webhook_url=discord_webhook_url(),
+            discord_paid_webhook_url=discord_paid_webhook_url(),
         )
     )
 

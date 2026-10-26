@@ -5,6 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 from kalchas_bot.discord_channel import (
+    discord_paid_webhook_url,
     discord_webhook_url,
     html_to_discord,
     send_discord_alert,
@@ -20,6 +21,17 @@ class TestDiscordWebhookUrl:
     def test_blank_is_none(self) -> None:
         assert discord_webhook_url({"DISCORD_WEBHOOK_URL": "  "}) is None
         assert discord_webhook_url({}) is None
+
+
+class TestDiscordPaidWebhookUrl:
+    def test_reads_from_env(self) -> None:
+        assert discord_paid_webhook_url({"DISCORD_PAID_WEBHOOK_URL": "https://discord.com/y"}) == (
+            "https://discord.com/y"
+        )
+
+    def test_blank_is_none(self) -> None:
+        assert discord_paid_webhook_url({"DISCORD_PAID_WEBHOOK_URL": "  "}) is None
+        assert discord_paid_webhook_url({}) is None
 
 
 class TestHtmlToDiscord:

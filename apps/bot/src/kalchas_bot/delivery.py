@@ -27,6 +27,7 @@ async def deliver_loop(
     free_chat_id: str | None = None,
     unlimited_until: str | None = None,
     discord_webhook_url: str | None = None,
+    discord_paid_webhook_url: str | None = None,
     poll_sec: float = 2.0,
 ) -> None:
     """Claim pending outbox rows and send. Requires DATABASE_URL + migrated schema."""
@@ -54,6 +55,7 @@ async def deliver_loop(
                         free_chat_id=free_chat_id,
                         unlimited_until=unlimited_until,
                         discord_webhook_url=discord_webhook_url,
+                        discord_paid_webhook_url=discord_paid_webhook_url,
                     )
                 except Exception as exc:
                     logger.exception("send failed for match %s", group[0].get("match_id"))
@@ -104,6 +106,7 @@ async def _deliver_group(
     free_chat_id: str | None,
     unlimited_until: str | None,
     discord_webhook_url: str | None = None,
+    discord_paid_webhook_url: str | None = None,
 ) -> None:
     from kalchas_db.alerts import attach_free_message, mark_sent, sent_same_minute
 
@@ -123,6 +126,7 @@ async def _deliver_group(
         message_id = existing_id
     else:
         message_id = await _send_alert(bot, chat_id, photo_bytes, caption, fallback)
+        await _cross_post_discord(discord_paid_webhook_url, photo_bytes, caption)
     async with pool.acquire() as conn:
         for row in group:
             await mark_sent(conn, int(row["id"]), message_id)

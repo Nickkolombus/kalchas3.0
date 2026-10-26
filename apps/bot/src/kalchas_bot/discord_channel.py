@@ -1,9 +1,10 @@
-"""Cross-post free-channel fires to a Discord webhook.
+"""Cross-post fires to Discord webhooks (one for the free channel, one for
+the paid channel).
 
 A webhook takes Markdown, not Telegram's HTML ``parse_mode``, and a photo
 goes as a multipart file rather than a Telegram photo upload. This mirrors
-the free channel's fire message only -- not outcome replies or reactions,
-which a Discord webhook has no equivalent for.
+the fire message only -- not outcome replies or reactions, which a Discord
+webhook has no equivalent for.
 """
 
 from __future__ import annotations
@@ -29,6 +30,12 @@ _TAG = re.compile(r"<[^>]+>")
 def discord_webhook_url(env: Mapping[str, str] | None = None) -> str | None:
     source = env if env is not None else os.environ
     value = (source.get("DISCORD_WEBHOOK_URL") or "").strip()
+    return value or None
+
+
+def discord_paid_webhook_url(env: Mapping[str, str] | None = None) -> str | None:
+    source = env if env is not None else os.environ
+    value = (source.get("DISCORD_PAID_WEBHOOK_URL") or "").strip()
     return value or None
 
 
