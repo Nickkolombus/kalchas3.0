@@ -57,7 +57,29 @@ const DEFAULT_SWEET_SPOT: SweetSpotConfig = {
   include_injury_time: false,
 };
 
-type Tab = "thresholds" | "rules" | "weights" | "results" | "tips" | "various" | "visitors";
+type DiscordConfig = {
+  free_channel_id: string | null;
+  paid_channel_id: string | null;
+  free_enabled: boolean;
+  paid_enabled: boolean;
+};
+
+const DEFAULT_DISCORD: DiscordConfig = {
+  free_channel_id: null,
+  paid_channel_id: null,
+  free_enabled: true,
+  paid_enabled: true,
+};
+
+type Tab =
+  | "thresholds"
+  | "rules"
+  | "weights"
+  | "results"
+  | "tips"
+  | "various"
+  | "discord"
+  | "visitors";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -96,6 +118,7 @@ export function AdminApp() {
   const [presetName, setPresetName] = useState("");
   const [busy, setBusy] = useState(false);
   const [various, setVarious] = useState<SweetSpotConfig>(DEFAULT_SWEET_SPOT);
+  const [discord, setDiscord] = useState<DiscordConfig>(DEFAULT_DISCORD);
   const [catalog, setCatalog] = useState<ConditionCatalog>({
     scopes: [],
     metrics: [],
@@ -114,6 +137,7 @@ export function AdminApp() {
     const cfg = await api<{
       strategies: StrategyConfig[];
       various?: SweetSpotConfig;
+      discord?: DiscordConfig;
       condition_catalog?: ConditionCatalog;
     }>("/api/admin/config");
     setItems(
@@ -123,6 +147,7 @@ export function AdminApp() {
       })),
     );
     if (cfg.various) setVarious(cfg.various);
+    if (cfg.discord) setDiscord(cfg.discord);
     if (cfg.condition_catalog) setCatalog(cfg.condition_catalog);
     setStrategyKey((current) =>
       cfg.strategies.some((s) => s.key === current) ? current : cfg.strategies[0]?.key || current,
@@ -204,6 +229,23 @@ export function AdminApp() {
       });
       if (saved.various) setVarious(saved.various);
       setStatus("Various settings saved. The live board picks them up on the next refresh.");
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveDiscord() {
+    setBusy(true);
+    setStatus("");
+    try {
+      const saved = await api<{ ok: boolean; discord: DiscordConfig }>("/api/admin/discord", {
+        method: "PUT",
+        body: JSON.stringify(discord),
+      });
+      if (saved.discord) setDiscord(saved.discord);
+      setStatus("Discord settings saved. The bot picks them up within a few seconds.");
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "save failed");
     } finally {
@@ -438,6 +480,13 @@ export function AdminApp() {
         </button>
         <button
           type="button"
+          className={tab === "discord" ? "is-on" : ""}
+          onClick={() => setTab("discord")}
+        >
+          Discord
+        </button>
+        <button
+          type="button"
           className={tab === "visitors" ? "is-on" : ""}
           onClick={() => setTab("visitors")}
         >
@@ -474,6 +523,16 @@ export function AdminApp() {
             <p>
               Board-wide filters that are not tied to one strategy. Sweet spot t
               uses these windows.
+            </p>
+          </header>
+        ) : null}
+        {tab === "discord" ? (
+          <header>
+            <h1>Discord</h1>
+            <p>
+              Channel ids the bot cross-posts fires and outcomes to, and a
+              per-channel kill switch. The bot token itself stays a Railway
+              secret, not a setting here.
             </p>
           </header>
         ) : null}
@@ -598,7 +657,80 @@ export function AdminApp() {
             </div>
           </>
         ) : null}
-        {tab !== "results" && tab !== "various" && tab !== "visitors" ? (
+        {tab === "discord" ? (
+          <>
+            <article className="admin-tab-panel">
+              <h2>Paid channel</h2>
+              <div className="admin-fields">
+                <label>
+                  Channel id
+                  <input
+                    type="text"
+                    placeholder="e.g. 1234567890123456"
+                    value={discord.paid_channel_id ?? ""}
+                    onChange={(event) =>
+                      setDiscord((current) => ({
+                        ...current,
+                        paid_channel_id: event.target.value || null,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <label className="admin-toggle">
+                <input
+                  type="checkbox"
+                  checked={discord.paid_enabled}
+                  onChange={(event) =>
+                    setDiscord((current) => ({
+                      ...current,
+                      paid_enabled: event.target.checked,
+                    }))
+                  }
+                />
+                Cross-post to paid channel
+              </label>
+            </article>
+            <article className="admin-tab-panel">
+              <h2>Free channel</h2>
+              <div className="admin-fields">
+                <label>
+                  Channel id
+                  <input
+                    type="text"
+                    placeholder="e.g. 1234567890123456"
+                    value={discord.free_channel_id ?? ""}
+                    onChange={(event) =>
+                      setDiscord((current) => ({
+                        ...current,
+                        free_channel_id: event.target.value || null,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <label className="admin-toggle">
+                <input
+                  type="checkbox"
+                  checked={discord.free_enabled}
+                  onChange={(event) =>
+                    setDiscord((current) => ({
+                      ...current,
+                      free_enabled: event.target.checked,
+                    }))
+                  }
+                />
+                Cross-post to free channel
+              </label>
+            </article>
+            <div className="admin-actions">
+              <button type="button" disabled={busy} onClick={() => void saveDiscord()}>
+                Save discord
+              </button>
+            </div>
+          </>
+        ) : null}
+        {tab !== "results" && tab !== "various" && tab !== "discord" && tab !== "visitors" ? (
         <>
         <nav className="admin-tabs" role="tablist" aria-label="Strategy">
           {items.map((row) => (

@@ -12,6 +12,13 @@ CUTOFF = "2026-10-12"
 MON = datetime(2026, 10, 13, 15, 0, tzinfo=UTC)
 FRI = datetime(2026, 10, 16, 15, 0, tzinfo=UTC)
 
+DISCORD_SETTINGS = {
+    "free_channel_id": "999",
+    "paid_channel_id": "111",
+    "free_enabled": True,
+    "paid_enabled": True,
+}
+
 
 class _Acquire:
     def __init__(self, conn: object) -> None:
@@ -37,8 +44,8 @@ async def _run(
     *,
     now: datetime,
     unlimited_until: str | None = CUTOFF,
-    discord_webhook_url: str | None = None,
-) -> tuple[bool, list[int], list[str]]:
+    discord_bot_token: str | None = None,
+) -> tuple[tuple[int | None, int | None] | None, list[int], list[str]]:
     sent: list[int] = []
     discord_posts: list[str] = []
 
@@ -46,14 +53,16 @@ async def _run(
         sent.append(1)
         return 99
 
-    async def fake_discord_send(url: str, **_kwargs: object) -> None:
-        discord_posts.append(url)
+    async def fake_discord_send(token: str, channel_id: str, **_kwargs: object) -> int:
+        discord_posts.append(channel_id)
+        return 55
 
     monkeypatch.setattr("kalchas_bot.delivery._send_alert", fake_send)
-    monkeypatch.setattr("kalchas_bot.delivery.send_discord_alert", fake_discord_send)
+    monkeypatch.setattr("kalchas_bot.delivery.send_discord_message", fake_discord_send)
     monkeypatch.setattr("kalchas_db.alerts.mark_free_sent", AsyncMock())
+    monkeypatch.setattr("kalchas_db.alerts.mark_discord_free_sent", AsyncMock())
     monkeypatch.setattr("kalchas_db.alerts.unlock_free_gate", AsyncMock())
-    ok = await _try_send_free_fire(
+    result = await _try_send_free_fire(
         bot=object(),  # type: ignore[arg-type]
         pool=FakePool(),
         alert_id=1,
@@ -62,30 +71,31 @@ async def _run(
         caption="c",
         fallback="f",
         unlimited_until=unlimited_until,
-        discord_webhook_url=discord_webhook_url,
+        discord_bot_token=discord_bot_token,
+        discord_settings=DISCORD_SETTINGS,
         now=now,
     )
-    return ok, sent, discord_posts
+    return result, sent, discord_posts
 
 
 @pytest.mark.asyncio
 async def test_gathering_still_posts_every_fire(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("kalchas_db.alerts.lock_free_gate", AsyncMock())
     monkeypatch.setattr("kalchas_db.alerts.last_free_sent_at", AsyncMock())
-    ok, sent, discord_posts = await _run(
-        monkeypatch, now=FRI, unlimited_until=None, discord_webhook_url="https://discord/x"
+    result, sent, discord_posts = await _run(
+        monkeypatch, now=FRI, unlimited_until=None, discord_bot_token="tok"
     )
-    assert ok == 99
+    assert result == (99, 55)
     assert sent == [1]
-    assert discord_posts == ["https://discord/x"]
+    assert discord_posts == ["999"]
 
 
 @pytest.mark.asyncio
-async def test_no_discord_url_skips_cross_post(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_no_discord_token_skips_cross_post(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("kalchas_db.alerts.lock_free_gate", AsyncMock())
     monkeypatch.setattr("kalchas_db.alerts.last_free_sent_at", AsyncMock())
-    ok, sent, discord_posts = await _run(monkeypatch, now=FRI, unlimited_until=None)
-    assert ok == 99
+    result, sent, discord_posts = await _run(monkeypatch, now=FRI, unlimited_until=None)
+    assert result == (99, None)
     assert sent == [1]
     assert discord_posts == []
 
@@ -94,10 +104,10 @@ async def test_no_discord_url_skips_cross_post(monkeypatch: pytest.MonkeyPatch) 
 async def test_weekend_skips_without_sending(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("kalchas_db.alerts.lock_free_gate", AsyncMock())
     monkeypatch.setattr("kalchas_db.alerts.last_free_sent_at", AsyncMock())
-    ok, sent, discord_posts = await _run(
-        monkeypatch, now=FRI, unlimited_until=CUTOFF, discord_webhook_url="https://discord/x"
+    result, sent, discord_posts = await _run(
+        monkeypatch, now=FRI, unlimited_until=CUTOFF, discord_bot_token="tok"
     )
-    assert ok is None
+    assert result is None
     assert sent == []
     assert discord_posts == []
 
@@ -106,8 +116,8 @@ async def test_weekend_skips_without_sending(monkeypatch: pytest.MonkeyPatch) ->
 async def test_cooldown_blocks_second_fire(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("kalchas_db.alerts.lock_free_gate", AsyncMock(return_value=True))
     monkeypatch.setattr("kalchas_db.alerts.last_free_sent_at", AsyncMock(return_value=MON))
-    ok, sent, discord_posts = await _run(monkeypatch, now=MON)
-    assert ok is None
+    result, sent, discord_posts = await _run(monkeypatch, now=MON)
+    assert result is None
     assert sent == []
     assert discord_posts == []
 
@@ -116,19 +126,17 @@ async def test_cooldown_blocks_second_fire(monkeypatch: pytest.MonkeyPatch) -> N
 async def test_cooldown_elapsed_posts_one(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("kalchas_db.alerts.lock_free_gate", AsyncMock(return_value=True))
     monkeypatch.setattr("kalchas_db.alerts.last_free_sent_at", AsyncMock(return_value=None))
-    ok, sent, discord_posts = await _run(
-        monkeypatch, now=MON, discord_webhook_url="https://discord/x"
-    )
-    assert ok == 99
+    result, sent, discord_posts = await _run(monkeypatch, now=MON, discord_bot_token="tok")
+    assert result == (99, 55)
     assert sent == [1]
-    assert discord_posts == ["https://discord/x"]
+    assert discord_posts == ["999"]
 
 
 @pytest.mark.asyncio
 async def test_busy_gate_skips(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("kalchas_db.alerts.lock_free_gate", AsyncMock(return_value=False))
     monkeypatch.setattr("kalchas_db.alerts.last_free_sent_at", AsyncMock(return_value=None))
-    ok, sent, discord_posts = await _run(monkeypatch, now=MON)
-    assert ok is None
+    result, sent, discord_posts = await _run(monkeypatch, now=MON)
+    assert result is None
     assert sent == []
     assert discord_posts == []

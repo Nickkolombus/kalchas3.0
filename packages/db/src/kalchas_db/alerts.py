@@ -96,7 +96,8 @@ WHERE o.alert_id = a.id
   )
 RETURNING o.alert_id, o.state, o.decision, o.detail, o.evaluated_at,
           a.strategy_key, a.team, a.home_team, a.away_team, a.value, a.payload,
-          a.telegram_message_id, a.telegram_free_message_id, a.minute, a.score
+          a.telegram_message_id, a.telegram_free_message_id, a.minute, a.score,
+          a.discord_message_id, a.discord_free_message_id
 """
 
 SKIP_UNREPLIABLE_OUTCOMES = """
@@ -136,10 +137,23 @@ SET telegram_free_message_id = $2
 WHERE id = $1
 """
 
+MARK_DISCORD_SENT = """
+UPDATE alerts
+SET discord_message_id = $2
+WHERE id = $1
+"""
+
+MARK_DISCORD_FREE_SENT = """
+UPDATE alerts
+SET discord_free_message_id = $2
+WHERE id = $1
+"""
+
 SENT_SAME_MINUTE = """
 SELECT id, match_id, strategy_slot, strategy_key, team, value, minute,
        score, home_team, away_team, payload,
-       telegram_message_id, telegram_free_message_id
+       telegram_message_id, telegram_free_message_id,
+       discord_message_id, discord_free_message_id
 FROM alerts
 WHERE match_id = $1
   AND minute = $2
@@ -238,6 +252,23 @@ async def attach_free_message(
 ) -> None:
     """Share an existing free post. Does not move the hourly free clock."""
     await conn.execute(ATTACH_FREE_MESSAGE, alert_id, telegram_free_message_id)
+
+
+async def mark_discord_sent(
+    conn: asyncpg.Connection,
+    alert_id: int,
+    discord_message_id: int,
+) -> None:
+    await conn.execute(MARK_DISCORD_SENT, alert_id, discord_message_id)
+
+
+async def mark_discord_free_sent(
+    conn: asyncpg.Connection,
+    alert_id: int,
+    discord_free_message_id: int,
+) -> None:
+    """Also used to share an existing Discord free post with a sibling alert."""
+    await conn.execute(MARK_DISCORD_FREE_SENT, alert_id, discord_free_message_id)
 
 
 async def sent_same_minute(

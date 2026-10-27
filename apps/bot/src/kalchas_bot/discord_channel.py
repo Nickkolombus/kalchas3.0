@@ -1,10 +1,12 @@
-"""Cross-post fires to Discord webhooks (one for the free channel, one for
-the paid channel).
+"""Discord delivery via the real Bot REST API (not an incoming webhook).
 
-A webhook takes Markdown, not Telegram's HTML ``parse_mode``, and a photo
-goes as a multipart file rather than a Telegram photo upload. This mirrors
-the fire message only -- not outcome replies or reactions, which a Discord
-webhook has no equivalent for.
+A webhook can only post new messages. Posting as a bot user instead gives us
+a message id we can edit, reply to, and react on -- the same shape as the
+Telegram side in ``delivery.py``. No Gateway connection is needed for any of
+this; everything here is a plain authenticated REST call.
+
+Every call is best effort: logged and swallowed, never allowed to break
+Telegram delivery.
 """
 
 from __future__ import annotations
@@ -14,12 +16,14 @@ import json
 import logging
 import os
 import re
+import urllib.parse
 from collections.abc import Mapping
 
 import httpx
 
 logger = logging.getLogger("kalchas.bot.discord")
 
+API_BASE = "https://discord.com/api/v10"
 DISCORD_CONTENT_LIMIT = 2000
 
 _BOLD = re.compile(r"<b>(.*?)</b>", re.DOTALL)
@@ -27,15 +31,9 @@ _ITALIC = re.compile(r"<i>(.*?)</i>", re.DOTALL)
 _TAG = re.compile(r"<[^>]+>")
 
 
-def discord_webhook_url(env: Mapping[str, str] | None = None) -> str | None:
+def discord_bot_token(env: Mapping[str, str] | None = None) -> str | None:
     source = env if env is not None else os.environ
-    value = (source.get("DISCORD_WEBHOOK_URL") or "").strip()
-    return value or None
-
-
-def discord_paid_webhook_url(env: Mapping[str, str] | None = None) -> str | None:
-    source = env if env is not None else os.environ
-    value = (source.get("DISCORD_PAID_WEBHOOK_URL") or "").strip()
+    value = (source.get("DISCORD_BOT_TOKEN") or "").strip()
     return value or None
 
 
@@ -47,32 +45,121 @@ def html_to_discord(text: str) -> str:
     return html.unescape(out)
 
 
-async def send_discord_alert(
-    webhook_url: str,
+def _clip(content: str) -> str:
+    if len(content) > DISCORD_CONTENT_LIMIT:
+        return content[: DISCORD_CONTENT_LIMIT - 1] + "…"
+    return content
+
+
+def _headers(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bot {token}"}
+
+
+async def send_discord_message(
+    token: str,
+    channel_id: str,
     *,
     photo_bytes: bytes | None,
     caption: str,
     client: httpx.AsyncClient | None = None,
-) -> None:
-    """Post one fire to the webhook. Logs and swallows failures -- best effort,
-    never allowed to break Telegram delivery."""
-    content = html_to_discord(caption)
-    if len(content) > DISCORD_CONTENT_LIMIT:
-        content = content[: DISCORD_CONTENT_LIMIT - 1] + "…"
+) -> int | None:
+    """Post a new message. Returns its id, or None on failure."""
+    content = _clip(html_to_discord(caption))
     owns_client = client is None
     http_client = client or httpx.AsyncClient(timeout=10.0)
     try:
+        url = f"{API_BASE}/channels/{channel_id}/messages"
         if photo_bytes is not None:
             response = await http_client.post(
-                webhook_url,
+                url,
+                headers=_headers(token),
                 data={"payload_json": json.dumps({"content": content})},
                 files={"files[0]": ("alert.png", photo_bytes, "image/png")},
             )
         else:
-            response = await http_client.post(webhook_url, json={"content": content})
+            response = await http_client.post(
+                url, headers=_headers(token), json={"content": content}
+            )
+        response.raise_for_status()
+        return int(response.json()["id"])
+    except Exception:
+        logger.exception("discord send failed")
+        return None
+    finally:
+        if owns_client:
+            await http_client.aclose()
+
+
+async def edit_discord_message(
+    token: str,
+    channel_id: str,
+    message_id: int,
+    *,
+    caption: str,
+    client: httpx.AsyncClient | None = None,
+) -> None:
+    content = _clip(html_to_discord(caption))
+    owns_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=10.0)
+    try:
+        url = f"{API_BASE}/channels/{channel_id}/messages/{message_id}"
+        response = await http_client.patch(url, headers=_headers(token), json={"content": content})
         response.raise_for_status()
     except Exception:
-        logger.exception("discord webhook post failed")
+        logger.exception("discord edit failed")
+    finally:
+        if owns_client:
+            await http_client.aclose()
+
+
+async def reply_discord_message(
+    token: str,
+    channel_id: str,
+    *,
+    text: str,
+    reply_to_message_id: int,
+    client: httpx.AsyncClient | None = None,
+) -> int | None:
+    content = _clip(html_to_discord(text))
+    owns_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=10.0)
+    try:
+        url = f"{API_BASE}/channels/{channel_id}/messages"
+        response = await http_client.post(
+            url,
+            headers=_headers(token),
+            json={
+                "content": content,
+                "message_reference": {"message_id": str(reply_to_message_id)},
+            },
+        )
+        response.raise_for_status()
+        return int(response.json()["id"])
+    except Exception:
+        logger.exception("discord reply failed")
+        return None
+    finally:
+        if owns_client:
+            await http_client.aclose()
+
+
+async def react_discord_message(
+    token: str,
+    channel_id: str,
+    message_id: int,
+    emoji: str,
+    *,
+    client: httpx.AsyncClient | None = None,
+) -> None:
+    owns_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=10.0)
+    try:
+        encoded = urllib.parse.quote(emoji)
+        url = f"{API_BASE}/channels/{channel_id}/messages/{message_id}/reactions/{encoded}/@me"
+        response = await http_client.put(url, headers=_headers(token))
+        response.raise_for_status()
+    except Exception:
+        logger.exception("discord reaction failed")
     finally:
         if owns_client:
             await http_client.aclose()

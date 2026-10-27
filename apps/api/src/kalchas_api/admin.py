@@ -110,6 +110,13 @@ class VariousIn(BaseModel):
     include_injury_time: bool = False
 
 
+class DiscordSettingsIn(BaseModel):
+    free_channel_id: str | None = None
+    paid_channel_id: str | None = None
+    free_enabled: bool = True
+    paid_enabled: bool = True
+
+
 def _dsn() -> str:
     dsn = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
     if not dsn:
@@ -148,6 +155,8 @@ def session(request: Request) -> dict[str, bool]:
 def admin_config(request: Request) -> dict[str, Any]:
     require_admin(request)
     from kalchas_core.sweet_spot import SweetSpotWindows
+    from kalchas_db.discord_settings import DEFAULTS as DISCORD_DEFAULTS
+    from kalchas_db.discord_settings import get_discord_settings
     from kalchas_db.settings import (
         get_board_settings,
         list_admin_rules,
@@ -171,6 +180,10 @@ def admin_config(request: Request) -> dict[str, Any]:
             various = get_board_settings(dsn)
         except Exception:  # noqa: BLE001 — missing table must not block admin
             various = SweetSpotWindows().as_dict()
+        try:
+            discord = get_discord_settings(dsn)
+        except Exception:  # noqa: BLE001 — missing table must not block admin
+            discord = dict(DISCORD_DEFAULTS)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"settings unavailable: {exc}") from exc
 
@@ -239,6 +252,7 @@ def admin_config(request: Request) -> dict[str, Any]:
     return {
         "strategies": strategies,
         "various": various,
+        "discord": discord,
         "condition_catalog": condition_catalog(),
     }
 
@@ -785,3 +799,26 @@ def put_various(request: Request, body: VariousIn) -> dict[str, Any]:
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"settings unavailable: {exc}") from exc
     return {"ok": True, "various": saved}
+
+
+@router.get("/discord")
+def get_discord(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    from kalchas_db.discord_settings import get_discord_settings
+
+    try:
+        return {"discord": get_discord_settings(_dsn())}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"settings unavailable: {exc}") from exc
+
+
+@router.put("/discord")
+def put_discord(request: Request, body: DiscordSettingsIn) -> dict[str, Any]:
+    require_admin(request)
+    from kalchas_db.discord_settings import upsert_discord_settings
+
+    try:
+        saved = upsert_discord_settings(_dsn(), body.model_dump())
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"settings unavailable: {exc}") from exc
+    return {"ok": True, "discord": saved}

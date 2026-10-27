@@ -13,7 +13,12 @@ from telegram import Bot, ReactionTypeEmoji
 from telegram.error import TelegramError
 
 from kalchas_bot.banner import render_alert_photo
-from kalchas_bot.discord_channel import send_discord_alert
+from kalchas_bot.discord_channel import (
+    edit_discord_message,
+    react_discord_message,
+    reply_discord_message,
+    send_discord_message,
+)
 from kalchas_bot.format import format_alert_html, format_joint_html, format_outcome_html
 from kalchas_bot.free_channel import allow_free_fire, gathering_open
 
@@ -26,8 +31,7 @@ async def deliver_loop(
     *,
     free_chat_id: str | None = None,
     unlimited_until: str | None = None,
-    discord_webhook_url: str | None = None,
-    discord_paid_webhook_url: str | None = None,
+    discord_bot_token: str | None = None,
     poll_sec: float = 2.0,
 ) -> None:
     """Claim pending outbox rows and send. Requires DATABASE_URL + migrated schema."""
@@ -37,11 +41,14 @@ async def deliver_loop(
         claim_pending_outcomes,
         mark_failed,
     )
+    from kalchas_db.discord_settings import fetch_discord_settings
 
     await create_pool()
     pool = get_pool()
     while True:
         try:
+            async with pool.acquire() as conn:
+                discord_settings = await fetch_discord_settings(conn)
             async with pool.acquire() as conn:
                 rows = await claim_pending(conn)
             groups = _same_minute_groups(rows)
@@ -54,8 +61,8 @@ async def deliver_loop(
                         group,
                         free_chat_id=free_chat_id,
                         unlimited_until=unlimited_until,
-                        discord_webhook_url=discord_webhook_url,
-                        discord_paid_webhook_url=discord_paid_webhook_url,
+                        discord_bot_token=discord_bot_token,
+                        discord_settings=discord_settings,
                     )
                 except Exception as exc:
                     logger.exception("send failed for match %s", group[0].get("match_id"))
@@ -64,7 +71,15 @@ async def deliver_loop(
                             await mark_failed(conn, int(row["id"]), str(exc))
             async with pool.acquire() as conn:
                 outcomes = await claim_pending_outcomes(conn)
-            await _deliver_outcomes(bot, pool, chat_id, outcomes, free_chat_id=free_chat_id)
+            await _deliver_outcomes(
+                bot,
+                pool,
+                chat_id,
+                outcomes,
+                free_chat_id=free_chat_id,
+                discord_bot_token=discord_bot_token,
+                discord_settings=discord_settings,
+            )
         except Exception:
             logger.exception("delivery cycle failed")
         await asyncio.sleep(poll_sec)
@@ -105,10 +120,16 @@ async def _deliver_group(
     *,
     free_chat_id: str | None,
     unlimited_until: str | None,
-    discord_webhook_url: str | None = None,
-    discord_paid_webhook_url: str | None = None,
+    discord_bot_token: str | None = None,
+    discord_settings: Mapping[str, Any] | None = None,
 ) -> None:
-    from kalchas_db.alerts import attach_free_message, mark_sent, sent_same_minute
+    from kalchas_db.alerts import (
+        attach_free_message,
+        mark_discord_free_sent,
+        mark_discord_sent,
+        mark_sent,
+        sent_same_minute,
+    )
 
     first = group[0]
     async with pool.acquire() as conn:
@@ -124,12 +145,20 @@ async def _deliver_group(
     if existing_id is not None:
         await _edit_posted(bot, chat_id, existing_id, caption, fallback)
         message_id = existing_id
+        discord_message_id = _message_id(posted[0], "discord_message_id")
+        await _discord_edit_existing(
+            discord_bot_token, discord_settings, "paid", discord_message_id, caption
+        )
     else:
         message_id = await _send_alert(bot, chat_id, photo_bytes, caption, fallback)
-        await _cross_post_discord(discord_paid_webhook_url, photo_bytes, caption)
+        discord_message_id = await _discord_send_new(
+            discord_bot_token, discord_settings, "paid", photo_bytes, caption
+        )
     async with pool.acquire() as conn:
         for row in group:
             await mark_sent(conn, int(row["id"]), message_id)
+            if discord_message_id is not None:
+                await mark_discord_sent(conn, int(row["id"]), discord_message_id)
     if not free_chat_id:
         return
     free_existing = next(
@@ -143,14 +172,27 @@ async def _deliver_group(
     if free_existing is not None:
         try:
             await _edit_posted(bot, free_chat_id, free_existing, caption, fallback)
+            discord_free_existing = next(
+                (
+                    mid
+                    for row in posted
+                    if (mid := _message_id(row, "discord_free_message_id")) is not None
+                ),
+                None,
+            )
+            await _discord_edit_existing(
+                discord_bot_token, discord_settings, "free", discord_free_existing, caption
+            )
             async with pool.acquire() as conn:
                 for row in group:
                     await attach_free_message(conn, int(row["id"]), free_existing)
+                    if discord_free_existing is not None:
+                        await mark_discord_free_sent(conn, int(row["id"]), discord_free_existing)
         except Exception:
             logger.exception("free-channel edit failed for match %s", first.get("match_id"))
         return
     try:
-        sent_free = await _try_send_free_fire(
+        result = await _try_send_free_fire(
             bot,
             pool,
             alert_id=int(group[0]["id"]),
@@ -159,16 +201,22 @@ async def _deliver_group(
             caption=caption,
             fallback=fallback,
             unlimited_until=unlimited_until,
-            discord_webhook_url=discord_webhook_url,
+            discord_bot_token=discord_bot_token,
+            discord_settings=discord_settings,
         )
     except Exception:
         logger.exception("free-channel send failed for match %s", first.get("match_id"))
         return
+    if result is None:
+        return
+    sent_free, discord_free_id = result
     if sent_free is None:
         return
     async with pool.acquire() as conn:
         for row in group[1:]:
             await attach_free_message(conn, int(row["id"]), sent_free)
+            if discord_free_id is not None:
+                await mark_discord_free_sent(conn, int(row["id"]), discord_free_id)
 
 
 async def _deliver_outcomes(
@@ -178,6 +226,8 @@ async def _deliver_outcomes(
     rows: Sequence[Mapping[str, Any]],
     *,
     free_chat_id: str | None,
+    discord_bot_token: str | None = None,
+    discord_settings: Mapping[str, Any] | None = None,
 ) -> None:
     from kalchas_db.alerts import (
         mark_outcome_failed,
@@ -208,20 +258,53 @@ async def _deliver_outcomes(
                     for row in batch:
                         await release_outcome(conn, int(row["alert_id"]))
                 continue
+            discord_message_id = _message_id(batch[0], "discord_message_id")
             if action == "goal":
                 confirmed = [row for row in batch if str(row.get("state") or "") == "Confirmed"]
                 text = "\n\n".join(format_outcome_html(row) for row in confirmed)
                 await _reply_outcome(bot, chat_id, text, message_id)
                 await _react_on_fire(bot, chat_id, message_id, _GOAL_REACTIONS)
+                await _discord_reply_and_react(
+                    discord_bot_token,
+                    discord_settings,
+                    "paid",
+                    discord_message_id,
+                    text,
+                    _DISCORD_GOAL_EMOJI,
+                )
                 free_reply = _message_id(confirmed[0], "telegram_free_message_id")
+                discord_free_reply = _message_id(confirmed[0], "discord_free_message_id")
                 if free_chat_id and free_reply is not None:
                     await _reply_outcome(bot, free_chat_id, text, free_reply)
                     await _react_on_fire(bot, free_chat_id, free_reply, _GOAL_REACTIONS)
+                await _discord_reply_and_react(
+                    discord_bot_token,
+                    discord_settings,
+                    "free",
+                    discord_free_reply,
+                    text,
+                    _DISCORD_GOAL_EMOJI,
+                )
             elif action == "miss":
                 await _react_on_fire(bot, chat_id, message_id, _MISS_REACTIONS)
+                await _discord_react(
+                    discord_bot_token,
+                    discord_settings,
+                    "paid",
+                    discord_message_id,
+                    _DISCORD_MISS_EMOJI,
+                )
                 free_reply = _message_id(batch[0], "telegram_free_message_id")
+                discord_free_reply = _message_id(batch[0], "discord_free_message_id")
                 if free_chat_id and free_reply is not None:
                     await _react_on_fire(bot, free_chat_id, free_reply, _MISS_REACTIONS)
+                await _discord_react(
+                    discord_bot_token,
+                    discord_settings,
+                    "free",
+                    discord_free_reply,
+                    _DISCORD_MISS_EMOJI,
+                )
             async with pool.acquire() as conn:
                 for row in batch:
                     await mark_outcome_sent(conn, int(row["alert_id"]))
@@ -280,13 +363,19 @@ async def _try_send_free_fire(
     caption: str,
     fallback: str,
     unlimited_until: str | None,
-    discord_webhook_url: str | None = None,
+    discord_bot_token: str | None = None,
+    discord_settings: Mapping[str, Any] | None = None,
     now: datetime | None = None,
-) -> int | None:
-    """Post to free only if gathering is open, or this worker wins the 60-minute slot."""
+) -> tuple[int | None, int | None] | None:
+    """Post to free only if gathering is open, or this worker wins the 60-minute slot.
+
+    Returns ``None`` when the gate kept it from sending at all, otherwise a
+    ``(telegram_free_id, discord_free_id)`` pair for whatever was attempted.
+    """
     from kalchas_db.alerts import (
         last_free_sent_at,
         lock_free_gate,
+        mark_discord_free_sent,
         mark_free_sent,
         unlock_free_gate,
     )
@@ -294,10 +383,14 @@ async def _try_send_free_fire(
     clock = now or datetime.now(UTC)
     if gathering_open(clock, unlimited_until):
         free_id = await _send_alert(bot, free_chat_id, photo_bytes, caption, fallback)
+        discord_free_id = await _discord_send_new(
+            discord_bot_token, discord_settings, "free", photo_bytes, caption
+        )
         async with pool.acquire() as conn:
             await mark_free_sent(conn, alert_id, free_id)
-        await _cross_post_discord(discord_webhook_url, photo_bytes, caption)
-        return free_id
+            if discord_free_id is not None:
+                await mark_discord_free_sent(conn, alert_id, discord_free_id)
+        return free_id, discord_free_id
     if not allow_free_fire(now=clock, unlimited_until=unlimited_until, last_free_at=None):
         return None
 
@@ -315,21 +408,88 @@ async def _try_send_free_fire(
             ):
                 return None
             free_id = await _send_alert(bot, free_chat_id, photo_bytes, caption, fallback)
+            discord_free_id = await _discord_send_new(
+                discord_bot_token, discord_settings, "free", photo_bytes, caption
+            )
             await mark_free_sent(conn, alert_id, free_id)
-            await _cross_post_discord(discord_webhook_url, photo_bytes, caption)
-            return free_id
+            if discord_free_id is not None:
+                await mark_discord_free_sent(conn, alert_id, discord_free_id)
+            return free_id, discord_free_id
         finally:
             await unlock_free_gate(conn)
 
 
-async def _cross_post_discord(
-    webhook_url: str | None,
+def _discord_channel(discord_settings: Mapping[str, Any] | None, channel_kind: str) -> str | None:
+    if not discord_settings or not bool(discord_settings.get(f"{channel_kind}_enabled")):
+        return None
+    channel_id = discord_settings.get(f"{channel_kind}_channel_id")
+    return str(channel_id) if channel_id else None
+
+
+async def _discord_send_new(
+    discord_bot_token: str | None,
+    discord_settings: Mapping[str, Any] | None,
+    channel_kind: str,
     photo_bytes: bytes | None,
     caption: str,
+) -> int | None:
+    if not discord_bot_token:
+        return None
+    channel_id = _discord_channel(discord_settings, channel_kind)
+    if not channel_id:
+        return None
+    return await send_discord_message(
+        discord_bot_token, channel_id, photo_bytes=photo_bytes, caption=caption
+    )
+
+
+async def _discord_edit_existing(
+    discord_bot_token: str | None,
+    discord_settings: Mapping[str, Any] | None,
+    channel_kind: str,
+    message_id: int | None,
+    caption: str,
 ) -> None:
-    if not webhook_url:
+    if not discord_bot_token or message_id is None:
         return
-    await send_discord_alert(webhook_url, photo_bytes=photo_bytes, caption=caption)
+    channel_id = _discord_channel(discord_settings, channel_kind)
+    if not channel_id:
+        return
+    await edit_discord_message(discord_bot_token, channel_id, message_id, caption=caption)
+
+
+async def _discord_react(
+    discord_bot_token: str | None,
+    discord_settings: Mapping[str, Any] | None,
+    channel_kind: str,
+    message_id: int | None,
+    emoji: str,
+) -> None:
+    if not discord_bot_token or message_id is None:
+        return
+    channel_id = _discord_channel(discord_settings, channel_kind)
+    if not channel_id:
+        return
+    await react_discord_message(discord_bot_token, channel_id, message_id, emoji)
+
+
+async def _discord_reply_and_react(
+    discord_bot_token: str | None,
+    discord_settings: Mapping[str, Any] | None,
+    channel_kind: str,
+    message_id: int | None,
+    text: str,
+    emoji: str,
+) -> None:
+    if not discord_bot_token or message_id is None:
+        return
+    channel_id = _discord_channel(discord_settings, channel_kind)
+    if not channel_id:
+        return
+    await reply_discord_message(
+        discord_bot_token, channel_id, text=text, reply_to_message_id=message_id
+    )
+    await react_discord_message(discord_bot_token, channel_id, message_id, emoji)
 
 
 async def _alert_payload(
@@ -372,6 +532,8 @@ async def _send_alert(
 
 _GOAL_REACTIONS = ("✅", "👍")
 _MISS_REACTIONS = ("😢", "👎")
+_DISCORD_GOAL_EMOJI = "✅"
+_DISCORD_MISS_EMOJI = "😢"
 
 
 async def _react_on_fire(
