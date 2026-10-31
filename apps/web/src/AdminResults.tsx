@@ -73,12 +73,6 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function daysAgoIso(days: number): string {
-  const at = new Date();
-  at.setUTCDate(at.getUTCDate() - days);
-  return at.toISOString().slice(0, 10);
-}
-
 function fmtTime(iso: string | null): string {
   if (!iso) return "";
   const at = new Date(iso);
@@ -126,7 +120,7 @@ export function AdminResults({
   onToggle: (key: string) => void;
   api: <T>(path: string, init?: RequestInit) => Promise<T>;
 }) {
-  const [since, setSince] = useState(() => daysAgoIso(7));
+  const [since, setSince] = useState(() => todayIso());
   const [until, setUntil] = useState(() => todayIso());
   const [state, setState] = useState("");
   const [team, setTeam] = useState("");
