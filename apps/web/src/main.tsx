@@ -5,6 +5,7 @@ import { App } from "./App";
 import "./styles/tokens.css";
 import "./styles/app.css";
 import "./styles/admin.css";
+import "./styles/mobile.css";
 
 const admin = window.location.pathname.replace(/\/+$/, "") === "/admin";
 

@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type MouseEvent,
+  type ReactElement,
 } from "react";
 import {
   HoverLedger,
@@ -1913,7 +1914,818 @@ function PresenceTile({ presence }: { presence: Presence | null }) {
   );
 }
 
+/* ---------------- Phone board ----------------
+ * Phones get their own board: a frozen match column, a lens that picks which
+ * columns fill the rest, and a tap that opens the match as a card in place.
+ * Desktop never renders any of this.
+ */
+
+const PHONE_QUERY = "(max-width: 640px)";
+
+function useMediaQuery(query: string): boolean {
+  const [hit, setHit] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const sync = () => setHit(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [query]);
+  return hit;
+}
+
+type MobileLens = "signals" | "stats" | "odds";
+type MobileTab = "live" | "signals" | "pinned" | "join";
+type MobileFilter = {
+  label: string;
+  hint?: string;
+  group: "show" | "hide";
+  on: boolean;
+  set: (next: boolean) => void;
+};
+
+const MOBILE_STAT_COLS = STAT_COLS.filter((c) =>
+  ["shots_on_target", "shots_off_target", "dangerous_attacks", "corners", "possession"].includes(c.key),
+);
+
+const MOBILE_CARD_BARS: { key: string; label: string }[] = [
+  { key: "shots_on_target", label: "SOT" },
+  { key: "dangerous_attacks", label: "Dangerous" },
+  { key: "corners", label: "Corners" },
+  { key: "possession", label: "Possession" },
+];
+
+const MOBILE_SORTS: { key: SortKey; label: string }[] = [
+  { key: "kscore", label: "K·idx" },
+  { key: "minute", label: "Minute" },
+  { key: "delta_5min", label: "Δ5′" },
+  { key: "pressure_index", label: "Δ10′" },
+  { key: "rule_of_three", label: "UrG" },
+  { key: "tslg", label: "TSLG" },
+  { key: "league", label: "League" },
+];
+
+/** "90'+5'" reads as "90+5′" so it fits the narrow clock column. */
+function mobileClock(match: LiveMatch): string {
+  const display = stoppageDisplayFromEvents(match.minute_display, match);
+  const face = clockFace(match.minute, match.status_short, display);
+  return face.label.replace(/'(?=\+)/, "").replace(/'/g, "′");
+}
+
+function mobileStrat(
+  match: LiveMatch,
+  col: (typeof STRAT_COLS)[number],
+  side: BoardSide,
+): { text: string; cls: string } {
+  const block = match.strategy_status?.[col.key];
+  const cell = block?.teams?.[side];
+  const trig = col.key !== "npei" && Boolean(cell?.triggered);
+  const text = cellText(col.key, cell, col.digits, { suffix: col.suffix, signed: col.signed });
+  const word = text === FORM_BAR_DONE || text === FORM_BAR_AHEAD ? " is-word" : "";
+  return {
+    text,
+    cls: trig ? " is-trig" : `${stratValueStepClass(col.key, cell?.value, block?.threshold, false)}${word}`,
+  };
+}
+
+function mobileK(match: LiveMatch): { text: string; cls: string } {
+  const score = matchK(match);
+  if (score < 5) return { text: "—", cls: " is-none" };
+  return {
+    text: String(score),
+    cls: stratValueStepClass("kscore", score, match.strategy_status?.kscore?.threshold, false),
+  };
+}
+
+function MobileFlag({ match }: { match: LiveMatch }) {
+  const [failed, setFailed] = useState(false);
+  const src = match.country_logo || flagCdnUrl(match.country_code);
+  if (!src || failed) {
+    return <span className="m-flag-fallback">{flagEmoji(match.country_code) || "•"}</span>;
+  }
+  return (
+    <img
+      className="m-flag"
+      src={src}
+      alt={match.country_code || ""}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function MobileScore({ match, flash }: { match: LiveMatch; flash?: GoalFlash | null }) {
+  const [home, away] = parseScore(match.score);
+  const homeUp = Boolean(flash && (flash.side === "home" || flash.side === "both"));
+  const awayUp = Boolean(flash && (flash.side === "away" || flash.side === "both"));
+  return (
+    <>
+      <span className={homeUp ? "is-goal" : undefined}>{home}</span>
+      <span className={awayUp ? "is-goal" : undefined}>{away}</span>
+    </>
+  );
+}
+
+function MobileLensHead({
+  lens,
+  sortKey,
+  sortDir,
+  onSort,
+}: {
+  lens: MobileLens;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSort: (k: SortKey) => void;
+}) {
+  const cols: { key?: SortKey; label: string; tone?: string }[] =
+    lens === "signals"
+      ? [
+          { key: "kscore", label: "K", tone: "k" },
+          ...STRAT_COLS.map((c) => ({ key: c.key as SortKey, label: c.label, tone: c.tone })),
+        ]
+      : lens === "stats"
+        ? [
+            ...MOBILE_STAT_COLS.map((c) => ({ key: c.key as SortKey, label: c.label })),
+            { key: "tslg", label: "TSLG", tone: "tslg" },
+          ]
+        : [{ key: "odds", label: "1" }, { label: "X" }, { label: "2" }];
+  return (
+    <div className={`m-grid m-head is-${lens}`}>
+      <div className="m-head-match">{lens === "odds" ? "Live · KO under" : "Match"}</div>
+      {cols.map((c) => {
+        const active = c.key === sortKey;
+        return (
+          <button
+            key={c.label}
+            type="button"
+            className={`m-head-cell${c.tone ? ` m-tone-${c.tone}` : ""}${active ? " is-sorted" : ""}`}
+            disabled={!c.key}
+            onClick={() => c.key && onSort(c.key)}
+          >
+            {c.label}
+            {active ? <span aria-hidden>{sortDir === "asc" ? "↑" : "↓"}</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function MobileLensCells({ match, lens }: { match: LiveMatch; lens: MobileLens }) {
+  if (lens === "signals") {
+    const k = mobileK(match);
+    return (
+      <>
+        <div className="m-cell m-tone-k">
+          <span className={`m-k${k.cls}`}>{k.text}</span>
+        </div>
+        {STRAT_COLS.map((c) => {
+          const home = mobileStrat(match, c, "home");
+          const away = mobileStrat(match, c, "away");
+          return (
+            <div key={c.key} className={`m-cell m-tone-${c.tone}`}>
+              <span className={`m-v${home.cls}`}>{home.text}</span>
+              <span className={`m-v${away.cls}`}>{away.text}</span>
+            </div>
+          );
+        })}
+      </>
+    );
+  }
+  if (lens === "stats") {
+    const t = tslgMinutes(match);
+    return (
+      <>
+        {MOBILE_STAT_COLS.map((c) => {
+          const line = match.stat_lines?.[c.key];
+          return (
+            <div key={c.key} className="m-cell">
+              <span className={`m-v${statSideStepClass(c.key, "home", line?.home, line?.away)}`}>
+                {fmtCell(line?.home, 0)}
+              </span>
+              <span className={`m-v${statSideStepClass(c.key, "away", line?.home, line?.away)}`}>
+                {fmtCell(line?.away, 0)}
+              </span>
+            </div>
+          );
+        })}
+        <div className="m-cell m-tone-tslg">
+          <span className={`m-v${t.home != null && t.home < TSLG_COOLDOWN ? " is-trig" : ""}`}>
+            {t.home == null ? "—" : `${t.home}′`}
+          </span>
+          <span className={`m-v${t.away != null && t.away < TSLG_COOLDOWN ? " is-trig" : ""}`}>
+            {t.away == null ? "—" : `${t.away}′`}
+          </span>
+        </div>
+      </>
+    );
+  }
+  const odds = match.odds;
+  const kickoff = odds?.kickoff ?? (hasOddsLine(odds) ? odds : null);
+  const live = odds?.live ?? null;
+  const price = (v?: number | null) => (v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(2));
+  return (
+    <>
+      {(["home", "draw", "away"] as const).map((k) => (
+        <div key={k} className="m-cell">
+          <span className="m-v">{price(live?.[k])}</span>
+          <span className="m-v is-ko">{price(kickoff?.[k])}</span>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function MobileRow({
+  match,
+  lens,
+  fav,
+  favLast,
+  flash,
+  onOpen,
+}: {
+  match: LiveMatch;
+  lens: MobileLens;
+  fav: boolean;
+  favLast: boolean;
+  flash?: GoalFlash | null;
+  onOpen: () => void;
+}) {
+  const hot = Boolean(match.active_strategies?.length);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={[
+        "m-grid m-row",
+        `is-${lens}`,
+        hot ? "is-hot" : "",
+        fav ? "is-fav" : "",
+        favLast ? "is-fav-last" : "",
+        flash ? "is-goal" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      <div className="m-match">
+        <div className="m-when">
+          <MobileFlag match={match} />
+          <span className="m-min">{mobileClock(match)}</span>
+        </div>
+        <div className="m-score">
+          <MobileScore match={match} flash={flash} />
+        </div>
+        <div className="m-teams">
+          <span>{match.home_team}</span>
+          <span>{match.away_team}</span>
+        </div>
+      </div>
+      <MobileLensCells match={match} lens={lens} />
+    </div>
+  );
+}
+
+function MobileCard({
+  match,
+  fav,
+  flash,
+  onToggleFav,
+  onCollapse,
+  onOpenFull,
+}: {
+  match: LiveMatch;
+  fav: boolean;
+  flash?: GoalFlash | null;
+  onToggleFav: (e: MouseEvent) => void;
+  onCollapse: () => void;
+  onOpenFull: () => void;
+}) {
+  const [tipKey, setTipKey] = useState<string | null>(null);
+  const homeLogo = match.home_team_logo || apifootballBadgeUrl(match.home_team_id, match.home_team);
+  const awayLogo = match.away_team_logo || apifootballBadgeUrl(match.away_team_id, match.away_team);
+  const k = mobileK(match);
+  const t = tslgMinutes(match);
+  const odds = match.odds;
+  const kickoff = odds?.kickoff ?? (hasOddsLine(odds) ? odds : null);
+  const live = odds?.live ?? null;
+  const line = (l?: OddsLine | null) =>
+    [l?.home, l?.draw, l?.away]
+      .map((v) => (v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(2)))
+      .join(" · ");
+  const stat = (key: string, side: BoardSide) => statLineValue(match, key, side) ?? 0;
+  const tip = STRAT_COLS.find((c) => c.key === tipKey);
+  return (
+    <article className={`m-card${fav ? " is-fav" : ""}${flash ? " is-goal" : ""}`}>
+      <div className="m-card-head" role="button" tabIndex={0} onClick={onCollapse}>
+        <div className="m-card-top">
+          <MobileFlag match={match} />
+          <span className="m-card-league">{match.league || "—"}</span>
+          <span className="m-card-min">{mobileClock(match)}</span>
+          <button
+            type="button"
+            className={`m-card-star${fav ? " on" : ""}`}
+            aria-label={fav ? "Unpin" : "Pin"}
+            onClick={onToggleFav}
+          >
+            {fav ? "★" : "☆"}
+          </button>
+        </div>
+        <div className="m-card-mid">
+          <div className="m-card-teams">
+            <div>
+              <TeamBadge name={match.home_team} src={homeLogo} />
+              <span>{match.home_team}</span>
+            </div>
+            <div>
+              <TeamBadge name={match.away_team} src={awayLogo} />
+              <span>{match.away_team}</span>
+            </div>
+          </div>
+          <div className="m-card-score">
+            <MobileScore match={match} flash={flash} />
+          </div>
+          <div className="m-card-k">
+            <b className={k.cls}>{k.text}</b>
+            <span>K·IDX</span>
+          </div>
+        </div>
+      </div>
+      <div className="m-card-strip">
+        {STRAT_COLS.map((c) => {
+          const home = mobileStrat(match, c, "home");
+          const away = mobileStrat(match, c, "away");
+          return (
+            <button
+              key={c.key}
+              type="button"
+              className={`m-tone-${c.tone}${tipKey === c.key ? " is-open" : ""}`}
+              onClick={() => setTipKey((cur) => (cur === c.key ? null : c.key))}
+            >
+              <span className="m-card-lab">{c.label}</span>
+              <span className="m-card-hv">
+                <span className={`m-v${home.cls}`}>{home.text}</span>
+                <i>·</i>
+                <span className={`m-v${away.cls}`}>{away.text}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {tip ? (
+        <p className={`m-card-tip m-tone-${tip.tone}`}>
+          <b>{tip.name}.</b> {tip.tip}
+        </p>
+      ) : null}
+      <div className="m-card-body">
+        {MOBILE_CARD_BARS.map((b) => {
+          const h = stat(b.key, "home");
+          const a = stat(b.key, "away");
+          const max = Math.max(h, a, 1);
+          return (
+            <div key={b.key} className="m-bar">
+              <span className="m-bar-n is-home">{h}</span>
+              <span className="m-bar-track is-home">
+                <i style={{ width: `${(h / max) * 100}%` }} />
+              </span>
+              <span className="m-bar-label">{b.label}</span>
+              <span className="m-bar-track is-away">
+                <i style={{ width: `${(a / max) * 100}%` }} />
+              </span>
+              <span className="m-bar-n is-away">{a}</span>
+            </div>
+          );
+        })}
+        <div className="m-card-facts">
+          <span>
+            KO <b>{line(kickoff)}</b>
+          </span>
+          <span>
+            LIVE <b>{line(live)}</b>
+          </span>
+        </div>
+        <div className="m-card-facts is-tight">
+          <span>
+            TSLG <b>{t.home == null ? "—" : `${t.home}′`}</b> · <b>{t.away == null ? "—" : `${t.away}′`}</b>
+          </span>
+          <span>
+            Cards <b>{stat("yellow_cards", "home")}–{stat("yellow_cards", "away")}</b> · Red{" "}
+            <b>{stat("red_cards", "home")}–{stat("red_cards", "away")}</b>
+          </span>
+        </div>
+        <button type="button" className="m-card-open" onClick={onOpenFull}>
+          Open full match · timeline · H2H ›
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function MobileFilterSheet({
+  filters,
+  shown,
+  total,
+  sortKey,
+  onSort,
+  onClose,
+}: {
+  filters: MobileFilter[];
+  shown: number;
+  total: number;
+  sortKey: SortKey;
+  onSort: (k: SortKey) => void;
+  onClose: () => void;
+}) {
+  const group = (g: MobileFilter["group"]) =>
+    filters
+      .filter((f) => f.group === g)
+      .map((f) => (
+        <label key={f.label} className="m-toggle">
+          <span className="m-toggle-label">
+            {f.label}
+            {f.hint ? <small>{f.hint}</small> : null}
+          </span>
+          <input type="checkbox" checked={f.on} onChange={(e) => f.set(e.target.checked)} />
+          <span className="m-switch" aria-hidden />
+        </label>
+      ));
+  return (
+    <div className="m-sheet" role="dialog" aria-label="Filters">
+      <header className="m-sheet-head">
+        <h3>Filters</h3>
+        <button type="button" aria-label="Close filters" onClick={onClose}>
+          ✕
+        </button>
+      </header>
+      <div className="m-sheet-body">
+        <div className="m-funnel">
+          <span className="m-funnel-n">{shown}</span>
+          <span className="m-funnel-of">
+            <b>of {total} live matches</b>
+            <br />
+            make it through your filters
+          </span>
+        </div>
+        <h5>Show only</h5>
+        {group("show")}
+        <h5>Hide</h5>
+        {group("hide")}
+        <h5>Sort by</h5>
+        <div className="m-sort-chips">
+          {MOBILE_SORTS.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              className={s.key === sortKey ? "on" : undefined}
+              onClick={() => onSort(s.key)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="m-sheet-cta">
+        <button type="button" onClick={onClose}>
+          Show {shown} {shown === 1 ? "match" : "matches"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const MOBILE_NAV_ICONS: Record<MobileTab, ReactElement> = {
+  live: (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <circle cx="12" cy="12" r="2.2" />
+      <path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14" />
+    </svg>
+  ),
+  signals: (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <path d="M13 3 5 13h6l-1 8 8-10h-6z" />
+    </svg>
+  ),
+  pinned: (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.8z" />
+    </svg>
+  ),
+  join: (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <path d="M21 4 3 11l6 2.5L11.5 20 21 4zM9 13.5 21 4" />
+    </svg>
+  ),
+};
+
+function MobileBoard({
+  display,
+  liveTotal,
+  favorites,
+  toggleFav,
+  sortKey,
+  sortDir,
+  onSort,
+  filters,
+  search,
+  setSearch,
+  alerts,
+  oddsByMatch,
+  goalFlashes,
+  onOpenMatch,
+  feed,
+  presence,
+  visitor,
+}: {
+  display: LiveMatch[];
+  liveTotal: number;
+  favorites: Set<string>;
+  toggleFav: (id: string, e: MouseEvent) => void;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSort: (k: SortKey) => void;
+  filters: MobileFilter[];
+  search: string;
+  setSearch: (next: string) => void;
+  alerts: RecentAlert[][];
+  oddsByMatch: Map<string, OddsFlat | null | undefined>;
+  goalFlashes: Record<string, GoalFlash>;
+  onOpenMatch: (id: string) => void;
+  feed: { state: string; copy: { label: string; title: string; body: string } };
+  presence: Presence | null;
+  visitor: string;
+}) {
+  const [tab, setTab] = useState<MobileTab>("live");
+  const [lens, setLens] = useState<MobileLens>("signals");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(search.length > 0);
+
+  const rows = tab === "pinned" ? display.filter((m) => favorites.has(m.match_id)) : display;
+  const pinnedCount = display.filter((m) => favorites.has(m.match_id)).length;
+  const activeFilters = filters.filter((f) => f.on).length;
+  const now = Date.now();
+  const flashOf = (id: string) => {
+    const flash = goalFlashes[id];
+    return flash && flash.until > now ? flash : null;
+  };
+  const lead = alerts[0];
+  const leadLine = lead ? [...lead].sort((a, b) => (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0))[0] : null;
+
+  const selectTab = (next: MobileTab) => {
+    setTab(next);
+    window.scrollTo({ top: 0 });
+  };
+
+  return (
+    <div className="m-shell">
+      <header className="m-top">
+        <img className="m-mark" src={kalchasMark} alt="" width={28} height={28} />
+        <span className="m-brand">Kalchas</span>
+        <span className={`m-feed is-${feed.state}`}>
+          <i />
+          {feed.copy.label}
+        </span>
+        <span className="m-top-gap" />
+        {presence && presence.count > 0 ? (
+          <span className="m-here">{presence.count} here</span>
+        ) : null}
+        <a
+          className="m-join"
+          href={TELEGRAM_FREE_JOIN_URL}
+          target="_blank"
+          rel="noreferrer"
+          onClick={() => logJoinClick(visitor, "tg_free")}
+        >
+          Join alerts
+        </a>
+      </header>
+
+      {feed.state !== "live" ? (
+        <section className="feed-state m-feed-state" aria-live="polite">
+          <span className="feed-dot" />
+          <div>
+            <strong>{feed.copy.title}</strong>
+            <p>{feed.copy.body}</p>
+          </div>
+        </section>
+      ) : null}
+
+      {tab === "live" || tab === "pinned" ? (
+        <>
+          {tab === "live" && lead && leadLine ? (
+            <button type="button" className="m-signal-strip" onClick={() => selectTab("signals")}>
+              <span className="m-signal-kicker">● Signal</span>
+              <span className="m-signal-text">
+                <b>
+                  {lead[0].home_team || "Home"} v {lead[0].away_team || "Away"}
+                </b>{" "}
+                · {STRATEGY_CARD[leadLine.strategy] || leadLine.strategy} {fmtAlertValue(leadLine)}
+                {agoText(leadLine.created_at) ? ` · ${agoText(leadLine.created_at)}` : ""}
+              </span>
+              <span className="m-signal-more">{alerts.length} ›</span>
+            </button>
+          ) : null}
+
+          <div className="m-sticky">
+            <div className="m-controls">
+              <div className="m-lens" role="tablist" aria-label="Columns">
+                {(["signals", "stats", "odds"] as const).map((l) => (
+                  <button
+                    key={l}
+                    type="button"
+                    role="tab"
+                    aria-selected={lens === l}
+                    className={lens === l ? "on" : undefined}
+                    onClick={() => setLens(l)}
+                  >
+                    {l === "signals" ? "Signals" : l === "stats" ? "Stats" : "Odds"}
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="m-icon-btn" aria-label="Filters" onClick={() => setSheetOpen(true)}>
+                <svg viewBox="0 0 24 24" aria-hidden>
+                  <path d="M4 5h16l-6 7.5V19l-4-2v-4.5z" />
+                </svg>
+                {activeFilters ? <span className="m-badge">{activeFilters}</span> : null}
+              </button>
+              <button
+                type="button"
+                className={`m-icon-btn${searchOpen || search ? " is-on" : ""}`}
+                aria-label="Search team or league"
+                onClick={() => {
+                  if (searchOpen && search) setSearch("");
+                  setSearchOpen((o) => !o);
+                }}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden>
+                  <circle cx="11" cy="11" r="6" />
+                  <path d="m20 20-4.2-4.2" />
+                </svg>
+              </button>
+            </div>
+            {searchOpen ? (
+              <div className="m-search">
+                <input
+                  type="search"
+                  value={search}
+                  autoFocus
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Team or league"
+                  aria-label="Search team or league"
+                />
+              </div>
+            ) : null}
+            <MobileLensHead lens={lens} sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
+          </div>
+
+          <div className="m-board">
+            {tab === "live" && pinnedCount > 0 ? (
+              <div className="m-pin-cap">
+                ★ Pinned · {pinnedCount} <em>stay on top while live</em>
+              </div>
+            ) : null}
+            {rows.map((m, idx) => {
+              const fav = favorites.has(m.match_id);
+              const favLast = fav && !favorites.has(rows[idx + 1]?.match_id ?? "");
+              const flash = flashOf(m.match_id);
+              return m.match_id === expandedId ? (
+                <MobileCard
+                  key={m.match_id}
+                  match={m}
+                  fav={fav}
+                  flash={flash}
+                  onToggleFav={(e) => toggleFav(m.match_id, e)}
+                  onCollapse={() => setExpandedId(null)}
+                  onOpenFull={() => onOpenMatch(m.match_id)}
+                />
+              ) : (
+                <MobileRow
+                  key={m.match_id}
+                  match={m}
+                  lens={lens}
+                  fav={fav}
+                  favLast={favLast}
+                  flash={flash}
+                  onOpen={() => setExpandedId(m.match_id)}
+                />
+              );
+            })}
+            {rows.length === 0 ? (
+              <p className="m-empty">
+                {tab === "pinned"
+                  ? "Nothing pinned. Open a match and tap ☆ to keep it on top."
+                  : liveTotal === 0
+                    ? "No live matches are currently available."
+                    : "No matches satisfy the selected filters."}
+              </p>
+            ) : null}
+          </div>
+        </>
+      ) : null}
+
+      {tab === "signals" ? (
+        <section className="m-panel">
+          <h2 className="m-panel-title">Recent signals</h2>
+          {alerts.length ? (
+            <div className="signal-list m-signal-list">
+              {alerts.map((group) => (
+                <SignalRow
+                  key={group[0].match_id}
+                  alerts={group}
+                  onOpen={onOpenMatch}
+                  liveOdds={oddsByMatch.get(group[0].match_id)}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="m-empty">
+              No signals yet. Triggered strategies appear here as matches develop.
+            </p>
+          )}
+        </section>
+      ) : null}
+
+      {tab === "join" ? (
+        <section className="m-panel m-join-panel">
+          <img className="m-join-mark" src={kalchasMark} alt="" width={72} height={72} />
+          <p className="brand">Kalchas</p>
+          <h1>Live Match Intelligence</h1>
+          <p className="m-join-lede">
+            Live board of pressure and goal signals, free on this site. Free Telegram: Mon-Thu GMT,
+            one alert per hour. Every fire goes to the full feed.
+          </p>
+          <div className="m-join-actions">
+            <a
+              className="hero-telegram"
+              href={TELEGRAM_FREE_JOIN_URL}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => logJoinClick(visitor, "tg_free")}
+            >
+              Join free alerts
+              <span>Mon-Thu GMT, 1 per hour</span>
+            </a>
+            <a
+              className="hero-telegram hero-telegram-paid"
+              href={TELEGRAM_PAID_JOIN_URL}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => logJoinClick(visitor, "tg_paid")}
+            >
+              Join full feed
+              <span>€2.99 a week</span>
+            </a>
+          </div>
+        </section>
+      ) : null}
+
+      <nav className="m-nav" aria-label="Board sections">
+        {(
+          [
+            ["live", "Live", display.length],
+            ["signals", "Signals", alerts.length],
+            ["pinned", "Pinned", pinnedCount],
+            ["join", "Join", null],
+          ] as const
+        ).map(([key, label, count]) => (
+          <button
+            key={key}
+            type="button"
+            className={`${tab === key ? "on" : ""}${key === "join" ? " is-join" : ""}`}
+            aria-current={tab === key ? "page" : undefined}
+            onClick={() => selectTab(key)}
+          >
+            {MOBILE_NAV_ICONS[key]}
+            <span>
+              {label}
+              {count ? <span className="m-nav-n">{count}</span> : null}
+            </span>
+          </button>
+        ))}
+      </nav>
+
+      {sheetOpen ? (
+        <MobileFilterSheet
+          filters={filters}
+          shown={display.length}
+          total={liveTotal}
+          sortKey={sortKey}
+          onSort={onSort}
+          onClose={() => setSheetOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 export function App() {
+  const isPhone = useMediaQuery(PHONE_QUERY);
   const [matches, setMatches] = useState<LiveMatch[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
@@ -2125,6 +2937,45 @@ export function App() {
       return next;
     });
   };
+
+  if (isPhone) {
+    const liveTotal = matches.filter(
+      (m) => !FINISHED_STATUS.has((m.status_short || "").toUpperCase()),
+    ).length;
+    return (
+      <>
+        <MobileBoard
+          display={display}
+          liveTotal={liveTotal}
+          favorites={favorites}
+          toggleFav={toggleFav}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={onSort}
+          filters={[
+            { label: "Triggered", hint: "A signal has fired on this match", group: "show", on: triggeredOnly, set: setTriggeredOnly },
+            { label: "Pinned", hint: "Your starred matches", group: "show", on: pinnedOnly, set: setPinnedOnly },
+            { label: "Sweet spot", hint: "Inside the alert windows", group: "show", on: sweetSpotOnly, set: setSweetSpotOnly },
+            { label: "Halftimers", group: "hide", on: hideHalfTimers, set: setHideHalfTimers },
+            { label: "Statless", hint: "No live stats from the provider", group: "hide", on: hideStatless, set: setHideStatless },
+            { label: `TSLG under ${TSLG_COOLDOWN}′`, hint: "Alerts stay quiet after a goal", group: "hide", on: hideTslgUnder10, set: setHideTslgUnder10 },
+          ]}
+          search={search}
+          setSearch={setSearch}
+          alerts={displayedAlerts}
+          oddsByMatch={oddsByMatch}
+          goalFlashes={goalFlashes}
+          onOpenMatch={setSelectedId}
+          feed={feed}
+          presence={presence}
+          visitor={visitor}
+        />
+        {selected ? (
+          <MatchOverlay match={selected} onClose={() => setSelectedId(null)} />
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <div className="shell">
