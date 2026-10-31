@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AdminConditions, type ConditionCatalog, type ExtraCondition } from "./AdminConditions";
+import { RangePicker, browserZone, defaultRange, fmtWindow, isoDay, pct, rangeQuery, rangeValid, type Range } from "./AdminKit";
+import { AdminOverview, type DiscordState } from "./AdminOverview";
 import { AdminPreview } from "./AdminPreview";
-import { AdminResults } from "./AdminResults";
+import { AdminResults, type ResultsInsights, type StrategyMeta } from "./AdminResults";
 import { AdminTips } from "./AdminTips";
 import { AdminVisitors } from "./AdminVisitors";
 
@@ -57,29 +59,54 @@ const DEFAULT_SWEET_SPOT: SweetSpotConfig = {
   include_injury_time: false,
 };
 
-type DiscordConfig = {
-  free_channel_id: string | null;
-  paid_channel_id: string | null;
-  free_enabled: boolean;
-  paid_enabled: boolean;
-};
-
-const DEFAULT_DISCORD: DiscordConfig = {
+const DEFAULT_DISCORD: DiscordState = {
   free_channel_id: null,
   paid_channel_id: null,
   free_enabled: true,
   paid_enabled: true,
 };
 
-type Tab =
-  | "thresholds"
-  | "rules"
-  | "weights"
-  | "results"
-  | "tips"
-  | "various"
-  | "discord"
-  | "visitors";
+type Page = "overview" | "results" | "visitors" | "strategies" | "board" | "tips" | "discord";
+
+const PAGES: Record<Page, { group: string; title: string }> = {
+  overview: { group: "Today", title: "Overview" },
+  results: { group: "Insights", title: "Results" },
+  visitors: { group: "Insights", title: "Visitors" },
+  strategies: { group: "Strategy", title: "Strategies" },
+  board: { group: "Strategy", title: "Board filters" },
+  tips: { group: "Distribution", title: "Tips feed" },
+  discord: { group: "Distribution", title: "Discord" },
+};
+
+// The fields each save endpoint owns; anything here that differs from what
+// was loaded counts as an unsaved change.
+const SETTING_FIELDS = [
+  "threshold",
+  "cooldown_minutes",
+  "cooldown_bypass_delta",
+  "max_fire_minute",
+  "max_fire_minute_1h",
+  "enabled",
+  "success_window_minutes",
+  "expiration_buffer_minutes",
+  "infinite_ttl",
+  "team_specific",
+  "expire_at_half_end",
+] as const;
+
+type SettingField = (typeof SETTING_FIELDS)[number];
+type SettingSnapshot = Record<number, Pick<StrategyConfig, SettingField>>;
+
+function snapshot(rows: StrategyConfig[]): SettingSnapshot {
+  return Object.fromEntries(
+    rows.map((row) => [row.slot, Object.fromEntries(SETTING_FIELDS.map((f) => [f, row[f]]))]),
+  ) as SettingSnapshot;
+}
+
+function pageFromHash(): Page {
+  const raw = window.location.hash.replace(/^#/, "").split(":")[0];
+  return raw in PAGES ? (raw as Page) : "overview";
+}
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -95,19 +122,63 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
+const ICONS: Record<Page, ReactNode> = {
+  overview: (
+    <>
+      <rect x="2" y="2" width="5" height="5" rx="1" />
+      <rect x="9" y="2" width="5" height="5" rx="1" />
+      <rect x="2" y="9" width="5" height="5" rx="1" />
+      <rect x="9" y="9" width="5" height="5" rx="1" />
+    </>
+  ),
+  results: <path d="M2 13l4-5 3 3 5-7" />,
+  visitors: (
+    <>
+      <circle cx="6" cy="5.5" r="2.5" />
+      <path d="M1.5 14c.6-2.6 2.3-4 4.5-4s3.9 1.4 4.5 4M11 3.2a2.4 2.4 0 010 4.6M12.5 10.3c1.1.6 1.8 1.8 2 3.7" />
+    </>
+  ),
+  strategies: <path d="M3 4h10M3 8h10M3 12h10M6 2.6v2.8M10 6.6v2.8M5 10.6v2.8" />,
+  board: (
+    <>
+      <rect x="2" y="3" width="12" height="10" rx="1.5" />
+      <path d="M2 6.5h12M6 6.5V13" />
+    </>
+  ),
+  tips: <path d="M3 3h10v7H7l-3 3v-3H3z" />,
+  discord: <path d="M2 8h3l2-5 2 10 2-5h3" />,
+};
+
+function NavItem({ page, on, onClick, badge }: { page: Page; on: boolean; onClick: () => void; badge?: ReactNode }) {
+  return (
+    <button type="button" className={`adm-nav-item ${on ? "is-on" : ""}`} onClick={onClick}>
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+        {ICONS[page]}
+      </svg>
+      {PAGES[page].title}
+      {badge ? <span className="adm-nav-badge">{badge}</span> : null}
+    </button>
+  );
+}
+
 export function AdminApp() {
+  const zone = useMemo(browserZone, []);
   const [configured, setConfigured] = useState(true);
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
-  const [tab, setTab] = useState<Tab>("thresholds");
+  const [page, setPage] = useState<Page>(pageFromHash);
   const [items, setItems] = useState<StrategyConfig[]>([]);
+  const [saved, setSaved] = useState<SettingSnapshot>({});
   const [strategyKey, setStrategyKey] = useState("rule_of_three");
-  const [resultStrategies, setResultStrategies] = useState<string[]>([]);
+  const [resultStrategy, setResultStrategy] = useState<string | null>(null);
+  const [range, setRange] = useState<Range>(() => defaultRange("1"));
   const [presetName, setPresetName] = useState("");
   const [busy, setBusy] = useState(false);
   const [various, setVarious] = useState<SweetSpotConfig>(DEFAULT_SWEET_SPOT);
-  const [discord, setDiscord] = useState<DiscordConfig>(DEFAULT_DISCORD);
+  const [savedVarious, setSavedVarious] = useState<SweetSpotConfig>(DEFAULT_SWEET_SPOT);
+  const [discord, setDiscord] = useState<DiscordState>(DEFAULT_DISCORD);
+  const [savedDiscord, setSavedDiscord] = useState<DiscordState>(DEFAULT_DISCORD);
   const [catalog, setCatalog] = useState<ConditionCatalog>({
     scopes: [],
     metrics: [],
@@ -126,17 +197,20 @@ export function AdminApp() {
     const cfg = await api<{
       strategies: StrategyConfig[];
       various?: SweetSpotConfig;
-      discord?: DiscordConfig;
+      discord?: DiscordState;
       condition_catalog?: ConditionCatalog;
     }>("/api/admin/config");
-    setItems(
-      cfg.strategies.map((row) => ({
-        ...row,
-        conditions: row.conditions || [],
-      })),
-    );
-    if (cfg.various) setVarious(cfg.various);
-    if (cfg.discord) setDiscord(cfg.discord);
+    const rows = cfg.strategies.map((row) => ({ ...row, conditions: row.conditions || [] }));
+    setItems(rows);
+    setSaved(snapshot(rows));
+    if (cfg.various) {
+      setVarious(cfg.various);
+      setSavedVarious(cfg.various);
+    }
+    if (cfg.discord) {
+      setDiscord(cfg.discord);
+      setSavedDiscord(cfg.discord);
+    }
     if (cfg.condition_catalog) setCatalog(cfg.condition_catalog);
     setStrategyKey((current) =>
       cfg.strategies.some((s) => s.key === current) ? current : cfg.strategies[0]?.key || current,
@@ -146,6 +220,28 @@ export function AdminApp() {
   useEffect(() => {
     void load().catch((err: Error) => setStatus(err.message));
   }, [load]);
+
+  useEffect(() => {
+    const onHash = () => setPage(pageFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  useEffect(() => {
+    if (!status) return;
+    const timer = window.setTimeout(() => setStatus(""), 6000);
+    return () => window.clearTimeout(timer);
+  }, [status]);
+
+  function go(spec: string) {
+    const [next, key] = spec.split(":") as [Page, string | undefined];
+    if (!(next in PAGES)) return;
+    if (next === "results") setResultStrategy(key || null);
+    if (next === "strategies" && key) setStrategyKey(key);
+    setPage(next);
+    window.history.replaceState(null, "", `#${next}`);
+    window.scrollTo(0, 0);
+  }
 
   async function login(event: FormEvent) {
     event.preventDefault();
@@ -162,6 +258,11 @@ export function AdminApp() {
     }
   }
 
+  async function logout() {
+    await api("/api/admin/logout", { method: "POST" }).catch(() => undefined);
+    setAuthed(false);
+  }
+
   function patch(slot: number, fields: Partial<StrategyConfig>) {
     setItems((rows) => rows.map((row) => (row.slot === slot ? { ...row, ...fields } : row)));
   }
@@ -172,16 +273,15 @@ export function AdminApp() {
         row.key === strategy
           ? {
               ...row,
-              weights: row.weights.map((item) =>
-                item.key === key ? { ...item, current: value } : item,
-              ),
+              weights: row.weights.map((item) => (item.key === key ? { ...item, current: value } : item)),
             }
           : row,
       ),
     );
   }
 
-  async function saveThresholds() {
+  // Thresholds and confirmation rules are two endpoints but one save here.
+  async function saveStrategies() {
     setBusy(true);
     setStatus("");
     try {
@@ -199,53 +299,6 @@ export function AdminApp() {
           })),
         }),
       });
-      await load();
-      setStatus("Thresholds saved. Scanner picks them up within ~15s.");
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : "save failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveVarious() {
-    setBusy(true);
-    setStatus("");
-    try {
-      const saved = await api<{ ok: boolean; various: SweetSpotConfig }>("/api/admin/various", {
-        method: "PUT",
-        body: JSON.stringify(various),
-      });
-      if (saved.various) setVarious(saved.various);
-      setStatus("Various settings saved. The live board picks them up on the next refresh.");
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : "save failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveDiscord() {
-    setBusy(true);
-    setStatus("");
-    try {
-      const saved = await api<{ ok: boolean; discord: DiscordConfig }>("/api/admin/discord", {
-        method: "PUT",
-        body: JSON.stringify(discord),
-      });
-      if (saved.discord) setDiscord(saved.discord);
-      setStatus("Discord settings saved. The bot picks them up within a few seconds.");
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : "save failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveRules() {
-    setBusy(true);
-    setStatus("");
-    try {
       await api("/api/admin/rules", {
         method: "PUT",
         body: JSON.stringify({
@@ -261,7 +314,51 @@ export function AdminApp() {
         }),
       });
       await load();
-      setStatus("Confirmation rules saved.");
+      setStatus("Saved. The scanner picks it up within ~15s.");
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function discardStrategies() {
+    setItems((rows) => rows.map((row) => ({ ...row, ...(saved[row.slot] || {}) })));
+  }
+
+  async function saveVarious() {
+    setBusy(true);
+    setStatus("");
+    try {
+      const body = await api<{ ok: boolean; various: SweetSpotConfig }>("/api/admin/various", {
+        method: "PUT",
+        body: JSON.stringify(various),
+      });
+      if (body.various) {
+        setVarious(body.various);
+        setSavedVarious(body.various);
+      }
+      setStatus("Board filters saved. The live board picks them up on the next refresh.");
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveDiscord() {
+    setBusy(true);
+    setStatus("");
+    try {
+      const body = await api<{ ok: boolean; discord: DiscordState }>("/api/admin/discord", {
+        method: "PUT",
+        body: JSON.stringify(discord),
+      });
+      if (body.discord) {
+        setDiscord(body.discord);
+        setSavedDiscord(body.discord);
+      }
+      setStatus("Discord settings saved. The bot picks them up within a few seconds.");
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "save failed");
     } finally {
@@ -274,30 +371,25 @@ export function AdminApp() {
       method: "PUT",
       body: JSON.stringify({ strategy, key, value }),
     });
-    setItems((rows) =>
-      rows.map((row) => (row.key === strategy ? { ...row, weights: body.weights } : row)),
-    );
+    setItems((rows) => rows.map((row) => (row.key === strategy ? { ...row, weights: body.weights } : row)));
   }
 
   async function applyPreset(strategy: string, preset: string) {
-      const body = await api<{ weights: WeightRow[]; conditions?: ExtraCondition[] }>(
-        "/api/admin/weights/preset",
-        {
-          method: "POST",
-          body: JSON.stringify({ strategy, preset }),
-        },
-      );
-      setItems((rows) =>
-        rows.map((row) =>
-          row.key === strategy
-            ? {
-                ...row,
-                weights: body.weights,
-                conditions: body.conditions != null ? body.conditions : row.conditions,
-              }
-            : row,
-        ),
-      );
+    const body = await api<{ weights: WeightRow[]; conditions?: ExtraCondition[] }>("/api/admin/weights/preset", {
+      method: "POST",
+      body: JSON.stringify({ strategy, preset }),
+    });
+    setItems((rows) =>
+      rows.map((row) =>
+        row.key === strategy
+          ? {
+              ...row,
+              weights: body.weights,
+              conditions: body.conditions != null ? body.conditions : row.conditions,
+            }
+          : row,
+      ),
+    );
     setStatus(`Applied ${preset}.`);
   }
 
@@ -352,11 +444,7 @@ export function AdminApp() {
         method: "PUT",
         body: JSON.stringify({ strategy, conditions: rows }),
       });
-      setItems((current) =>
-        current.map((row) =>
-          row.key === strategy ? { ...row, conditions: body.conditions || rows } : row,
-        ),
-      );
+      setItems((list) => list.map((row) => (row.key === strategy ? { ...row, conditions: body.conditions || rows } : row)));
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "conditions save failed");
     }
@@ -375,32 +463,51 @@ export function AdminApp() {
       method: "POST",
       body: JSON.stringify({ strategy }),
     });
-    setItems((rows) =>
-      rows.map((row) => (row.key === strategy ? { ...row, weights: body.weights } : row)),
-    );
-    setStatus("Reset to defaults.");
+    setItems((rows) => rows.map((row) => (row.key === strategy ? { ...row, weights: body.weights } : row)));
+    setStatus("Formula reset to defaults.");
   }
 
-  const current = useMemo(
-    () => items.find((row) => row.key === strategyKey) || items[0],
-    [items, strategyKey],
+  const current = useMemo(() => items.find((row) => row.key === strategyKey) || items[0], [items, strategyKey]);
+  const meta: StrategyMeta[] = useMemo(
+    () => items.map((row) => ({ key: row.key, short: row.short, name: row.name, enabled: row.enabled })),
+    [items],
   );
+  const dirty = useMemo(() => {
+    const out: { slot: number; field: SettingField }[] = [];
+    for (const row of items) {
+      const was = saved[row.slot];
+      if (!was) continue;
+      for (const field of SETTING_FIELDS) if (row[field] !== was[field]) out.push({ slot: row.slot, field });
+    }
+    return out;
+  }, [items, saved]);
+
+  useEffect(() => {
+    if (!dirty.length) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty.length]);
 
   if (!configured) {
     return (
-      <div className="admin-login">
+      <div className="adm-login">
         <h1>Admin is off</h1>
-        <p>Set the <code>ADMIN_PASSWORD</code> variable on the API service, then reload.</p>
+        <p>
+          Set the <code>ADMIN_PASSWORD</code> variable on the API service, then reload.
+        </p>
       </div>
     );
   }
 
   if (!authed) {
     return (
-      <form className="admin-login" onSubmit={(event) => void login(event)}>
-        <p className="admin-kicker">Kalchas</p>
+      <form className="adm-login" onSubmit={(event) => void login(event)}>
+        <p className="adm-kicker">Kalchas</p>
         <h1>Admin</h1>
-        <p>Same password as 2.2 - the <code>ADMIN_PASSWORD</code> environment variable.</p>
+        <p>
+          The <code>ADMIN_PASSWORD</code> environment variable.
+        </p>
         <label>
           Password
           <input
@@ -410,646 +517,681 @@ export function AdminApp() {
             onChange={(event) => setPassword(event.target.value)}
           />
         </label>
-        <button type="submit" disabled={busy || !password}>
+        <button type="submit" className="kit-btn is-primary" disabled={busy || !password}>
           Enter
         </button>
-        {status ? <p className="admin-status">{status}</p> : null}
+        {status ? <p className="kit-error">{status}</p> : null}
       </form>
     );
   }
 
+  const insightsPage = page === "results" || page === "visitors";
+
   return (
-    <div className="admin-shell">
-      <aside className="admin-side">
-        <div className="admin-side-title">Admin</div>
-        <a href="/" className="admin-back">
-          ← Live board
-        </a>
-        <button
-          type="button"
-          className={tab === "thresholds" ? "is-on" : ""}
-          onClick={() => setTab("thresholds")}
-        >
-          Thresholds
-        </button>
-        <button
-          type="button"
-          className={tab === "rules" ? "is-on" : ""}
-          onClick={() => setTab("rules")}
-        >
-          Confirmation
-        </button>
-        <button
-          type="button"
-          className={tab === "weights" ? "is-on" : ""}
-          onClick={() => setTab("weights")}
-        >
-          Formula weights
-        </button>
-        <button
-          type="button"
-          className={tab === "results" ? "is-on" : ""}
-          onClick={() => setTab("results")}
-        >
-          Results
-        </button>
-        <button
-          type="button"
-          className={tab === "tips" ? "is-on" : ""}
-          onClick={() => setTab("tips")}
-        >
-          Tips feed
-        </button>
-        <button
-          type="button"
-          className={tab === "various" ? "is-on" : ""}
-          onClick={() => setTab("various")}
-        >
-          Various
-        </button>
-        <button
-          type="button"
-          className={tab === "discord" ? "is-on" : ""}
-          onClick={() => setTab("discord")}
-        >
-          Discord
-        </button>
-        <button
-          type="button"
-          className={tab === "visitors" ? "is-on" : ""}
-          onClick={() => setTab("visitors")}
-        >
-          Visitors
-        </button>
+    <div className="adm-shell">
+      <aside className="adm-side">
+        <div className="adm-brand">
+          <b>Kalchas</b>
+          <span>Admin</span>
+        </div>
+        <NavItem page="overview" on={page === "overview"} onClick={() => go("overview")} />
+        <div className="adm-nav-group">Insights</div>
+        <NavItem page="results" on={page === "results"} onClick={() => go("results")} />
+        <NavItem page="visitors" on={page === "visitors"} onClick={() => go("visitors")} />
+        <div className="adm-nav-group">Strategy</div>
+        <NavItem
+          page="strategies"
+          on={page === "strategies"}
+          onClick={() => go("strategies")}
+          badge={dirty.length ? <span className="adm-dot-warn" title="Unsaved changes" /> : null}
+        />
+        <NavItem page="board" on={page === "board"} onClick={() => go("board")} />
+        <div className="adm-nav-group">Distribution</div>
+        <NavItem page="tips" on={page === "tips"} onClick={() => go("tips")} />
+        <NavItem page="discord" on={page === "discord"} onClick={() => go("discord")} />
+        <div className="adm-side-foot">
+          <a href="/" className="adm-nav-item">
+            ← Live board
+          </a>
+          <button type="button" className="adm-nav-item" onClick={() => void logout()}>
+            Log out
+          </button>
+        </div>
       </aside>
-      <main className="admin-main">
-        {tab === "thresholds" ? (
-          <header>
-            <h1>Basic thresholds</h1>
-            <p>
-              When a strategy fires, how long to wait, and whether it is on.
-            </p>
-          </header>
-        ) : null}
-        {tab === "rules" ? (
-          <header>
-            <h1>Confirmation rules</h1>
-            <p>How Recent signals move from Monitoring to Confirmed or Expired.</p>
-          </header>
-        ) : null}
-        {tab === "weights" && current ? (
-          <header>
-            <h1>Formula weights</h1>
-            <p>
-              {current.short} · {current.name}. {current.blurb}
-            </p>
-          </header>
-        ) : null}
-        {tab === "various" ? (
-          <header>
-            <h1>Various</h1>
-            <p>
-              Board-wide filters that are not tied to one strategy. Sweet spot t
-              uses these windows.
-            </p>
-          </header>
-        ) : null}
-        {tab === "discord" ? (
-          <header>
-            <h1>Discord</h1>
-            <p>
-              Channel ids the bot cross-posts fires and outcomes to, and a
-              per-channel kill switch. The bot token itself stays a Railway
-              secret, not a setting here.
-            </p>
-          </header>
-        ) : null}
-        {tab === "results" ? (
-          <AdminResults
-            strategies={items.map((row) => ({
-              key: row.key,
-              short: row.short,
-              name: row.name,
-            }))}
-            selected={resultStrategies}
-            onToggle={(key) =>
-              setResultStrategies((current) =>
-                current.includes(key)
-                  ? current.filter((item) => item !== key)
-                  : [...current, key],
-              )
-            }
-            api={api}
-          />
-        ) : null}
-        {tab === "tips" ? <AdminTips api={api} /> : null}
-        {tab === "visitors" ? <AdminVisitors api={api} /> : null}
-        {tab === "various" ? (
-          <>
-            <article className="admin-tab-panel">
-              <h2>Sweet spot t</h2>
-              <p className="admin-hint">
-                When Sweet spot t is checked on the live board, only matches inside
-                these clocks stay visible. Injury time is 45'+x' and 90'+x' for
-                both halves when the feed has the extra minute. The referee's
-                announced total is not in this API.
-              </p>
-              <div className="admin-fields">
-                <div className="admin-range">
-                  <span>1st HT</span>
-                  <label>
-                    From
-                    <input
-                      type="number"
-                      min={0}
-                      max={130}
-                      value={various.ht1_start}
-                      onChange={(event) =>
-                        setVarious((current) => ({
-                          ...current,
-                          ht1_start: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  </label>
-                  <span className="admin-range-sep">-</span>
-                  <label>
-                    To
-                    <input
-                      type="number"
-                      min={0}
-                      max={130}
-                      value={various.ht1_end}
-                      onChange={(event) =>
-                        setVarious((current) => ({
-                          ...current,
-                          ht1_end: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
-                <div className="admin-range">
-                  <span>2nd HT</span>
-                  <label>
-                    From
-                    <input
-                      type="number"
-                      min={0}
-                      max={130}
-                      value={various.ht2_start}
-                      onChange={(event) =>
-                        setVarious((current) => ({
-                          ...current,
-                          ht2_start: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  </label>
-                  <span className="admin-range-sep">-</span>
-                  <label>
-                    To
-                    <input
-                      type="number"
-                      min={0}
-                      max={130}
-                      value={various.ht2_end}
-                      onChange={(event) =>
-                        setVarious((current) => ({
-                          ...current,
-                          ht2_end: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
-              </div>
-              <label className="admin-toggle">
-                <input
-                  type="checkbox"
-                  checked={various.include_injury_time}
-                  onChange={(event) =>
-                    setVarious((current) => ({
-                      ...current,
-                      include_injury_time: event.target.checked,
-                    }))
-                  }
-                />
-                Include injury time
-              </label>
-            </article>
-            <div className="admin-actions">
-              <button type="button" disabled={busy} onClick={() => void saveVarious()}>
-                Save various
-              </button>
-            </div>
-          </>
-        ) : null}
-        {tab === "discord" ? (
-          <>
-            <article className="admin-tab-panel">
-              <h2>Paid channel</h2>
-              <div className="admin-fields">
-                <label>
-                  Channel id
-                  <input
-                    type="text"
-                    placeholder="e.g. 1234567890123456"
-                    value={discord.paid_channel_id ?? ""}
-                    onChange={(event) =>
-                      setDiscord((current) => ({
-                        ...current,
-                        paid_channel_id: event.target.value || null,
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-              <label className="admin-toggle">
-                <input
-                  type="checkbox"
-                  checked={discord.paid_enabled}
-                  onChange={(event) =>
-                    setDiscord((current) => ({
-                      ...current,
-                      paid_enabled: event.target.checked,
-                    }))
-                  }
-                />
-                Cross-post to paid channel
-              </label>
-            </article>
-            <article className="admin-tab-panel">
-              <h2>Free channel</h2>
-              <div className="admin-fields">
-                <label>
-                  Channel id
-                  <input
-                    type="text"
-                    placeholder="e.g. 1234567890123456"
-                    value={discord.free_channel_id ?? ""}
-                    onChange={(event) =>
-                      setDiscord((current) => ({
-                        ...current,
-                        free_channel_id: event.target.value || null,
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-              <label className="admin-toggle">
-                <input
-                  type="checkbox"
-                  checked={discord.free_enabled}
-                  onChange={(event) =>
-                    setDiscord((current) => ({
-                      ...current,
-                      free_enabled: event.target.checked,
-                    }))
-                  }
-                />
-                Cross-post to free channel
-              </label>
-            </article>
-            <div className="admin-actions">
-              <button type="button" disabled={busy} onClick={() => void saveDiscord()}>
-                Save discord
-              </button>
-            </div>
-          </>
-        ) : null}
-        {tab !== "results" && tab !== "various" && tab !== "discord" && tab !== "visitors" ? (
-        <>
-        <nav className="admin-tabs" role="tablist" aria-label="Strategy">
-          {items.map((row) => (
-            <button
-              key={row.key}
-              type="button"
-              role="tab"
-              aria-selected={current?.key === row.key}
-              className={current?.key === row.key ? "is-on" : ""}
-              title={row.name}
-              onClick={() => setStrategyKey(row.key)}
-            >
-              {row.short}
-            </button>
-          ))}
-        </nav>
-        {tab === "thresholds" && current ? (
-          <>
-            <article className="admin-tab-panel">
-              <div className="admin-card-head">
-                <h2>
-                  {current.short} · {current.name}
-                </h2>
-                <label className="admin-toggle">
-                  <input
-                    type="checkbox"
-                    checked={current.enabled}
-                    onChange={(event) => patch(current.slot, { enabled: event.target.checked })}
-                  />
-                  Enabled
-                </label>
-              </div>
-              <p className="admin-hint">{current.blurb}</p>
-              <div className="admin-fields">
-                <label>
-                  Fire threshold
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={current.threshold}
-                    onChange={(event) =>
-                      patch(current.slot, { threshold: Number(event.target.value) })
-                    }
-                  />
-                </label>
-                <label>
-                  Cooldown (min)
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={current.cooldown_minutes}
-                    onChange={(event) =>
-                      patch(current.slot, { cooldown_minutes: Number(event.target.value) })
-                    }
-                  />
-                </label>
-                <label>
-                  Bypass if value rises by
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={current.cooldown_bypass_delta ?? 0}
-                    onChange={(event) =>
-                      patch(current.slot, {
-                        cooldown_bypass_delta: Number(event.target.value),
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  Don&apos;t fire after minute
-                  <input
-                    type="number"
-                    min={1}
-                    max={130}
-                    step={1}
-                    placeholder="Off"
-                    value={current.max_fire_minute ?? ""}
-                    onChange={(event) =>
-                      patch(current.slot, {
-                        max_fire_minute:
-                          event.target.value === "" ? null : Number(event.target.value),
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  1st half: don&apos;t fire after
-                  <input
-                    type="number"
-                    min={1}
-                    max={60}
-                    step={1}
-                    placeholder="Off"
-                    value={current.max_fire_minute_1h ?? ""}
-                    onChange={(event) =>
-                      patch(current.slot, {
-                        max_fire_minute_1h:
-                          event.target.value === "" ? null : Number(event.target.value),
-                      })
-                    }
-                  />
-                </label>
-              </div>
-              <p className="admin-hint">
-                Leave a cut-off blank to fire at any minute. Stoppage time counts as
-                the minute the feed shows (90+4 is 94), so 85 also stops 90+ alerts.
-                The 1st-half cut-off only applies in the first half and at half-time,
-                including its stoppage (40 stops 45+2), and never touches the second half.
-              </p>
-            </article>
-            <div className="admin-actions">
-              <button type="button" disabled={busy} onClick={() => void saveThresholds()}>
-                Save thresholds
-              </button>
-            </div>
-          </>
-        ) : null}
 
-        {tab === "rules" && current ? (
-          <>
-            <article className="admin-tab-panel">
-              <h2>
-                {current.short} · {current.name}
-              </h2>
-              <div className="admin-fields">
-                <label>
-                  Success window (min)
-                  <input
-                    type="number"
-                    min={0}
-                    value={current.success_window_minutes}
-                    onChange={(event) =>
-                      patch(current.slot, {
-                        success_window_minutes: Number(event.target.value),
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  Expire buffer (min)
-                  <input
-                    type="number"
-                    min={0}
-                    value={current.expiration_buffer_minutes}
-                    onChange={(event) =>
-                      patch(current.slot, {
-                        expiration_buffer_minutes: Number(event.target.value),
-                      })
-                    }
-                  />
-                </label>
-              </div>
-              <div className="admin-toggle-row">
-                <label className="admin-toggle">
-                  <input
-                    type="checkbox"
-                    checked={current.infinite_ttl}
-                    onChange={(event) =>
-                      patch(current.slot, { infinite_ttl: event.target.checked })
-                    }
-                  />
-                  Wait until match end (no window)
-                </label>
-                <label className="admin-toggle">
-                  <input
-                    type="checkbox"
-                    checked={current.team_specific}
-                    onChange={(event) =>
-                      patch(current.slot, { team_specific: event.target.checked })
-                    }
-                  />
-                  Only the trigger team’s goal counts
-                </label>
-                <label className="admin-toggle">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(current.expire_at_half_end)}
-                    onChange={(event) =>
-                      patch(current.slot, { expire_at_half_end: event.target.checked })
-                    }
-                  />
-                  Expire at the end of the current half
-                </label>
-              </div>
-              <p className="admin-hint">
-                When that box is on, Monitoring closes at HT in the first half (or at
-                full time in the second), or when the success window runs out -
-                whichever comes first. A goal in the same half can still confirm.
-              </p>
-            </article>
-            <div className="admin-actions">
-              <button type="button" disabled={busy} onClick={() => void saveRules()}>
-                Save confirmation rules
-              </button>
-            </div>
-          </>
-        ) : null}
-
-        {tab === "weights" && current ? (
-          <div className="admin-weights-layout">
-            <div>
-            <div className="admin-weight-nav">
-              <select
-                value=""
-                onChange={(event) => {
-                  const preset = event.target.value;
-                  if (preset) void applyPreset(current.key, preset);
-                }}
-              >
-                <option value="">Apply preset…</option>
-                <optgroup label="Built in">
-                  {current.presets.map((preset) => (
-                    <option key={preset} value={preset}>
-                      {preset}
-                    </option>
-                  ))}
-                </optgroup>
-                {(current.saved_presets || []).length > 0 ? (
-                  <optgroup label="Saved">
-                    {current.saved_presets.map((preset) => (
-                      <option key={preset} value={preset}>
-                        {preset}
-                      </option>
-                    ))}
-                  </optgroup>
-                ) : null}
-              </select>
-              <input
-                type="text"
-                value={presetName}
-                placeholder="Preset name"
-                maxLength={40}
-                onChange={(event) => setPresetName(event.target.value)}
-              />
-              <button type="button" disabled={busy} onClick={() => void savePresetAs()}>
-                Save preset as
-              </button>
-              <button type="button" onClick={() => void resetWeights(current.key)}>
-                Reset {current.name}
-              </button>
-            </div>
-            <p className="admin-hint">
-              Save preset as stores this strategy&apos;s formula weights and extra conditions.
-              Built-in presets only apply weights.
-            </p>
-            <pre className="admin-eq">{current.equation}</pre>
-            {current.weights.map((weight) => {
-              const suggested = weight.suggested || String(weight.default);
-              return (
-                <label key={weight.key} className="admin-slider">
-                  <span>
-                    {weight.label}
-                    <small>
-                      {weight.current}
-                    </small>
-                  </span>
-                  <div className="admin-slider-controls">
-                    <input
-                      type="range"
-                      min={weight.min}
-                      max={weight.max}
-                      step={weight.step}
-                      value={weight.current}
-                      onChange={(event) =>
-                        patchWeight(current.key, weight.key, Number(event.target.value))
-                      }
-                      onMouseUp={(event) =>
-                        void saveWeight(
-                          current.key,
-                          weight.key,
-                          Number(event.currentTarget.value),
-                        )
-                      }
-                      onTouchEnd={(event) =>
-                        void saveWeight(
-                          current.key,
-                          weight.key,
-                          Number(event.currentTarget.value),
-                        )
-                      }
-                    />
-                    <input
-                      type="number"
-                      min={weight.min}
-                      max={weight.max}
-                      step={weight.step}
-                      value={weight.current}
-                      onChange={(event) =>
-                        patchWeight(current.key, weight.key, Number(event.target.value))
-                      }
-                      onBlur={(event) =>
-                        void saveWeight(current.key, weight.key, Number(event.currentTarget.value))
-                      }
-                    />
-                  </div>
-                  <small>
-                    {weight.description}
-                    {suggested ? (
-                      <>
-                        {" "}
-                        <span className="admin-suggested">Suggested: {suggested}</span>
-                      </>
-                    ) : null}
-                    {weight.current !== weight.default ? ` · default ${weight.default}` : ""}
-                  </small>
-                </label>
-              );
-            })}
-            </div>
-            <div className="admin-weights-aside">
-            <AdminPreview
-              strategy={current.key}
-              short={current.short}
-              weights={Object.fromEntries(current.weights.map((row) => [row.key, row.current]))}
-              conditions={current.conditions || []}
-              api={api}
-            />
-            <AdminConditions
-              catalog={catalog}
-              rows={current.conditions || []}
-              onChange={(rows) => setConditions(current.key, current.slot, rows)}
-            />
-            </div>
+      <div className="adm-main">
+        <div className="adm-topbar">
+          <div>
+            <div className="adm-crumb">{PAGES[page].group}</div>
+            <h1>{PAGES[page].title}</h1>
           </div>
-        ) : null}
-        </>
-        ) : null}
-        {status ? <p className="admin-status">{status}</p> : null}
-      </main>
+          <div className="adm-spacer" />
+          {insightsPage ? (
+            <RangePicker
+              range={range}
+              onChange={setRange}
+              minDate={page === "visitors" ? isoDay(29) : undefined}
+            />
+          ) : null}
+        </div>
+
+        <main className="adm-page">
+          {page === "overview" ? (
+            <AdminOverview api={api} zone={zone} strategies={meta} discord={savedDiscord} onGo={go} />
+          ) : null}
+          {page === "results" ? (
+            <AdminResults
+              api={api}
+              range={range}
+              zone={zone}
+              strategies={meta}
+              strategy={resultStrategy}
+              onStrategy={setResultStrategy}
+            />
+          ) : null}
+          {page === "visitors" ? <AdminVisitors api={api} range={range} zone={zone} /> : null}
+          {page === "strategies" && current ? (
+            <StrategiesPage
+              items={items}
+              current={current}
+              zone={zone}
+              catalog={catalog}
+              presetName={presetName}
+              busy={busy}
+              dirty={dirty}
+              onPick={setStrategyKey}
+              onPatch={patch}
+              onPatchWeight={patchWeight}
+              onSaveWeight={(strategy, key, value) => void saveWeight(strategy, key, value)}
+              onApplyPreset={(strategy, preset) => void applyPreset(strategy, preset)}
+              onPresetName={setPresetName}
+              onSavePreset={() => void savePresetAs()}
+              onResetWeights={(strategy) => void resetWeights(strategy)}
+              onConditions={setConditions}
+              onSave={() => void saveStrategies()}
+              onDiscard={discardStrategies}
+              onGo={go}
+            />
+          ) : null}
+          {page === "board" ? (
+            <SweetSpotCard
+              value={various}
+              saved={savedVarious}
+              busy={busy}
+              onChange={setVarious}
+              onSave={() => void saveVarious()}
+              onDiscard={() => setVarious(savedVarious)}
+            />
+          ) : null}
+          {page === "tips" ? <AdminTips api={api} /> : null}
+          {page === "discord" ? (
+            <DiscordPage
+              value={discord}
+              saved={savedDiscord}
+              busy={busy}
+              onChange={setDiscord}
+              onSave={() => void saveDiscord()}
+              onDiscard={() => setDiscord(savedDiscord)}
+            />
+          ) : null}
+        </main>
+      </div>
+      {status ? (
+        <div className="adm-toast" role="status">
+          {status}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------- strategies */
+
+function numberOrNull(raw: string): number | null {
+  return raw === "" ? null : Number(raw);
+}
+
+function Field({
+  label,
+  help,
+  changed,
+  children,
+}: {
+  label: string;
+  help?: string;
+  changed?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <label className={`adm-field ${changed ? "is-dirty" : ""}`}>
+      {label}
+      {children}
+      {help ? <span className="adm-help">{help}</span> : null}
+    </label>
+  );
+}
+
+function SaveBar({
+  count,
+  busy,
+  note,
+  onSave,
+  onDiscard,
+}: {
+  count: number;
+  busy: boolean;
+  note: string;
+  onSave: () => void;
+  onDiscard: () => void;
+}) {
+  if (!count) return null;
+  return (
+    <div className="adm-savebar">
+      <span>
+        <b>{count}</b> unsaved change{count === 1 ? "" : "s"}. {note}
+      </span>
+      <span className="adm-spacer" />
+      <button type="button" className="kit-btn" disabled={busy} onClick={onDiscard}>
+        Discard
+      </button>
+      <button type="button" className="kit-btn is-primary" disabled={busy} onClick={onSave}>
+        {busy ? "Saving…" : "Save changes"}
+      </button>
+    </div>
+  );
+}
+
+function StrategiesPage({
+  items,
+  current,
+  zone,
+  catalog,
+  presetName,
+  busy,
+  dirty,
+  onPick,
+  onPatch,
+  onPatchWeight,
+  onSaveWeight,
+  onApplyPreset,
+  onPresetName,
+  onSavePreset,
+  onResetWeights,
+  onConditions,
+  onSave,
+  onDiscard,
+  onGo,
+}: {
+  items: StrategyConfig[];
+  current: StrategyConfig;
+  zone: string;
+  catalog: ConditionCatalog;
+  presetName: string;
+  busy: boolean;
+  dirty: { slot: number; field: SettingField }[];
+  onPick: (key: string) => void;
+  onPatch: (slot: number, fields: Partial<StrategyConfig>) => void;
+  onPatchWeight: (strategy: string, key: string, value: number) => void;
+  onSaveWeight: (strategy: string, key: string, value: number) => void;
+  onApplyPreset: (strategy: string, preset: string) => void;
+  onPresetName: (name: string) => void;
+  onSavePreset: () => void;
+  onResetWeights: (strategy: string) => void;
+  onConditions: (strategy: string, slot: number, rows: ExtraCondition[]) => void;
+  onSave: () => void;
+  onDiscard: () => void;
+  onGo: (spec: string) => void;
+}) {
+  const [period, setPeriod] = useState<Range>(() => defaultRange("30"));
+  const [stats, setStats] = useState<ResultsInsights | null>(null);
+
+  useEffect(() => {
+    if (!rangeValid(period)) return;
+    let live = true;
+    void api<ResultsInsights>(`/api/admin/insights/results?${rangeQuery(period, zone).toString()}`)
+      .then((body) => {
+        if (live) setStats(body);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [period, zone]);
+
+  const byKey = Object.fromEntries((stats?.by_strategy || []).map((row) => [row.strategy, row.current]));
+  const mine = byKey[current.key];
+  const changed = (field: SettingField) => dirty.some((d) => d.slot === current.slot && d.field === field);
+  const c = current;
+
+  return (
+    <div className="adm-split">
+      <article className="kit-card adm-st-list">
+        <div className="adm-st-period">
+          <div className="adm-label">Hit rate over</div>
+          <RangePicker range={period} onChange={setPeriod} compact />
+          <div className="adm-help">{rangeValid(period) ? fmtWindow(stats?.window) : "Pick a From date on or before the To date"}</div>
+        </div>
+        <div className="adm-st-items">
+          {items.map((row) => {
+            const s = byKey[row.key];
+            const rowDirty = dirty.some((d) => d.slot === row.slot);
+            return (
+              <button
+                key={row.key}
+                type="button"
+                className={`adm-st-item ${row.key === current.key ? "is-on" : ""}`}
+                title={row.name}
+                onClick={() => onPick(row.key)}
+              >
+                <span className={`adm-onoff ${row.enabled ? "" : "is-off"}`} />
+                <span className="kit-tag">{row.short}</span>
+                {rowDirty ? <span className="adm-dot-warn" title="Unsaved changes" /> : <span />}
+                <span className="adm-st-rate kit-num">
+                  <b>{pct(s?.hit_rate)}</b>n {s?.settled ?? 0}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </article>
+
+      <div className="adm-st-main">
+        <article className="kit-card">
+          <header className="adm-st-head">
+            <span className="kit-tag is-big">{c.short}</span>
+            <div className="adm-st-title">
+              <b>{c.name}</b>
+              <span>
+                {mine
+                  ? `${fmtWindow(stats?.window)}: ${mine.total} fired · ${pct(mine.hit_rate)} hit on ${mine.settled} settled`
+                  : "Loading results…"}
+              </span>
+            </div>
+            <div className="adm-st-actions">
+              <label className={`kit-toggle ${changed("enabled") ? "is-dirty" : ""}`}>
+                <input type="checkbox" checked={c.enabled} onChange={(e) => onPatch(c.slot, { enabled: e.target.checked })} />
+                Enabled
+              </label>
+              <button type="button" className="kit-link" onClick={() => onGo(`results:${c.key}`)}>
+                See results →
+              </button>
+            </div>
+          </header>
+          {c.blurb ? <p className="adm-blurb">{c.blurb}</p> : null}
+
+          <section className="adm-sec">
+            <h3>When it fires</h3>
+            <p>The fire threshold, how long to wait before firing again, and the latest minute it may fire.</p>
+            <div className="adm-fields">
+              <Field label="Fire threshold" help="Fires when the value reaches this" changed={changed("threshold")}>
+                <input type="number" step="0.1" value={c.threshold} onChange={(e) => onPatch(c.slot, { threshold: Number(e.target.value) })} />
+              </Field>
+              <Field label="Cooldown (min)" help="Wait before firing again on the same match" changed={changed("cooldown_minutes")}>
+                <input type="number" min={0} step={1} value={c.cooldown_minutes} onChange={(e) => onPatch(c.slot, { cooldown_minutes: Number(e.target.value) })} />
+              </Field>
+              <Field label="Bypass if value rises by" help="Re-fire inside the cooldown on a jump this big" changed={changed("cooldown_bypass_delta")}>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={c.cooldown_bypass_delta ?? 0}
+                  onChange={(e) => onPatch(c.slot, { cooldown_bypass_delta: Number(e.target.value) })}
+                />
+              </Field>
+              <Field label="Don't fire after minute" help="Blank = any minute. 90+4 counts as 94." changed={changed("max_fire_minute")}>
+                <input
+                  type="number"
+                  min={1}
+                  max={130}
+                  step={1}
+                  placeholder="Off"
+                  value={c.max_fire_minute ?? ""}
+                  onChange={(e) => onPatch(c.slot, { max_fire_minute: numberOrNull(e.target.value) })}
+                />
+              </Field>
+              <Field label="1st half: don't fire after" help="Only the 1st half and HT, incl. its stoppage" changed={changed("max_fire_minute_1h")}>
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  step={1}
+                  placeholder="Off"
+                  value={c.max_fire_minute_1h ?? ""}
+                  onChange={(e) => onPatch(c.slot, { max_fire_minute_1h: numberOrNull(e.target.value) })}
+                />
+              </Field>
+            </div>
+          </section>
+
+          <section className="adm-sec">
+            <h3>How it settles</h3>
+            <p>How an alert moves from Open to Hit or Miss.</p>
+            <div className="adm-fields">
+              <Field label="Success window (min)" help="A goal inside this counts as a hit" changed={changed("success_window_minutes")}>
+                <input
+                  type="number"
+                  min={0}
+                  value={c.success_window_minutes}
+                  onChange={(e) => onPatch(c.slot, { success_window_minutes: Number(e.target.value) })}
+                />
+              </Field>
+              <Field label="Expire buffer (min)" changed={changed("expiration_buffer_minutes")}>
+                <input
+                  type="number"
+                  min={0}
+                  value={c.expiration_buffer_minutes}
+                  onChange={(e) => onPatch(c.slot, { expiration_buffer_minutes: Number(e.target.value) })}
+                />
+              </Field>
+            </div>
+            <div className="adm-toggles">
+              <label className={`kit-toggle ${changed("infinite_ttl") ? "is-dirty" : ""}`}>
+                <input type="checkbox" checked={c.infinite_ttl} onChange={(e) => onPatch(c.slot, { infinite_ttl: e.target.checked })} />
+                Wait until match end (no window)
+              </label>
+              <label className={`kit-toggle ${changed("team_specific") ? "is-dirty" : ""}`}>
+                <input type="checkbox" checked={c.team_specific} onChange={(e) => onPatch(c.slot, { team_specific: e.target.checked })} />
+                Only the trigger team’s goal counts
+              </label>
+              <label className={`kit-toggle ${changed("expire_at_half_end") ? "is-dirty" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(c.expire_at_half_end)}
+                  onChange={(e) => onPatch(c.slot, { expire_at_half_end: e.target.checked })}
+                />
+                Expire at the end of the current half
+              </label>
+            </div>
+          </section>
+
+          <section className="adm-sec">
+            <h3>Formula</h3>
+            <p>Weights and extra conditions. These save as soon as you let go of a slider, separately from the save bar.</p>
+            <div className="admin-weights-layout">
+              <div>
+                <div className="adm-preset-row">
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) onApplyPreset(c.key, e.target.value);
+                    }}
+                  >
+                    <option value="">Apply preset…</option>
+                    <optgroup label="Built in">
+                      {c.presets.map((preset) => (
+                        <option key={preset} value={preset}>
+                          {preset}
+                        </option>
+                      ))}
+                    </optgroup>
+                    {(c.saved_presets || []).length > 0 ? (
+                      <optgroup label="Saved">
+                        {c.saved_presets.map((preset) => (
+                          <option key={preset} value={preset}>
+                            {preset}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                  </select>
+                  <input type="text" value={presetName} placeholder="Preset name" maxLength={40} onChange={(e) => onPresetName(e.target.value)} />
+                  <button type="button" className="kit-btn" disabled={busy} onClick={onSavePreset}>
+                    Save preset as
+                  </button>
+                  <button type="button" className="kit-btn" onClick={() => onResetWeights(c.key)}>
+                    Reset
+                  </button>
+                </div>
+                <pre className="admin-eq">{c.equation}</pre>
+                {c.weights.map((weight) => {
+                  const suggested = weight.suggested || String(weight.default);
+                  return (
+                    <label key={weight.key} className="admin-slider">
+                      <span>
+                        {weight.label}
+                        <small>{weight.current}</small>
+                      </span>
+                      <div className="admin-slider-controls">
+                        <input
+                          type="range"
+                          min={weight.min}
+                          max={weight.max}
+                          step={weight.step}
+                          value={weight.current}
+                          onChange={(e) => onPatchWeight(c.key, weight.key, Number(e.target.value))}
+                          onMouseUp={(e) => onSaveWeight(c.key, weight.key, Number(e.currentTarget.value))}
+                          onTouchEnd={(e) => onSaveWeight(c.key, weight.key, Number(e.currentTarget.value))}
+                        />
+                        <input
+                          type="number"
+                          min={weight.min}
+                          max={weight.max}
+                          step={weight.step}
+                          value={weight.current}
+                          onChange={(e) => onPatchWeight(c.key, weight.key, Number(e.target.value))}
+                          onBlur={(e) => onSaveWeight(c.key, weight.key, Number(e.currentTarget.value))}
+                        />
+                      </div>
+                      <small>
+                        {weight.description}
+                        {suggested ? (
+                          <>
+                            {" "}
+                            <span className="admin-suggested">Suggested: {suggested}</span>
+                          </>
+                        ) : null}
+                        {weight.current !== weight.default ? ` · default ${weight.default}` : ""}
+                      </small>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="admin-weights-aside">
+                <AdminPreview
+                  strategy={c.key}
+                  short={c.short}
+                  weights={Object.fromEntries(c.weights.map((row) => [row.key, row.current]))}
+                  conditions={c.conditions || []}
+                  api={api}
+                />
+                <AdminConditions catalog={catalog} rows={c.conditions || []} onChange={(rows) => onConditions(c.key, c.slot, rows)} />
+              </div>
+            </div>
+          </section>
+        </article>
+        <SaveBar
+          count={dirty.length}
+          busy={busy}
+          note="The scanner picks them up within ~15s of saving."
+          onSave={onSave}
+          onDiscard={onDiscard}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- board filters */
+
+function halfCheck(start: number, end: number, lo: number, hi: number): boolean {
+  return Number.isFinite(start) && Number.isFinite(end) && start >= lo && end <= hi && start < end;
+}
+
+function SweetSpotCard({
+  value,
+  saved,
+  busy,
+  onChange,
+  onSave,
+  onDiscard,
+}: {
+  value: SweetSpotConfig;
+  saved: SweetSpotConfig;
+  busy: boolean;
+  onChange: (next: SweetSpotConfig) => void;
+  onSave: () => void;
+  onDiscard: () => void;
+}) {
+  const first = halfCheck(value.ht1_start, value.ht1_end, 0, 45);
+  const second = halfCheck(value.ht2_start, value.ht2_end, 45, 90);
+  const changes = (Object.keys(value) as (keyof SweetSpotConfig)[]).filter((k) => value[k] !== saved[k]).length;
+  const set = (field: keyof SweetSpotConfig, raw: string) => onChange({ ...value, [field]: Number(raw) });
+
+  const segment = (start: number, end: number, lo: number, ok: boolean) => {
+    const toEnd = ok && end === lo + 45;
+    const extra = toEnd && value.include_injury_time;
+    const left = ((Math.min(Math.max(start, lo), lo + 45) - lo) / 45) * 100;
+    const right = ((Math.min(Math.max(end, lo), lo + 45) - lo) / 45) * 100;
+    return (
+      <div className="ss-seg">
+        <div className="ss-track">
+          {ok ? <span className={`ss-win ${extra ? "is-to-end" : ""}`} style={{ left: `${left}%`, width: `${right - left}%` }} /> : null}
+          {[0, 15, 30, 45].map((t) => (
+            <span key={t} className={`ss-tick ${t === 0 ? "is-first" : ""}`} style={{ left: `${(t / 45) * 100}%` }}>
+              {lo + t}′
+            </span>
+          ))}
+        </div>
+        <span className={`ss-x ${extra ? "is-on" : ""}`} title={extra ? `${lo + 45}′+x counts` : "Injury time not counted"} />
+      </div>
+    );
+  };
+
+  const half = (title: string, span: string, sf: keyof SweetSpotConfig, ef: keyof SweetSpotConfig, ok: boolean, lo: number, hi: number) => {
+    const start = value[sf] as number;
+    const end = value[ef] as number;
+    return (
+      <div className={`ss-half ${ok ? "" : "is-bad"}`}>
+        <div className="ss-half-head">
+          <b>{title}</b>
+          <span>{span}</span>
+        </div>
+        <div className="ss-range">
+          <label>
+            From
+            <span className="ss-in">
+              <input type="number" min={lo} max={hi} value={start} onChange={(e) => set(sf, e.target.value)} />
+              <i>′</i>
+            </span>
+          </label>
+          <span className="ss-dash">–</span>
+          <label>
+            To
+            <span className="ss-in">
+              <input type="number" min={lo} max={hi} value={end} onChange={(e) => set(ef, e.target.value)} />
+              <i>′</i>
+            </span>
+          </label>
+        </div>
+        <div className="ss-sum">
+          {ok ? (
+            <>
+              Shows matches from <b>{start}′</b> to{" "}
+              <b>
+                {end}′{value.include_injury_time && end === hi ? "+x" : ""}
+              </b>{" "}
+              · {end - start} min window
+            </>
+          ) : (
+            `Pick a start before the end, inside ${lo}′–${hi}′`
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <article className="kit-card">
+        <section className="adm-sec">
+          <h3>Sweet spot t</h3>
+          <p>When Sweet spot t is on, the live board only shows matches whose clock is inside one of these two windows.</p>
+          <div className="ss-line" aria-hidden="true">
+            {segment(value.ht1_start, value.ht1_end, 0, first)}
+            <div className="ss-ht">HT</div>
+            {segment(value.ht2_start, value.ht2_end, 45, second)}
+          </div>
+          <div className="ss-halves">
+            {half("1st half", "0′ – 45′", "ht1_start", "ht1_end", first, 0, 45)}
+            {half("2nd half", "45′ – 90′", "ht2_start", "ht2_end", second, 45, 90)}
+          </div>
+          <label className="kit-toggle ss-inj">
+            <input
+              type="checkbox"
+              checked={value.include_injury_time}
+              onChange={(e) => onChange({ ...value, include_injury_time: e.target.checked })}
+            />
+            Include injury time
+            <span>(the striped end of each half: 45′+x and 90′+x count when a window ends at 45′ or 90′)</span>
+          </label>
+        </section>
+      </article>
+      {changes && !(first && second) ? <p className="kit-error">Fix the highlighted half before saving.</p> : null}
+      <SaveBar
+        count={first && second ? changes : 0}
+        busy={busy}
+        note="The live board picks them up on its next refresh."
+        onSave={onSave}
+        onDiscard={onDiscard}
+      />
+    </>
+  );
+}
+
+/* ---------------------------------------------------------------- discord */
+
+function DiscordPage({
+  value,
+  saved,
+  busy,
+  onChange,
+  onSave,
+  onDiscard,
+}: {
+  value: DiscordState;
+  saved: DiscordState;
+  busy: boolean;
+  onChange: (next: DiscordState) => void;
+  onSave: () => void;
+  onDiscard: () => void;
+}) {
+  const changes = (Object.keys(value) as (keyof DiscordState)[]).filter((k) => (value[k] ?? null) !== (saved[k] ?? null)).length;
+  const channel = (title: string, idField: "paid_channel_id" | "free_channel_id", onField: "paid_enabled" | "free_enabled") => (
+    <article className="kit-card">
+      <section className="adm-sec">
+        <h3>{title}</h3>
+        <div className="adm-fields">
+          <Field label="Channel id" changed={value[idField] !== saved[idField]}>
+            <input
+              type="text"
+              placeholder="e.g. 1234567890123456"
+              value={value[idField] ?? ""}
+              onChange={(e) => onChange({ ...value, [idField]: e.target.value || null })}
+            />
+          </Field>
+        </div>
+        <div className="adm-toggles">
+          <label className={`kit-toggle ${value[onField] !== saved[onField] ? "is-dirty" : ""}`}>
+            <input type="checkbox" checked={value[onField]} onChange={(e) => onChange({ ...value, [onField]: e.target.checked })} />
+            Cross-post to this channel
+          </label>
+          <span className={`adm-chip ${value[idField] && value[onField] ? "is-ok" : "is-warn"}`}>
+            {!value[idField] ? "No channel id" : value[onField] ? "Posting" : "Switched off"}
+          </span>
+        </div>
+      </section>
+    </article>
+  );
+  return (
+    <>
+      <p className="adm-intro">
+        Channel ids the bot cross-posts fires and outcomes to, with a per-channel kill switch. The bot token stays a
+        Railway secret, not a setting here.
+      </p>
+      <div className="kit-grid-2 kit-grid-even">
+        {channel("Paid channel", "paid_channel_id", "paid_enabled")}
+        {channel("Free channel", "free_channel_id", "free_enabled")}
+      </div>
+      <SaveBar count={changes} busy={busy} note="The bot picks them up within a few seconds." onSave={onSave} onDiscard={onDiscard} />
+    </>
   );
 }

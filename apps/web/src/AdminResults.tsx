@@ -1,37 +1,55 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { countryFlag } from "./App";
+import {
+  Card,
+  Delta,
+  LineChart,
+  Legend,
+  OutcomePill,
+  Sparkline,
+  StatStrip,
+  diverging,
+  fmtDay,
+  fmtInt,
+  fmtShort,
+  fmtWindow,
+  inkFor,
+  isoDay,
+  pct,
+  pct1,
+  prevLabel,
+  rangeQuery,
+  rangeValid,
+  tip,
+  wilson,
+  type Api,
+  type Range,
+} from "./AdminKit";
 
 type SidePair = { home?: number | null; away?: number | null };
 
 type ResultFactors = {
-  status?: string | null;
   country?: string | null;
   sweet_spot?: boolean | null;
   half?: string | null;
   tslg?: string | null;
-  tslg_home?: number | null;
-  tslg_away?: number | null;
   odds_home?: number | null;
-  odds_draw?: number | null;
   odds_away?: number | null;
   trigger_odds?: number | null;
-  sot?: SidePair;
-  da?: SidePair;
-  urg?: SidePair;
   d5?: SidePair;
   d10?: SidePair;
-  lbar?: SidePair;
   phi?: SidePair;
   k?: SidePair;
-  k_match?: number | null;
   also_firing?: string[];
-  has_board?: boolean;
+  score_state?: string | null;
+  odds_bucket?: string | null;
+  tslg_bucket?: string | null;
 };
 
-export type ResultItem = {
+type ResultItem = {
   id: number;
   match_id: string;
   strategy: string;
-  slot: number;
   team: string | null;
   value: number;
   minute: number;
@@ -41,344 +59,652 @@ export type ResultItem = {
   league?: string | null;
   state: string;
   created_at: string | null;
-  evaluated_at: string | null;
   settle_score?: string | null;
   settle_minute?: number | null;
   live: boolean;
   factors?: ResultFactors;
 };
 
-type PatternBlock = {
-  title: string;
-  rows: { label: string; n: number; confirmed: number; hit_rate: number }[];
+export type AlertStats = {
+  total: number;
+  confirmed: number;
+  expired: number;
+  open: number;
+  settled: number;
+  hit_rate: number | null;
+  median_to_goal: number | null;
 };
 
-type ResultsPayload = {
-  summary: {
-    total: number;
-    confirmed: number;
-    expired: number;
-    monitoring: number;
-    hit_rate: number | null;
-  };
-  patterns?: PatternBlock[];
-  items: ResultItem[];
+type Win = { first: string; last: string; days: number };
+
+type Slice = { dim: string; label: string; n: number; confirmed: number; hit_rate: number };
+
+export type StrategyRow = {
+  strategy: string;
+  current: AlertStats;
+  previous: AlertStats;
+  trend: (number | null)[];
+  best_slice: Slice | null;
 };
 
-type StrategyChip = { key: string; short: string; name: string };
+export type ResultsInsights = {
+  window: Win;
+  previous_window: Win;
+  chart_window: Win;
+  summary: AlertStats;
+  previous: AlertStats;
+  daily: { date: string; total: number; confirmed: number; settled: number; hit_rate: number | null }[];
+  by_strategy: StrategyRow[];
+  overall_hit_rate: number | null;
+  matrix: { columns: string[]; rows: { strategy: string; cells: { confirmed: number; settled: number }[] }[] };
+  slices: Slice[];
+  names: Record<string, string>;
+};
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+export type StrategyMeta = { key: string; short: string; name: string; enabled: boolean };
+
+function localDay(iso: string | null): string {
+  return iso ? new Date(iso).toLocaleDateString("en-CA") : "";
 }
 
-function fmtTime(iso: string | null): string {
+function clock(iso: string | null): string {
   if (!iso) return "";
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return iso;
-  return at.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function pct(rate: number | null): string {
-  if (rate == null) return "–";
-  return `${Math.round(rate * 100)}%`;
-}
-
-function fmtNum(value: number | null | undefined, digits = 0): string {
-  if (value == null || Number.isNaN(Number(value))) return "–";
-  const n = Number(value);
-  return Number.isInteger(n) && digits === 0 ? String(n) : n.toFixed(digits);
+  return new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
 function sideVal(pair: SidePair | undefined, team: string | null, digits = 0): string {
-  if (!pair) return "–";
-  return fmtNum(team === "away" ? pair.away : pair.home, digits);
+  const raw = pair ? (team === "away" ? pair.away : pair.home) : null;
+  if (raw == null || Number.isNaN(Number(raw))) return "–";
+  return digits ? Number(raw).toFixed(digits) : String(Math.round(Number(raw)));
 }
 
 function triggerOdds(row: ResultItem): string {
-  const factors = row.factors;
-  if (!factors) return "–";
-  if (factors.trigger_odds != null) return fmtNum(factors.trigger_odds, 2);
-  if (row.team === "away") return fmtNum(factors.odds_away, 2);
-  return fmtNum(factors.odds_home, 2);
+  const f = row.factors;
+  const raw = f?.trigger_odds ?? (row.team === "away" ? f?.odds_away : f?.odds_home);
+  return raw == null ? "–" : Number(raw).toFixed(2);
+}
+
+// Local-day bounds of the picked period, as UTC instants for /results.
+function logBounds(range: Range): { since: string; until: string } {
+  const first = range.mode === "custom" ? range.from : isoDay(Number(range.mode) - 1);
+  const last = range.mode === "custom" ? range.to : isoDay(0);
+  const end = new Date(`${last}T00:00:00`);
+  end.setDate(end.getDate() + 1);
+  return { since: new Date(`${first}T00:00:00`).toISOString(), until: end.toISOString() };
 }
 
 export function AdminResults({
-  strategies,
-  selected,
-  onToggle,
   api,
+  range,
+  zone,
+  strategies,
+  strategy,
+  onStrategy,
 }: {
-  strategies: StrategyChip[];
-  selected: string[];
-  onToggle: (key: string) => void;
-  api: <T>(path: string, init?: RequestInit) => Promise<T>;
+  api: Api;
+  range: Range;
+  zone: string;
+  strategies: StrategyMeta[];
+  strategy: string | null;
+  onStrategy: (key: string | null) => void;
 }) {
-  const [since, setSince] = useState(() => todayIso());
-  const [until, setUntil] = useState(() => todayIso());
-  const [state, setState] = useState("");
-  const [team, setTeam] = useState("");
-  const [league, setLeague] = useState("");
-  const [body, setBody] = useState<ResultsPayload | null>(null);
+  const [body, setBody] = useState<ResultsInsights | null>(null);
+  const [log, setLog] = useState<ResultItem[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [csvBusy, setCsvBusy] = useState(false);
-
-  const query = useMemo(() => {
-    const params = new URLSearchParams();
-    if (since) params.set("since", since);
-    if (until) params.set("until", until);
-    if (state) params.set("state", state);
-    if (team) params.set("team", team);
-    if (league.trim()) params.set("league", league.trim());
-    for (const key of selected) params.append("strategy", key);
-    params.set("limit", "100");
-    return params.toString();
-  }, [since, until, state, team, league, selected]);
+  const [minN, setMinN] = useState(true);
+  const [logState, setLogState] = useState("");
+  const [query, setQuery] = useState("");
+  const [openRow, setOpenRow] = useState<number | null>(null);
 
   const load = useCallback(async () => {
+    if (!rangeValid(range)) return;
     setBusy(true);
     setError("");
     try {
-      const next = await api<ResultsPayload>(`/api/admin/results?${query}`);
-      setBody(next);
+      const params = rangeQuery(range, zone);
+      if (strategy) params.append("strategy", strategy);
+      const bounds = logBounds(range);
+      const logParams = new URLSearchParams({ ...bounds, limit: "1000", patterns: "false" });
+      if (strategy) logParams.append("strategy", strategy);
+      const [insights, rows] = await Promise.all([
+        api<ResultsInsights>(`/api/admin/insights/results?${params.toString()}`),
+        api<{ items: ResultItem[] }>(`/api/admin/results?${logParams.toString()}`),
+      ]);
+      setBody(insights);
+      setLog(rows.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : "load failed");
     } finally {
       setBusy(false);
     }
-  }, [api, query]);
+  }, [api, range, zone, strategy]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const summary = body?.summary;
+  const names = useMemo(() => {
+    const out: Record<string, string> = { ...(body?.names || {}) };
+    for (const s of strategies) out[s.key] = s.short;
+    return out;
+  }, [body, strategies]);
+  const short = (key: string) => names[key] || key;
 
   async function downloadCsv() {
-    setCsvBusy(true);
-    setError("");
-    try {
-      const res = await fetch(`/api/admin/results.csv?${query}`, { credentials: "include" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "kalchas-results.csv";
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "csv failed");
-    } finally {
-      setCsvBusy(false);
+    const params = new URLSearchParams(logBounds(range));
+    if (strategy) params.append("strategy", strategy);
+    const res = await fetch(`/api/admin/results.csv?${params.toString()}`, { credentials: "include" });
+    if (!res.ok) {
+      setError(`CSV failed: HTTP ${res.status}`);
+      return;
     }
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "kalchas-results.csv";
+    link.click();
+    URL.revokeObjectURL(url);
   }
+
+  if (!rangeValid(range)) return <p className="kit-empty">Pick a From date on or before the To date.</p>;
+  if (!body) return <p className="kit-empty">{error || "Loading results…"}</p>;
+
+  const days = body.window.days;
+  const S = body.summary;
+  const P = body.previous;
+  const label = prevLabel(days);
+  const spark = body.daily.map((d) => d.hit_rate);
+  const overall = body.overall_hit_rate;
+  const [lo, hi] = wilson(S.confirmed, S.settled);
+  const chartSettled = body.daily.reduce((s, d) => s + d.settled, 0);
+  const chartHits = body.daily.reduce((s, d) => s + d.confirmed, 0);
+
+  const scorecard = [...body.by_strategy].sort(
+    (a, b) => (b.current.hit_rate ?? -1) - (a.current.hit_rate ?? -1),
+  );
+  const minSlice = minN ? 15 : 5;
+  const base = S.hit_rate ?? 0;
+  const ranked = body.slices
+    .filter((s) => s.n >= minSlice)
+    .map((s) => ({ ...s, lift: s.hit_rate - base }));
+  const lean = ranked.filter((s) => s.lift > 0).sort((a, b) => b.lift - a.lift).slice(0, 7);
+  const avoid = ranked.filter((s) => s.lift < 0).sort((a, b) => a.lift - b.lift).slice(0, 7);
+  const maxLift = Math.max(0.05, ...ranked.map((s) => Math.abs(s.lift)));
+
+  const needle = query.trim().toLowerCase();
+  const rows = log.filter(
+    (row) =>
+      (!logState || row.state === logState) &&
+      (!needle ||
+        [row.home_team, row.away_team, row.league, row.factors?.country]
+          .some((field) => (field || "").toLowerCase().includes(needle))),
+  );
+  const byDay = new Map<string, ResultItem[]>();
+  for (const row of rows) {
+    const key = localDay(row.created_at);
+    byDay.set(key, [...(byDay.get(key) || []), row]);
+  }
+  const today = isoDay(0);
+  const yesterday = isoDay(1);
+
+  const liftRow = (s: (typeof ranked)[number]) => (
+    <div
+      key={`${s.dim}:${s.label}`}
+      className="res-lift"
+      {...tip(`${s.dim}: ${s.label}`, [
+        ["Hit rate", pct1(s.hit_rate)],
+        ["Hits / settled", `${s.confirmed} / ${s.n}`],
+        ["This period overall", pct1(base)],
+        ["90% likely range", wilson(s.confirmed, s.n).map(pct).join(" – ")],
+      ])}
+    >
+      <div className="res-lift-what">
+        <b>{s.dim === "Country" ? `${countryFlag(s.label)} ${s.label}` : s.label}</b>
+        <span>{s.dim}</span>
+      </div>
+      <span className="kit-num kit-muted">n {s.n}</span>
+      <span className="res-lift-track">
+        <span
+          className={`res-lift-fill ${s.lift >= 0 ? "is-pos" : "is-neg"}`}
+          style={{ width: `${(Math.abs(s.lift) / maxLift) * 50}%` }}
+        />
+      </span>
+      <span className="kit-num res-lift-pts">
+        {s.lift >= 0 ? "+" : "−"}
+        {Math.abs(Math.round(s.lift * 100))} pts
+      </span>
+    </div>
+  );
 
   return (
     <>
-      <header>
-        <h1>Results</h1>
-        <p>
-          Fire-time board plus settle result. Changing confirmation rules does
-          not rewrite these rows. Full K / Δ5 / Δ10 snapshots start on
-          alerts after this deploy; older rows still have stats, odds, and TSLG.
-        </p>
-      </header>
-      <nav className="admin-tabs" role="tablist" aria-label="Strategy filter">
-        {strategies.map((row) => (
-          <button
-            key={row.key}
-            type="button"
-            role="tab"
-            aria-selected={selected.length === 0 || selected.includes(row.key)}
-            className={selected.length === 0 || selected.includes(row.key) ? "is-on" : ""}
-            title={row.name}
-            onClick={() => onToggle(row.key)}
-          >
-            {row.short}
-          </button>
-        ))}
-      </nav>
-      <p className="admin-hint">
-        {selected.length === 0
-          ? "All strategies. Click a chip to filter."
-          : "Click a chip again to drop it. Click until none are selected for all."}
-      </p>
-      <div className="admin-results-filters">
-        <label>
-          From
-          <input type="date" value={since} onChange={(event) => setSince(event.target.value)} />
-        </label>
-        <label>
-          To
-          <input type="date" value={until} onChange={(event) => setUntil(event.target.value)} />
-        </label>
-        <label>
-          Result
-          <select value={state} onChange={(event) => setState(event.target.value)}>
-            <option value="">All</option>
-            <option value="Confirmed">Confirmed</option>
-            <option value="Expired">Expired</option>
-            <option value="Monitoring">Monitoring</option>
-          </select>
-        </label>
-        <label>
-          Side
-          <select value={team} onChange={(event) => setTeam(event.target.value)}>
-            <option value="">Any</option>
-            <option value="home">Home</option>
-            <option value="away">Away</option>
-          </select>
-        </label>
-        <label>
-          League
-          <input
-            type="search"
-            value={league}
-            placeholder="contains"
-            onChange={(event) => setLeague(event.target.value)}
-          />
-        </label>
-      </div>
-      <div className="admin-results-summary">
-        <span>
-          <strong>{summary?.total ?? 0}</strong> alerts
-        </span>
-        <span>
-          <strong>{summary?.confirmed ?? 0}</strong> confirmed
-        </span>
-        <span>
-          <strong>{summary?.expired ?? 0}</strong> expired
-        </span>
-        <span>
-          <strong>{summary?.monitoring ?? 0}</strong> open
-        </span>
-        <span>
-          hit rate <strong>{pct(summary?.hit_rate ?? null)}</strong>
-        </span>
-        <button type="button" disabled={csvBusy || busy} onClick={() => void downloadCsv()}>
-          {csvBusy ? "CSV…" : "Download CSV"}
+      <div className="kit-chips">
+        <span className="kit-chips-label">Strategy</span>
+        <button type="button" className={!strategy ? "is-on" : ""} onClick={() => onStrategy(null)}>
+          All <span>{body.by_strategy.reduce((s, r) => s + r.current.total, 0)}</span>
         </button>
+        {body.by_strategy.map((row) => {
+          const meta = strategies.find((s) => s.key === row.strategy);
+          return (
+            <button
+              key={row.strategy}
+              type="button"
+              className={strategy === row.strategy ? "is-on" : ""}
+              title={meta?.name}
+              onClick={() => onStrategy(strategy === row.strategy ? null : row.strategy)}
+            >
+              {short(row.strategy)} <span>{row.current.total}</span>
+              {meta && !meta.enabled ? <span>off</span> : null}
+              {!meta ? <span>retired</span> : null}
+            </button>
+          );
+        })}
+        <span className="kit-chips-note">{fmtWindow(body.window)}</span>
       </div>
-      {error ? <p className="admin-status">{error}</p> : null}
-      {(body?.patterns || []).length ? (
-        <div className="admin-pattern-grid">
-          {(body?.patterns || []).map((block) => (
-            <article key={block.title} className="admin-pattern-card">
-              <h2>{block.title}</h2>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Slice</th>
-                    <th>n</th>
-                    <th>Hit</th>
+      {error ? <p className="kit-error">{error}</p> : null}
+
+      <StatStrip
+        stats={[
+          {
+            label: "Hit rate",
+            hero: true,
+            value: pct(S.hit_rate),
+            foot: <Delta cur={S.hit_rate} prev={P.hit_rate} pts label={label} />,
+            spark,
+            tipRows: [
+              ["This period", pct1(S.hit_rate)],
+              ["Previous period", pct1(P.hit_rate)],
+              ["90% likely range", S.settled ? `${pct(lo)} – ${pct(hi)}` : "–"],
+            ],
+          },
+          {
+            label: "Alerts fired",
+            value: fmtInt(S.total),
+            foot: <Delta cur={S.total} prev={P.total} label={label} />,
+            spark: body.daily.map((d) => d.total),
+          },
+          {
+            label: "Hits",
+            value: (
+              <>
+                {fmtInt(S.confirmed)}
+                <small>/ {fmtInt(S.settled)} settled</small>
+              </>
+            ),
+            foot: <Delta cur={S.confirmed} prev={P.confirmed} label={label} />,
+            spark: body.daily.map((d) => d.confirmed),
+          },
+          {
+            label: "Median minutes to goal",
+            value: (
+              <>
+                {S.median_to_goal ?? "–"}
+                <small>min</small>
+              </>
+            ),
+            foot: <Delta cur={S.median_to_goal} prev={P.median_to_goal} invert label={label} />,
+          },
+          {
+            label: "Still open",
+            value: fmtInt(S.open),
+            foot: <span className="kit-delta">being monitored now</span>,
+          },
+        ]}
+      />
+
+      <Card
+        title="Strategy scorecard"
+        sub="Dot = hit rate, band = 90% likely range for that many alerts, dashed line = all strategies. Click a row to focus the page on it."
+      >
+        <div className="kit-table-wrap">
+          <table className="kit-table">
+            <thead>
+              <tr>
+                <th>Strategy</th>
+                <th className="r">Alerts</th>
+                <th>Hit rate</th>
+                <th className="r">Change</th>
+                <th>Last 14 days</th>
+                <th className="r">Median to goal</th>
+                <th>Best slice</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scorecard.map((row) => {
+                const c = row.current;
+                const [a, b] = wilson(c.confirmed, c.settled);
+                const meta = strategies.find((s) => s.key === row.strategy);
+                const pos = (x: number) => `${(x * 100).toFixed(1)}%`;
+                return (
+                  <tr
+                    key={row.strategy}
+                    className={`is-click ${strategy && strategy !== row.strategy ? "is-dim" : ""}`}
+                    onClick={() => onStrategy(strategy === row.strategy ? null : row.strategy)}
+                  >
+                    <td>
+                      <span className="kit-tag">{short(row.strategy)}</span>
+                      {meta && !meta.enabled ? <small>disabled</small> : null}
+                      {!meta ? <small>retired</small> : null}
+                    </td>
+                    <td className="r kit-num">
+                      {c.total}
+                      <small>{c.settled} settled</small>
+                    </td>
+                    <td>
+                      <div
+                        className="res-rate"
+                        {...tip(short(row.strategy), [
+                          ["Hit rate", pct1(c.hit_rate)],
+                          ["Hits / settled", `${c.confirmed} / ${c.settled}`],
+                          ["90% likely range", c.settled ? `${pct(a)} – ${pct(b)}` : "–"],
+                          ["All strategies", pct1(overall)],
+                        ])}
+                      >
+                        <span className="kit-num">{pct(c.hit_rate)}</span>
+                        <span className="res-rate-track">
+                          {c.settled && c.hit_rate != null ? (
+                            <>
+                              <span className="res-rate-ci" style={{ left: pos(a), width: pos(b - a) }} />
+                              <span className="res-rate-pt" style={{ left: pos(c.hit_rate) }} />
+                            </>
+                          ) : null}
+                          {overall != null ? <span className="res-rate-base" style={{ left: pos(overall) }} /> : null}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="r">
+                      <Delta cur={c.hit_rate} prev={row.previous.hit_rate} pts />
+                    </td>
+                    <td>
+                      <Sparkline values={row.trend} width={110} />
+                    </td>
+                    <td className="r kit-num">{c.median_to_goal != null ? `${c.median_to_goal}′` : "–"}</td>
+                    <td>
+                      {row.best_slice ? (
+                        <>
+                          {row.best_slice.label}
+                          <small>
+                            {pct(row.best_slice.hit_rate)} on {row.best_slice.n} · {row.best_slice.dim}
+                          </small>
+                        </>
+                      ) : (
+                        <span className="kit-muted">not enough data</span>
+                      )}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {block.rows.map((row) => (
-                    <tr key={row.label}>
-                      <td>{row.label}</td>
-                      <td>{row.n}</td>
-                      <td>{pct(row.hit_rate)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </article>
-          ))}
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      ) : null}
-      <p className="admin-hint">
-        Board columns are the trigger side at fire. CSV has both sides plus DA / SOT / possession.
-      </p>
-      <div className="admin-results-table-wrap">
-        <table className="admin-results-table">
-          <thead>
-            <tr>
-              <th>When</th>
-              <th>Match</th>
-              <th>Strategy</th>
-              <th>Fire</th>
-              <th>K</th>
-              <th>Δ5</th>
-              <th>Δ10</th>
-              <th>ΦI</th>
-              <th>TSLG</th>
-              <th>Odds</th>
-              <th>Settle</th>
-              <th>Result</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(body?.items || []).map((row) => {
-              const factors = row.factors;
-              return (
-                <tr key={row.id}>
-                  <td>{fmtTime(row.created_at)}</td>
-                  <td>
-                    {row.live ? (
-                      <a href={`/?match=${encodeURIComponent(row.match_id)}`}>
-                        {row.home_team} vs {row.away_team}
-                      </a>
-                    ) : (
-                      <>
-                        {row.home_team} vs {row.away_team}
-                      </>
-                    )}
-                    <small>
-                      {[row.league, factors?.country, factors?.half, factors?.sweet_spot ? "sweet" : null]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </small>
-                  </td>
-                  <td>
-                    {strategies.find((item) => item.key === row.strategy)?.short || row.strategy}
-                    {row.team ? ` · ${row.team}` : ""}
-                    {factors?.also_firing?.length ? (
-                      <small>
-                        +{" "}
-                        {factors.also_firing
-                          .map((key) => strategies.find((item) => item.key === key)?.short || key)
-                          .join(", ")}
-                      </small>
-                    ) : null}
-                  </td>
-                  <td>
-                    {row.score || "–"} {row.minute}′
-                    <small>{fmtNum(row.value, 1)}</small>
-                  </td>
-                  <td>{sideVal(factors?.k, row.team)}</td>
-                  <td>{sideVal(factors?.d5, row.team, 1)}</td>
-                  <td>{sideVal(factors?.d10, row.team)}</td>
-                  <td>{sideVal(factors?.phi, row.team)}</td>
-                  <td>{factors?.tslg || "–"}</td>
-                  <td>{triggerOdds(row)}</td>
-                  <td>
-                    {row.settle_score
-                      ? `${row.settle_score}${
-                          row.settle_minute != null ? ` ${row.settle_minute}′` : ""
-                        }`
-                      : "–"}
-                  </td>
-                  <td>
-                    <span className={`admin-result-pill is-${row.state.toLowerCase()}`}>
-                      {row.state}
+      </Card>
+
+      <div className="kit-grid-2">
+        <Card
+          title="Hit rate by day"
+          sub={fmtWindow(body.chart_window)}
+          right={
+            <Legend
+              items={[
+                { label: "Hit rate", color: "var(--accent)" },
+                { label: "Period average", color: "var(--muted)" },
+              ]}
+            />
+          }
+        >
+          <LineChart
+            ariaLabel="Hit rate by day"
+            baseline={chartSettled ? chartHits / chartSettled : null}
+            points={body.daily.map((d) => ({
+              label: fmtShort(d.date),
+              title: fmtDay(d.date),
+              value: d.hit_rate,
+              rows: [
+                ["Hit rate", pct(d.hit_rate)],
+                ["Hits / settled", `${d.confirmed} / ${d.settled}`],
+                ["Fired", String(d.total)],
+              ],
+            }))}
+          />
+        </Card>
+        <Card title="Minute of fire × strategy" sub="Hit rate per cell, coloured against all strategies">
+          <div
+            className="kit-heat"
+            style={{ gridTemplateColumns: `58px repeat(${body.matrix.columns.length}, minmax(34px, 1fr))` }}
+          >
+            <span />
+            {body.matrix.columns.map((c) => (
+              <span key={c} className="kit-heat-col">
+                {c}′
+              </span>
+            ))}
+            {body.matrix.rows.map((row) => (
+              <Fragment key={row.strategy}>
+                <span className="kit-heat-row">{short(row.strategy)}</span>
+                {row.cells.map((cell, i) => {
+                  const name = `${short(row.strategy)} · fired ${body.matrix.columns[i]}′`;
+                  if (cell.settled < 5 || overall == null) {
+                    return (
+                      <span
+                        key={i}
+                        className="kit-heat-cell is-empty"
+                        {...tip(name, [["Settled", String(cell.settled)], ["Hit rate", cell.settled ? pct(cell.confirmed / cell.settled) : "–"]])}
+                      >
+                        {cell.settled ? "·" : ""}
+                      </span>
+                    );
+                  }
+                  const rate = cell.confirmed / cell.settled;
+                  const bg = diverging(rate - overall);
+                  return (
+                    <span
+                      key={i}
+                      className="kit-heat-cell"
+                      style={{ background: bg, color: inkFor(bg) }}
+                      {...tip(name, [
+                        ["Hit rate", pct1(rate)],
+                        ["Hits / settled", `${cell.confirmed} / ${cell.settled}`],
+                        ["vs all strategies", `${rate >= overall ? "+" : ""}${((rate - overall) * 100).toFixed(1)} pts`],
+                      ])}
+                    >
+                      {pct(rate)}
                     </span>
+                  );
+                })}
+              </Fragment>
+            ))}
+          </div>
+          <div className="kit-legend kit-legend-gap">
+            <span>
+              worse
+              <i className="kit-ramp" style={{ background: "linear-gradient(90deg,#d95926,#2a3340,#3987e5)" }} />
+              better
+            </span>
+            <span>
+              <i className="kit-hatch" />
+              fewer than 5 settled
+            </span>
+          </div>
+        </Card>
+      </div>
+
+      <Card
+        title="Where it works"
+        sub="Every slice (minute, score, odds, side, sweet spot, league, weekday…) ranked by how far it beats or trails this period's rate"
+        right={
+          <label className="kit-toggle">
+            <input type="checkbox" checked={minN} onChange={(event) => setMinN(event.target.checked)} />
+            Hide slices under 15 alerts
+          </label>
+        }
+      >
+        <div className="kit-grid-2 res-lift-cols">
+          <div>
+            <Legend items={[{ label: "Lean into", color: "var(--s1)" }]} />
+            {lean.length ? lean.map(liftRow) : <p className="kit-muted">Nothing clearly above average on this much data.</p>}
+          </div>
+          <div>
+            <Legend items={[{ label: "Avoid or tighten", color: "var(--s2)" }]} />
+            {avoid.length ? avoid.map(liftRow) : <p className="kit-muted">Nothing clearly below average on this much data.</p>}
+          </div>
+        </div>
+      </Card>
+
+      <Card
+        title="Alert log"
+        sub={`${rows.length} alert(s) · newest first, grouped by day${log.length >= 1000 ? " · showing the latest 1,000" : ""}`}
+        right={
+          <div className="kit-tools">
+            <div className="kit-seg">
+              {[
+                ["", "All"],
+                ["Confirmed", "✓ Hit"],
+                ["Expired", "✕ Miss"],
+                ["Monitoring", "● Open"],
+              ].map(([value, text]) => (
+                <button key={value} type="button" className={logState === value ? "is-on" : ""} onClick={() => setLogState(value)}>
+                  {text}
+                </button>
+              ))}
+            </div>
+            <input
+              className="kit-search"
+              type="search"
+              value={query}
+              placeholder="Team, league, country…"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <button type="button" className="kit-btn" onClick={() => void downloadCsv()}>
+              Export CSV
+            </button>
+            <button type="button" className="kit-btn" disabled={busy} onClick={() => void load()}>
+              {busy ? "Loading…" : "Refresh"}
+            </button>
+          </div>
+        }
+      >
+        <div className="kit-table-wrap res-log-wrap">
+          <table className="kit-table res-log">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Match</th>
+                <th>Strategy</th>
+                <th>At fire</th>
+                <th>Board at fire</th>
+                <th className="r">Odds</th>
+                <th>Settled</th>
+                <th>Outcome</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...byDay.entries()].map(([day, items]) => {
+                const confirmed = items.filter((r) => r.state === "Confirmed").length;
+                const settled = items.filter((r) => r.state !== "Monitoring").length;
+                return (
+                  <Fragment key={day}>
+                    <tr className="res-day">
+                      <td colSpan={8}>
+                        <b>{day === today ? "Today" : day === yesterday ? "Yesterday" : fmtDay(day)}</b>
+                        {items.length} alerts
+                        <span className="kit-num">
+                          {confirmed}/{settled} hit · {pct(settled ? confirmed / settled : null)}
+                        </span>
+                        {items.length - settled ? <span className="kit-num">· {items.length - settled} open</span> : null}
+                      </td>
+                    </tr>
+                    {items.map((row) => {
+                      const f = row.factors;
+                      const tone = row.state === "Confirmed" ? "is-ok" : row.state === "Expired" ? "is-miss" : "is-open";
+                      const gap =
+                        row.state === "Confirmed" && row.settle_minute != null ? row.settle_minute - row.minute : null;
+                      return (
+                        <Fragment key={row.id}>
+                          <tr className={`res-row is-click ${tone}`} onClick={() => setOpenRow(openRow === row.id ? null : row.id)}>
+                            <td className="kit-num">{clock(row.created_at)}</td>
+                            <td>
+                              {row.live ? (
+                                <a href={`/?match=${encodeURIComponent(row.match_id)}`} onClick={(e) => e.stopPropagation()}>
+                                  {row.home_team} v {row.away_team}
+                                </a>
+                              ) : (
+                                <>
+                                  {row.home_team} v {row.away_team}
+                                </>
+                              )}
+                              <small>
+                                {f?.country ? `${countryFlag(f.country)} ` : ""}
+                                {row.league || f?.country || ""}
+                              </small>
+                            </td>
+                            <td>
+                              <span className="kit-tag">{short(row.strategy)}</span>{" "}
+                              <span className="kit-muted">{row.team || ""}</span>
+                              {f?.also_firing?.length ? <small>+ {f.also_firing.map(short).join(", ")} also firing</small> : null}
+                            </td>
+                            <td className="kit-num">
+                              {row.score || "–"} · {row.minute}′<small>value {row.value.toFixed(1)}</small>
+                            </td>
+                            <td>
+                              <span className="res-facts">
+                                <span>
+                                  <b>K</b>
+                                  {sideVal(f?.k, row.team)}
+                                </span>
+                                <span>
+                                  <b>Δ5</b>
+                                  {sideVal(f?.d5, row.team, 1)}
+                                </span>
+                                <span>
+                                  <b>Δ10</b>
+                                  {sideVal(f?.d10, row.team)}
+                                </span>
+                                <span>
+                                  <b>ΦI</b>
+                                  {sideVal(f?.phi, row.team)}
+                                </span>
+                              </span>
+                            </td>
+                            <td className="r kit-num">{triggerOdds(row)}</td>
+                            <td className="kit-num">
+                              {row.settle_score ? `${row.settle_score}${row.settle_minute != null ? ` ${row.settle_minute}′` : ""}` : "–"}
+                            </td>
+                            <td>
+                              <OutcomePill state={row.state} />
+                            </td>
+                          </tr>
+                          {openRow === row.id ? (
+                            <tr className="res-expand">
+                              <td colSpan={8}>
+                                <div className="res-expand-grid">
+                                  <div><span>Half</span><b>{f?.half || "–"}</b></div>
+                                  <div><span>Score state</span><b>{f?.score_state || "–"}</b></div>
+                                  <div><span>Time since last goal</span><b>{f?.tslg_bucket || f?.tslg || "–"}</b></div>
+                                  <div><span>Odds band</span><b>{f?.odds_bucket || "–"}</b></div>
+                                  <div><span>Sweet spot</span><b>{f?.sweet_spot == null ? "–" : f.sweet_spot ? "yes" : "no"}</b></div>
+                                  <div><span>Minutes to goal</span><b>{gap != null ? `${gap}′` : "–"}</b></div>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
+                  </Fragment>
+                );
+              })}
+              {!rows.length ? (
+                <tr>
+                  <td colSpan={8} className="kit-muted kit-pad">
+                    {busy ? "Loading…" : "No alerts match these filters."}
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {!busy && (body?.items || []).length === 0 ? (
-          <p className="admin-hint">No alerts in this window yet.</p>
-        ) : null}
-      </div>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </>
   );
 }

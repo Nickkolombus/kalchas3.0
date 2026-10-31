@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 import os
 from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Any
@@ -614,6 +615,7 @@ def admin_results(
     league: str | None = None,
     limit: int = Query(default=100, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
+    patterns: bool = True,
 ) -> dict[str, Any]:
     require_admin(request)
     start, end = _parse_results_window(since, until)
@@ -630,7 +632,7 @@ def admin_results(
             offset=offset,
         )
         pattern_src = display
-        if offset == 0 and limit < 2000:
+        if patterns and offset == 0 and limit < 2000:
             pattern_src, _ = _load_results(
                 since=start,
                 until=end,
@@ -649,7 +651,7 @@ def admin_results(
         "since": start.isoformat(),
         "until": end.isoformat(),
         "summary": {**summary, "hit_rate": hit_rate},
-        "patterns": pattern_summary(pattern_src),
+        "patterns": pattern_summary(pattern_src) if patterns else [],
         "items": display,
     }
 
@@ -768,6 +770,208 @@ def admin_visitors(
         },
         "daily": daily_summary(everything, tz=zone, start=first_day, end=today, humans_only=humans),
         "items": shown[:2000],
+    }
+
+
+INSIGHT_ROW_LIMIT = 20000
+
+
+def _strategy_keys() -> list[str]:
+    return [KEY_BY_SLOT[slot] for slot in sorted(KEY_BY_SLOT)]
+
+
+def _strategy_names(keys: list[str]) -> dict[str, str]:
+    names = {}
+    for key in keys:
+        info = STRATEGY_INFO.get(key)
+        names[key] = info.short if info else key
+    return names
+
+
+def _load_insight_alerts(start: datetime, end: datetime) -> list[dict[str, Any]]:
+    from kalchas_db.alerts import list_alert_results_sync
+
+    rows, _summary = list_alert_results_sync(
+        _dsn(), since=start, until=end, limit=INSIGHT_ROW_LIMIT, offset=0
+    )
+    return [_result_item(row) for row in rows]
+
+
+def _load_insight_visits(start: datetime, end: datetime) -> list[dict[str, Any]]:
+    from kalchas_db.visits import list_visits
+
+    from kalchas_api.visitors import visit_item
+
+    return [
+        visit_item(row)
+        for row in list_visits(_dsn(), since=start, until=end, limit=INSIGHT_ROW_LIMIT)
+    ]
+
+
+def _live_now() -> int | None:
+    try:
+        from kalchas_db.presence import get_live_presence
+
+        return int(get_live_presence(_dsn())["count"])
+    except Exception:  # noqa: BLE001 — a missing count must not break the page
+        return None
+
+
+def _window_or_422(
+    days: int | None, since: str | None, until: str | None, zone: tzinfo, max_days: int
+):
+    from kalchas_api.insights import window_from_params
+
+    try:
+        return window_from_params(days=days, since=since, until=until, zone=zone, max_days=max_days)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"bad date: {exc}") from exc
+
+
+@router.get("/insights/results")
+def results_insights_route(
+    request: Request,
+    days: int | None = Query(default=7, ge=1, le=400),
+    since: str | None = None,
+    until: str | None = None,
+    tz: str = "UTC",
+    strategy: list[str] | None = Query(default=None),
+) -> dict[str, Any]:
+    """Results page: KPIs vs the previous period, scorecard, trend, slices."""
+    require_admin(request)
+    from kalchas_api.insights import resolve_zone, results_insights
+
+    zone, tz = resolve_zone(tz)
+    window = _window_or_422(days, since, until, zone, 400)
+    load_from = min(window.previous().start, window.widen_to(14).start)
+    try:
+        rows = _load_insight_alerts(load_from, window.end)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"results unavailable: {exc}") from exc
+    body = results_insights(
+        rows,
+        window=window,
+        known_keys=_strategy_keys(),
+        selected=[item for item in (strategy or []) if item],
+    )
+    body["tz"] = tz
+    body["names"] = _strategy_names([row["strategy"] for row in body["by_strategy"]])
+    return body
+
+
+@router.get("/insights/visitors")
+def visitors_insights_route(
+    request: Request,
+    days: int | None = Query(default=7, ge=1, le=30),
+    since: str | None = None,
+    until: str | None = None,
+    tz: str = "UTC",
+) -> dict[str, Any]:
+    """Visitors page: KPIs vs the previous period, traffic, funnel, sources."""
+    require_admin(request)
+    from kalchas_db.visits import RETENTION_DAYS
+
+    from kalchas_api.insights import parse_time, resolve_zone, visitors_insights
+
+    zone, tz = resolve_zone(tz)
+    window = _window_or_422(days, since, until, zone, RETENTION_DAYS)
+    load_from = min(window.previous().start, window.widen_to(14).start)
+    try:
+        items = _load_insight_visits(load_from, window.end)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"visitors unavailable: {exc}") from exc
+    body = visitors_insights(
+        items,
+        window=window,
+        retained_since=datetime.now(UTC) - timedelta(days=RETENTION_DAYS),
+        live_now=_live_now(),
+    )
+    log = [item for item in items if window.contains(parse_time(item["first_seen"]))]
+    log.sort(key=lambda item: item["last_seen"], reverse=True)
+    body["log"] = log[:400]
+    body["tz"] = tz
+    return body
+
+
+@router.get("/insights/overview")
+def overview_insights_route(request: Request, tz: str = "UTC") -> dict[str, Any]:
+    """Overview page: today vs yesterday, per-strategy today, and what needs a look."""
+    require_admin(request)
+    from kalchas_api.insights import (
+        Window,
+        alert_stats,
+        daily_hits,
+        daily_visitors,
+        parse_time,
+        resolve_zone,
+        source_spikes,
+        strategy_drift,
+        tips_health,
+        visit_stats,
+    )
+
+    zone, tz = resolve_zone(tz)
+    today = datetime.now(zone).date()
+    day = Window(today, today, zone)
+    yday = day.previous()
+    fortnight = day.widen_to(14)
+    month = day.widen_to(30)
+    try:
+        rows = _load_insight_alerts(day.widen_to(37).start, day.end)
+        visits = _load_insight_visits(fortnight.start, day.end)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"overview unavailable: {exc}") from exc
+
+    def alerts_in(w: Window, key: str | None = None) -> list[dict[str, Any]]:
+        return [
+            row
+            for row in rows
+            if (key is None or row["strategy"] == key) and w.contains(parse_time(row["created_at"]))
+        ]
+
+    def humans_in(w: Window) -> list[dict[str, Any]]:
+        return [
+            item
+            for item in visits
+            if item["likely_human"] and w.contains(parse_time(item["first_seen"]))
+        ]
+
+    keys = _strategy_keys()
+    names = _strategy_names(keys)
+    attention = strategy_drift(rows, today=today, zone=zone, keys=keys, names=names)
+    attention += source_spikes(visits, today=today, zone=zone)
+    try:
+        from kalchas_db.tips_export import get_settings_sync
+
+        attention.append(tips_health(get_settings_sync(_dsn()), now=datetime.now(UTC)))
+    except Exception:  # tips table missing must not break the page
+        logging.getLogger(__name__).debug("tips health unavailable", exc_info=True)
+    return {
+        "tz": tz,
+        "date": today.isoformat(),
+        "names": names,
+        "results": {
+            "today": alert_stats(alerts_in(day)),
+            "yesterday": alert_stats(alerts_in(yday)),
+        },
+        "visitors": {
+            "today": visit_stats(humans_in(day)),
+            "yesterday": visit_stats(humans_in(yday)),
+        },
+        "live_now": _live_now(),
+        "strategies": [
+            {
+                "strategy": key,
+                "today": alert_stats(alerts_in(day, key)),
+                "month": alert_stats(alerts_in(month, key)),
+            }
+            for key in keys
+        ],
+        "hit_daily": daily_hits(alerts_in(fortnight), fortnight),
+        "visitor_daily": daily_visitors(
+            [item for item in visits if item["likely_human"]], fortnight
+        ),
+        "attention": attention,
     }
 
 

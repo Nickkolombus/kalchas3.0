@@ -107,13 +107,10 @@ export function AdminTips({
 
   return (
     <>
-      <header>
-        <h1>Tips feed</h1>
-        <p>
-          CSV BFbot polls. One row per match from open alerts in the window.
-          Names are the API-Football names until the Betfair map is ported.
-        </p>
-      </header>
+      <p className="adm-intro">
+        CSV BFbot polls. One row per match from open alerts in the window.
+        Names are the API-Football names until the Betfair map is ported.
+      </p>
 
       <article className="admin-card">
         <div className="admin-card-head">
