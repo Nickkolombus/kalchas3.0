@@ -95,7 +95,7 @@ def test_board_snapshot_has_strategy_and_stat_lines() -> None:
     assert "rule_of_three" in status
     assert "delta_goal" in status
     assert "kscore" in status
-    assert status["omega"]["threshold"] == 30
+    assert "omega" not in status
     assert board["stat_lines"]["shots_on_target"]["home"] == 8
     assert isinstance(board["hot_score"], int)
     assert board["last_5min"]["sot"]["home"] == 8
@@ -180,7 +180,7 @@ def test_form_bar_fires_one_goal_behind_with_its_reading() -> None:
 
 
 def test_form_bar_pressure_conditions_only_bite_when_switched_on() -> None:
-    """The seeded Δ10′/Δ5′/UrG/Omega rows start switched off."""
+    """The seeded Δ10′/Δ5′/UrG rows start switched off."""
     row = {
         "left_scope": "triggering",
         "left_metric": "pressure_index",
@@ -224,10 +224,7 @@ def test_delta_5min_alert_respects_fire_threshold() -> None:
 
 
 def test_admin_fire_thresholds_silence_alerts_below_the_bar() -> None:
-    """UrG, PI, Form Bar, Δ5', and K-Score all honor the admin fire number.
-
-    Omega is excluded: its fire slider is unused; it gates on formula weights.
-    """
+    """UrG, PI, Form Bar, Δ5', and K-Score all honor the admin fire number."""
     timeline = _busy_board_timeline()
     silent = evaluate_match(
         timeline,

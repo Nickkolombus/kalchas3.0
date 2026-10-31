@@ -95,17 +95,6 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
-function slopeToDegrees(slope: number, kScale: number): number {
-  return (Math.atan(slope / Math.max(kScale, 1e-9)) * 180) / Math.PI;
-}
-
-function omegaDegreeHint(weights: WeightRow[], key: string): string | null {
-  if (key !== "min_accel" && key !== "min_baseline_slope") return null;
-  const kScale = weights.find((row) => row.key === "k_scale")?.current ?? 1.5;
-  const slope = weights.find((row) => row.key === key)?.current ?? 0;
-  return `≈ ${slopeToDegrees(slope, kScale).toFixed(0)}° at k_scale ${kScale}`;
-}
-
 export function AdminApp() {
   const [configured, setConfigured] = useState(true);
   const [authed, setAuthed] = useState(false);
@@ -498,8 +487,7 @@ export function AdminApp() {
           <header>
             <h1>Basic thresholds</h1>
             <p>
-              When a strategy fires, how long to wait, and whether it is on. Omega
-              gates live under Formula weights - its Fire slider is unused.
+              When a strategy fires, how long to wait, and whether it is on.
             </p>
           </header>
         ) : null}
@@ -765,27 +753,17 @@ export function AdminApp() {
               </div>
               <p className="admin-hint">{current.blurb}</p>
               <div className="admin-fields">
-                {current.slot === 6 ? (
-                  <p className="admin-unused">
-                    Fire threshold is unused for Omega. The engine fires on{" "}
-                    <code>min_accel</code>, <code>min_baseline_slope</code>,{" "}
-                    <code>pi_level_min</code>, and <code>min_shots</code> under Formula
-                    weights (default min_accel 0.866 ≈ 30° at k_scale 1.5). Same surge
-                    will not re-fire until it cools off.
-                  </p>
-                ) : (
-                  <label>
-                    Fire threshold
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={current.threshold}
-                      onChange={(event) =>
-                        patch(current.slot, { threshold: Number(event.target.value) })
-                      }
-                    />
-                  </label>
-                )}
+                <label>
+                  Fire threshold
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={current.threshold}
+                    onChange={(event) =>
+                      patch(current.slot, { threshold: Number(event.target.value) })
+                    }
+                  />
+                </label>
                 <label>
                   Cooldown (min)
                   <input
@@ -798,26 +776,19 @@ export function AdminApp() {
                     }
                   />
                 </label>
-                {current.slot === 6 ? (
-                  <p className="admin-unused">
-                    Omega no longer uses a value-delta bypass. A fire locks until
-                    linear ω falls below half of the last alert.
-                  </p>
-                ) : (
-                  <label>
-                    Bypass if value rises by
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={current.cooldown_bypass_delta ?? 0}
-                      onChange={(event) =>
-                        patch(current.slot, {
-                          cooldown_bypass_delta: Number(event.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                )}
+                <label>
+                  Bypass if value rises by
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={current.cooldown_bypass_delta ?? 0}
+                    onChange={(event) =>
+                      patch(current.slot, {
+                        cooldown_bypass_delta: Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
                 <label>
                   Don&apos;t fire after minute
                   <input
@@ -996,15 +967,7 @@ export function AdminApp() {
               Built-in presets only apply weights.
             </p>
             <pre className="admin-eq">{current.equation}</pre>
-            {current.key === "omega" ? (
-              <p className="admin-omega-lead">
-                Omega section - these gates are what <code>TeamOmega.meets</code> uses.
-                Presets: Default (~30°), Sensitive, Confirmed surges only, Quiet / picky.
-              </p>
-            ) : null}
             {current.weights.map((weight) => {
-              const degreeHint =
-                current.key === "omega" ? omegaDegreeHint(current.weights, weight.key) : null;
               const suggested = weight.suggested || String(weight.default);
               return (
                 <label key={weight.key} className="admin-slider">
@@ -1012,7 +975,6 @@ export function AdminApp() {
                     {weight.label}
                     <small>
                       {weight.current}
-                      {degreeHint ? ` · ${degreeHint}` : ""}
                     </small>
                   </span>
                   <div className="admin-slider-controls">

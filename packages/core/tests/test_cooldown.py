@@ -82,27 +82,6 @@ def test_rollback_clears_reservation() -> None:
     assert d3.can_send
 
 
-def test_omega_ignores_value_delta_bypass() -> None:
-    book = CooldownBook()
-    d1 = book.decide("1", 6, 40, 0.8, team="home")
-    book.confirm(d1.cooldown_key)
-    d2 = book.decide("1", 6, 42, 2.6, team="home")
-    assert not d2.can_send
-    assert d2.blocked_by == "STILL_SURGING"
-
-
-def test_omega_rearms_only_after_the_surge_drops() -> None:
-    book = CooldownBook()
-    d1 = book.decide("1", 6, 40, 0.80, team="home")
-    book.confirm(d1.cooldown_key)
-    assert not book.decide("1", 6, 50, 0.70, team="home").can_send
-    assert book.decide("1", 6, 50, 0.70, team="home").blocked_by == "STILL_SURGING"
-    cooled = book.decide("1", 6, 56, 0.30, team="home")
-    assert cooled.can_send
-    book.confirm(cooled.cooldown_key)
-    assert not book.decide("1", 6, 58, 0.75, team="home").can_send
-
-
 def test_delta5_same_surge_does_not_refire_on_tiny_increase() -> None:
     book = CooldownBook()
     first = book.decide("1", 4, 75, 7.0, team="home")
@@ -123,8 +102,6 @@ def test_team_stack_blocks_k_after_component_alert() -> None:
     assert stacked.blocked_by == "TEAM_STACK"
     other_side = book.decide("1", 7, 75, 60.0, team="away")
     assert other_side.can_send
-    omega = book.decide("1", 6, 75, 0.9, team="home")
-    assert omega.can_send
 
 
 def test_team_stack_clears_after_window() -> None:
@@ -153,21 +130,21 @@ def test_reservation_expires() -> None:
 
 
 def test_late_cutoff_blocks_after_max_fire_minute() -> None:
-    book = CooldownBook(rules={6: CooldownRules(strategy_slot=6, max_fire_minute=85)})
-    assert book.decide("1", 6, 85, 1.5, team="home").can_send
-    late = book.decide("2", 6, 86, 1.5, team="home")
+    book = CooldownBook(rules={1: CooldownRules(strategy_slot=1, max_fire_minute=85)})
+    assert book.decide("1", 1, 85, 1.5, team="home").can_send
+    late = book.decide("2", 1, 86, 1.5, team="home")
     assert not late.can_send
-    assert late.blocked_by == "S6_LATE_CUTOFF"
+    assert late.blocked_by == "S1_LATE_CUTOFF"
     # Stoppage time is the running clock, so 90+4 arrives as 94.
-    assert book.decide("3", 6, 94, 2.8, team="away").blocked_by == "S6_LATE_CUTOFF"
+    assert book.decide("3", 1, 94, 2.8, team="away").blocked_by == "S1_LATE_CUTOFF"
     # Other strategies keep firing.
     assert book.decide("2", 4, 92, 7.5, team="home").can_send
 
 
 def test_late_cutoff_off_by_default() -> None:
     book = CooldownBook()
-    assert book.rules_for(6).max_fire_minute is None
-    assert book.decide("1", 6, 95, 1.5, team="home").can_send
+    assert book.rules_for(1).max_fire_minute is None
+    assert book.decide("1", 1, 95, 1.5, team="home").can_send
 
 
 def test_first_half_cutoff_only_bites_in_the_first_half() -> None:

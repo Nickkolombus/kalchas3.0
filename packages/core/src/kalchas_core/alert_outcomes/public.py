@@ -56,7 +56,6 @@ _SLOT_BY_KEY: dict[str, int] = {
     "delta_goal": 3,
     "delta_5min": 4,
     "npei": 5,
-    "omega": 6,
     "kscore": 7,
 }
 

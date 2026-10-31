@@ -21,7 +21,6 @@ type ResultFactors = {
   d10?: SidePair;
   lbar?: SidePair;
   phi?: SidePair;
-  omega?: SidePair;
   k?: SidePair;
   k_match?: number | null;
   also_firing?: string[];
@@ -35,7 +34,6 @@ export type ResultItem = {
   slot: number;
   team: string | null;
   value: number;
-  theta?: number | null;
   minute: number;
   score: string | null;
   home_team: string | null;
@@ -187,7 +185,7 @@ export function AdminResults({
         <h1>Results</h1>
         <p>
           Fire-time board plus settle result. Changing confirmation rules does
-          not rewrite these rows. Full K / Δ5 / Δ10 / Ω snapshots start on
+          not rewrite these rows. Full K / Δ5 / Δ10 snapshots start on
           alerts after this deploy; older rows still have stats, odds, and TSLG.
         </p>
       </header>
@@ -309,7 +307,6 @@ export function AdminResults({
               <th>K</th>
               <th>Δ5</th>
               <th>Δ10</th>
-              <th>Ω</th>
               <th>ΦI</th>
               <th>TSLG</th>
               <th>Odds</th>
@@ -358,7 +355,6 @@ export function AdminResults({
                   <td>{sideVal(factors?.k, row.team)}</td>
                   <td>{sideVal(factors?.d5, row.team, 1)}</td>
                   <td>{sideVal(factors?.d10, row.team)}</td>
-                  <td>{sideVal(factors?.omega, row.team)}</td>
                   <td>{sideVal(factors?.phi, row.team)}</td>
                   <td>{factors?.tslg || "–"}</td>
                   <td>{triggerOdds(row)}</td>

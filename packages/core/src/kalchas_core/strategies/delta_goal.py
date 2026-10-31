@@ -16,7 +16,7 @@ How many goals should this team have by now, given recent form on both sides?
    instead of a number, and Form Bar does not alert for it.
 
 Purely form against the scoreline: no live match stats. Pressure is what
-Δ5′/Δ10′/UrG/Omega read, and an admin attaches those to Form Bar as extra
+Δ5′/Δ10′/UrG read, and an admin attaches those to Form Bar as extra
 conditions rather than this strategy blending them in.
 
 A team with fewer than ``FORM_BAR_MIN_GAMES`` played games in the window has

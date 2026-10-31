@@ -19,7 +19,6 @@ from kalchas_core.events import count_cards_by_side
 from kalchas_core.match import MatchTimeline
 from kalchas_core.odds import kickoff_home_away
 from kalchas_core.runner import board_snapshot, home_away_odds, live_home_away_odds
-from kalchas_core.strategies.omega import DEFAULT_ANGLE_SCALE, alert_theta_degrees
 from kalchas_core.weights import WeightSet, strategy_names
 from kalchas_football import apifootball_badge_url, https_asset_url
 from pydantic import BaseModel, Field
@@ -166,7 +165,6 @@ class TimelinePointOut(BaseModel):
     shots_on_target: SideValue
     possession: SideValue
     rule_of_three: SideValue
-    omega: SideValue
     kscore: float = 0
 
 
@@ -660,17 +658,6 @@ def _enrich_live_row(
     )
 
 
-def _recent_alert_display_value(strategy_key: str, stored: float, weights: WeightSet) -> float:
-    """Omega alerts are stored as linear ω; the board and strip show θ°."""
-    if strategy_key != "omega":
-        return stored
-    try:
-        k_scale = float(weights.get("omega", "k_scale"))
-    except (TypeError, ValueError):
-        k_scale = DEFAULT_ANGLE_SCALE
-    return round(alert_theta_degrees(stored, k_scale))
-
-
 def _record_presence_ping(request: Request, visitor_id: str | None) -> None:
     """Best-effort: a visitor's own poll should never fail on presence trouble."""
     if not visitor_id:
@@ -758,7 +745,11 @@ def _build_live_response() -> LiveResponse:
             if not match_is_terminal(str(row.get("status_short") or "") or None)
         ]
         live_ids = [str(row["match_id"]) for row in rows]
-        alert_rows = list_recent_alerts_sync(dsn)
+        # Alerts from retired strategies (Omega) stay in history, not on the board.
+        known = set(strategy_names())
+        alert_rows = [
+            row for row in list_recent_alerts_sync(dsn) if str(row["strategy_key"]) in known
+        ]
         alert_ids = [str(row["match_id"]) for row in alert_rows]
         event_ids = list(dict.fromkeys(live_ids + alert_ids))
         histories = load_match_histories_sync(dsn, live_ids)
@@ -793,13 +784,6 @@ def _build_live_response() -> LiveResponse:
                 "status_short": str(header["status_short"]) if header.get("status_short") else None,
                 "goals": goals_from_events(events_by_id.get(match_id, [])),
             }
-        try:
-            from kalchas_api.runtime import load_board_tuning
-
-            tuning = load_board_tuning()
-            weights = tuning.weights
-        except Exception:  # noqa: BLE001 — missing k_scale must not take down the board
-            weights = WeightSet.defaults()
         recent_alerts = []
         for row in alert_rows:
             match_id = str(row["match_id"])
@@ -834,9 +818,7 @@ def _build_live_response() -> LiveResponse:
                     match_id=match_id,
                     strategy=str(row["strategy_key"]),
                     team=str(row["team"]) if row.get("team") else None,
-                    value=_recent_alert_display_value(
-                        str(row["strategy_key"]), float(row["value"]), weights
-                    ),
+                    value=float(row["value"]),
                     minute=int(row["minute"]),
                     score=str(row["score"]) if row.get("score") else None,
                     home_team=str(row["home_team"]) if row.get("home_team") else None,
@@ -935,7 +917,6 @@ def _panel_to_response(raw: dict[str, Any]) -> MatchPanelResponse:
             shots_on_target=_side_value(point.get("shots_on_target")),
             possession=_side_value(point.get("possession")),
             rule_of_three=_side_value(point.get("rule_of_three")),
-            omega=_side_value(point.get("omega")),
             kscore=float(point.get("kscore") or 0),
         )
         for point in raw.get("timeline") or []

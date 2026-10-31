@@ -152,7 +152,6 @@ type SortKey =
   | "pressure_index"
   | "delta_goal"
   | "npei"
-  | "omega"
   | "tslg"
   | "shots_on_target"
   | "shots_off_target"
@@ -232,7 +231,6 @@ const STRATEGY_CARD: Record<string, string> = {
   pressure_index: "Δ10′",
   delta_goal: "Form Bar",
   npei: "ΦI",
-  omega: "Ωmega",
   kscore: "K Index",
 };
 
@@ -306,16 +304,6 @@ const STRAT_COLS: {
     tone: "phi",
     scale: { min: 0, max: 100 },
     tip: "How well attacks become shots, out of 100. A higher number means more shots from the same attacks.",
-  },
-  {
-    key: "omega",
-    label: "Ω",
-    name: "Omega",
-    digits: 0,
-    suffix: "°",
-    tone: "omega",
-    scale: { min: -15, max: 40 },
-    tip: "How steeply pressure is building, in degrees. 20° is building. 30° fires. 35°+ is rare. Negative means it is flattening.",
   },
 ];
 
@@ -436,9 +424,6 @@ function fmtStrat(
 }
 
 function fmtAlertValue(alert: RecentAlert): string {
-  if (alert.strategy === "omega") {
-    return fmtStrat(alert.value, 0, { signed: true, suffix: "°" });
-  }
   if (alert.strategy === "kscore" || alert.strategy === "pressure_index") {
     return fmtStrat(alert.value, 0);
   }
@@ -685,7 +670,6 @@ function compareMatches(
     case "pressure_index":
     case "delta_goal":
     case "npei":
-    case "omega":
       cmp = stratMax(a, key) - stratMax(b, key);
       break;
     default:
@@ -1224,7 +1208,6 @@ const STRAT_STEP_FALLBACK: Record<string, number> = {
   pressure_index: 68,
   delta_goal: 1,
   npei: 55,
-  omega: 30,
   kscore: 60,
 };
 

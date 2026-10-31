@@ -329,21 +329,6 @@
   font: inherit;
 }
 
-.admin-unused {
-  color: var(--muted);
-  font-size: 0.85rem;
-  border: 1px dashed var(--border);
-  padding: 0.6rem 0.7rem;
-  border-radius: 0.35rem;
-  margin: 0.4rem 0 0.8rem;
-}
-
-.admin-omega-lead {
-  color: var(--text-2);
-  font-size: 0.85rem;
-  margin: 0.4rem 0 1rem;
-}
-
 .admin-suggested {
   color: var(--accent);
 }

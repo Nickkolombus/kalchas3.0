@@ -12,7 +12,6 @@ from kalchas_core.alert_outcomes import AlertOutcomeEvaluator, evaluator_from_ru
 from kalchas_core.cooldown import (
     DEFAULT_BASE_COOLDOWN,
     DEFAULT_BYPASS_DELTA,
-    DEFAULT_OMEGA_COOLDOWN,
     CooldownBook,
     CooldownRules,
 )
@@ -121,7 +120,7 @@ def _tally_yellow(
 class ScannerConfig:
     interval_sec: int = 60
     min_minute: int = 5
-    slots: tuple[int, ...] = (1, 2, 4, 6, 7)
+    slots: tuple[int, ...] = (1, 2, 4, 7)
     """Slot 3 (Form Bar) is off until an admin enables it."""
     max_matches_per_cycle: int = 400
     max_stats_http_per_cycle: int = 15
@@ -721,10 +720,7 @@ class Scanner:
                     windows=self.sweet_spot,
                 ),
             }
-            if cand.strategy_key == "omega":
-                payload["theta"] = detail.get("theta")
-                payload["k_scale"] = detail.get("k_scale")
-            elif cand.strategy_key == "delta_goal":
+            if cand.strategy_key == "delta_goal":
                 payload["form_bar"] = detail
             if timeline is not None:
                 last_5 = last_5min_block(timeline)
@@ -808,10 +804,7 @@ class Scanner:
             for row in bundle.get("rules") or []:
                 slot = int(row["strategy_slot"])
                 bypass = row.get("cooldown_bypass_delta")
-                default_cd = DEFAULT_OMEGA_COOLDOWN if slot == 6 else DEFAULT_BASE_COOLDOWN
-                if slot == 6:
-                    bypass = None
-                elif slot == 4 and bypass is not None and float(bypass) <= 1.0:
+                if slot == 4 and bypass is not None and float(bypass) <= 1.0:
                     bypass = None
                 elif bypass is not None:
                     bypass = float(bypass)
@@ -819,9 +812,9 @@ class Scanner:
                     bypass = DEFAULT_BYPASS_DELTA.get(slot)
                 rules[slot] = CooldownRules(
                     strategy_slot=slot,
-                    base_cooldown_minutes=int(row.get("cooldown_minutes") or default_cd),
+                    base_cooldown_minutes=int(row.get("cooldown_minutes") or DEFAULT_BASE_COOLDOWN),
                     value_delta_threshold=bypass,
-                    rearm_after_drop=slot in {4, 6},
+                    rearm_after_drop=slot == 4,
                     max_fire_minute=(
                         int(row["max_fire_minute"])
                         if row.get("max_fire_minute") is not None

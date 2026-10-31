@@ -165,7 +165,6 @@ def timeline_series(
                 "shots_on_target": _snapshot_stat(timeline, "shots_on_target"),
                 "possession": _snapshot_stat(timeline, "possession"),
                 "rule_of_three": _side_values(status, "rule_of_three"),
-                "omega": _side_values(status, "omega"),
                 "kscore": float(kblock.get("match") or 0),
             }
         )

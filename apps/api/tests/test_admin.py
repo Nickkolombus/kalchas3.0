@@ -328,7 +328,7 @@ def test_put_thresholds_saves_late_cutoff(monkeypatch) -> None:
 
     saved: dict[int, dict] = {}
     current = {
-        "strategy_slot": 6,
+        "strategy_slot": 7,
         "success_window_minutes": 20,
         "expiration_buffer_minutes": 2,
         "infinite_ttl": False,
@@ -353,13 +353,13 @@ def test_put_thresholds_saves_late_cutoff(monkeypatch) -> None:
     client = TestClient(app)
     client.post("/api/admin/login", json={"password": "s3cret"})
 
-    item = {"slot": 6, "threshold": 1.0, "cooldown_minutes": 15, "max_fire_minute": 80}
+    item = {"slot": 7, "threshold": 1.0, "cooldown_minutes": 15, "max_fire_minute": 80}
     assert client.put("/api/admin/thresholds", json={"items": [item]}).status_code == 200
-    assert saved[6]["max_fire_minute"] == 80
+    assert saved[7]["max_fire_minute"] == 80
 
     del item["max_fire_minute"]
     assert client.put("/api/admin/thresholds", json={"items": [item]}).status_code == 200
-    assert saved[6]["max_fire_minute"] is None
+    assert saved[7]["max_fire_minute"] is None
 
     item["max_fire_minute"] = 0
     assert client.put("/api/admin/thresholds", json={"items": [item]}).status_code == 422
@@ -367,18 +367,18 @@ def test_put_thresholds_saves_late_cutoff(monkeypatch) -> None:
 
     item["max_fire_minute_1h"] = 38
     assert client.put("/api/admin/thresholds", json={"items": [item]}).status_code == 200
-    assert saved[6]["max_fire_minute_1h"] == 38
+    assert saved[7]["max_fire_minute_1h"] == 38
     item["max_fire_minute_1h"] = 61
     assert client.put("/api/admin/thresholds", json={"items": [item]}).status_code == 422
 
     # Saving confirmation rules keeps the stored cut-off.
     rule = {
-        "slot": 6,
+        "slot": 7,
         "success_window_minutes": 20,
         "expiration_buffer_minutes": 2,
         "infinite_ttl": False,
         "team_specific": True,
     }
     assert client.put("/api/admin/rules", json={"items": [rule]}).status_code == 200
-    assert saved[6]["max_fire_minute"] == 85
-    assert saved[6]["max_fire_minute_1h"] == 40
+    assert saved[7]["max_fire_minute"] == 85
+    assert saved[7]["max_fire_minute_1h"] == 40

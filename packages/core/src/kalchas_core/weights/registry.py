@@ -98,7 +98,7 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
                 "median goals scored and the opponent's median goals conceded over "
                 "their last 10 played games, against what it has actually scored. "
                 "Needs 5+ recent games (if only the opponent is short, its own median "
-                "alone). No live match stats: attach Δ5′/Δ10′/UrG/Omega as extra "
+                "alone). No live match stats: attach Δ5′/Δ10′/UrG as extra "
                 "conditions below to require pressure. The fire threshold is goals "
                 "behind pace."
             ),
@@ -136,36 +136,17 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
                 "(see zone ceiling weights below)."
             ),
         ),
-        "omega": StrategyInfo(
-            slot="6",
-            name="Omega (Ω Surge)",
-            short="Ω",
-            equation=(
-                "ω = recent rate − rate in the period just before it (not overlapping)\n"
-                "Trigger (per team): ω > min_accel AND baseline > min_baseline_slope"
-                " AND PI₁₀ ≥ pi_level_min AND shots_fast ≥ min_shots"
-            ),
-            blurb=(
-                "Per-team pressure acceleration: how much busier the last few minutes "
-                "are than the period right before them, gated by a rising trend, a "
-                "pressure floor, and at least one shot. Tune the gates below on this "
-                "tab — the Fire threshold field on the Thresholds tab doesn't apply "
-                "to Omega. θ/α (shown on the board and in alerts) are the same gates "
-                "expressed as degrees; default scale keeps 35°+ rare and fire at 30°."
-            ),
-        ),
         "kscore": StrategyInfo(
             slot="7",
             name="K-Score",
             short="K",
             equation=(
-                "votes: momentum=σ(Δ5/ms), pressure=PI/100, rule3=(RO3+0.3)/1.3,\n"
-                "       omega=σ(accel/0.8)·(0.45+0.55·σ(base/0.4))·clamp(level/55,0.2,1)\n"
+                "votes: momentum=σ(Δ5/ms), pressure=PI/100, rule3=(RO3+0.3)/1.3\n"
                 "logit = bias + Σ trust_i · (2·vote_i − 1) + context\n"
                 "K = round(100 · σ(logit) · ΦI)   ΦI = floor+(1−floor)·NPEI/100"
             ),
             blurb=(
-                "Meta-strategy: four consultant strategies vote in [0,1], a weighted "
+                "Meta-strategy: three consultant strategies vote in [0,1], a weighted "
                 "logit blend produces a probability, and NPEI scales it as a focus "
                 "multiplier (ΦI). Optional context terms adjust for red cards, late "
                 "trailing and kickoff odds. Outputs a 0–100 score per team and a "
@@ -474,116 +455,6 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 "above → Highly Efficient.",
             ),
         ),
-        "omega": _specs(
-            WeightSpec(
-                "min_accel",
-                "Min acceleration ω",
-                0.866,
-                0.0,
-                5.0,
-                0.01,
-                "How much faster pressure has to be building right now than it was "
-                "in the period just before, before Omega fires. Default 0.866 is "
-                "about 30° on the board. Raise to ignore weak tilts; lower to catch "
-                "earlier surges.",
-                "0.866 (~30°)",
-            ),
-            WeightSpec(
-                "min_baseline_slope",
-                "Min baseline slope",
-                0.08,
-                -1.0,
-                2.0,
-                0.01,
-                "Requires the period just before the surge to already be trending "
-                "upward, so a burst with nothing behind it reads as a spike, not a "
-                "confirmed surge. Default 0.08 needs a real climb; negative allows "
-                "earlier, noisier calls.",
-                "0.08 (confirmed climb)",
-            ),
-            WeightSpec(
-                "pi_level_min",
-                "Min PI₁₀ level",
-                40.0,
-                0.0,
-                80.0,
-                1.0,
-                "Floor on how much real pressure (0–100, same scale as Δ10′) already "
-                "exists before Omega can fire. Default 40. 0 removes the floor — "
-                "a surge from nothing would still qualify.",
-                "40",
-            ),
-            WeightSpec(
-                "min_shots",
-                "Min shots in fast window",
-                1.0,
-                0.0,
-                5.0,
-                1.0,
-                "Shots on or off target required in the recent window. Default 1 "
-                "stops Omega firing on dangerous attacks alone, the noisiest stat "
-                "the feed carries. 0 turns this gate off.",
-                "1",
-            ),
-            WeightSpec(
-                "k_scale",
-                "Display k (arctan scale)",
-                1.5,
-                0.1,
-                50.0,
-                0.1,
-                "Only changes how the board and alerts display the angle (θ/α) — "
-                "not whether Omega fires (that's min_accel above). Larger values "
-                "flatten the scale so 35°+ stays rare. Default 1.5.",
-                "1.5",
-            ),
-            WeightSpec(
-                "fast_window",
-                "Fast PI window (min)",
-                5.0,
-                2.0,
-                15.0,
-                1.0,
-                "Minutes of Pressure Index used for the recent reading. Shorter is "
-                "twitchier; longer smooths noise. Must stay below the slow window.",
-                "5",
-            ),
-            WeightSpec(
-                "slow_window",
-                "Slow PI window (min)",
-                10.0,
-                5.0,
-                25.0,
-                1.0,
-                "Minutes of Pressure Index used for the baseline — read for the "
-                "period immediately before the fast window, not overlapping it. "
-                "The match is too young to evaluate until fast_window + slow_window "
-                "+ deriv_window minutes have elapsed.",
-                "10",
-            ),
-            WeightSpec(
-                "deriv_window",
-                "Derivative window (min)",
-                3.0,
-                1.0,
-                8.0,
-                1.0,
-                "Finite-difference width when computing slopes. Wider = less noise, "
-                "slower to react.",
-                "3",
-            ),
-            WeightSpec(
-                "flat_band",
-                "Flat-state band (degrees)",
-                5.0,
-                0.0,
-                20.0,
-                1.0,
-                "Display/classify only — not a fire gate. |θ| and |α| below this "
-                "are labelled 'flat' on diagnostics.",
-                "5°",
-            ),
-        ),
         "kscore": _specs(
             WeightSpec(
                 "trust_momentum",
@@ -611,15 +482,6 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 3.0,
                 0.1,
                 "Logit weight on the Unrealised goals consultant vote.",
-            ),
-            WeightSpec(
-                "trust_omega",
-                "Trust: Omega",
-                0.4,
-                0.0,
-                3.0,
-                0.1,
-                "Logit weight on the Omega consultant vote.",
             ),
             WeightSpec(
                 "phi_floor",
@@ -750,33 +612,11 @@ BUILTIN_PRESETS: Mapping[str, Mapping[str, Mapping[str, float]]] = MappingProxyT
                 "w3_shot_creation": 0.25,
             },
         },
-        "omega": {
-            "Default (~30°)": {},
-            "Sensitive": {
-                "min_accel": 0.546,
-                "min_baseline_slope": 0.0,
-                "pi_level_min": 0.0,
-                "min_shots": 0.0,
-            },
-            "Confirmed surges only": {
-                "min_accel": 0.866,
-                "min_baseline_slope": 0.05,
-                "pi_level_min": 45.0,
-                "min_shots": 1.0,
-            },
-            "Quiet / picky": {
-                "min_accel": 1.05,
-                "min_baseline_slope": 0.10,
-                "pi_level_min": 55.0,
-                "min_shots": 2.0,
-            },
-        },
         "kscore": {
             "Balanced (default)": {},
             "Momentum-led": {
                 "trust_momentum": 1.8,
                 "trust_pressure": 0.5,
-                "trust_omega": 0.3,
             },
             "Context-aware": {
                 "ctx_red_card": 0.6,

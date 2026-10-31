@@ -1,8 +1,8 @@
 """K-Score (Strategy 7).
 
-New in 3.0; 2.2 had no unit tests for the blend. Verified historically against
-2.2 over 800 signal pairs (`scripts/verify_kscore_port.py`). Product SSOT:
-Omega always contributes via the full TeamOmega triple.
+New in 3.0; 2.2 had no unit tests for the blend. Matched 2.2 over 800 signal
+pairs when it was ported; it has diverged since Omega, the fourth consultant,
+was retired. Three remain.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from kalchas_core.strategies.kscore import (
     evaluate,
     evaluate_team,
     focus,
-    omega_vote,
     sigmoid,
 )
 from kalchas_core.weights import WeightSet
@@ -46,40 +45,15 @@ class TestSigmoid:
         assert math.isfinite(sigmoid(-1e6))
 
 
-class TestOmegaVote:
-    def test_incomplete_omega_is_neutral(self) -> None:
-        """Accel without baseline/level must not apply the old truncated drag."""
-        for accel in (0, 1, 10, 50, 200, 1e6):
-            assert omega_vote(acceleration=accel) == pytest.approx(0.5)
-
-    def test_full_omega_can_produce_a_supporting_vote(self) -> None:
-        vote = omega_vote(acceleration=0.6, baseline=0.3, level=60.0)
-        assert vote > 0.5
-
-    def test_full_omega_with_zero_level_stays_at_floor_band(self) -> None:
-        vote = omega_vote(acceleration=5.0, baseline=0.0, level=0.0)
-        assert vote == pytest.approx(0.145, abs=0.001)
-        assert vote < 0.5
-
-    def test_legacy_angle_form_when_acceleration_is_absent(self) -> None:
-        assert omega_vote(theta=0.0, alpha=0.0) == pytest.approx(0.5)
-        rising = omega_vote(theta=45.0, alpha=30.0)
-        assert rising > 0.5
-
-    def test_negative_acceleration_is_floored_at_zero(self) -> None:
-        assert omega_vote(acceleration=-10.0, baseline=2.0, level=50.0) == omega_vote(
-            acceleration=0.0, baseline=2.0, level=50.0
-        )
-
-
 class TestConsultantVotes:
     def test_quiet_signals_sit_near_or_below_neutral(self) -> None:
         votes = consultant_votes(signals(), DEFAULTS)
         assert votes["momentum"] == pytest.approx(0.5)
         assert votes["pressure"] == 0.0
         assert votes["rule3"] == pytest.approx(0.3 / 1.3)
-        # No acceleration → legacy sine form at (0,0) → 0.5
-        assert votes["omega"] == pytest.approx(0.5)
+
+    def test_only_three_consultants_vote(self) -> None:
+        assert set(consultant_votes(signals(), DEFAULTS)) == {"momentum", "pressure", "rule3"}
 
     def test_strong_signals_approach_one(self) -> None:
         votes = consultant_votes(
@@ -87,16 +61,12 @@ class TestConsultantVotes:
                 delta_5min=40.0,
                 pressure_index=100.0,
                 rule_of_three=1.0,
-                omega_acceleration=50.0,
-                omega_baseline=5.0,
-                omega_level=100.0,
             ),
             DEFAULTS,
         )
         assert votes["momentum"] > 0.99
         assert votes["pressure"] == 1.0
         assert votes["rule3"] == 1.0
-        assert votes["omega"] > 0.8
 
     def test_momentum_scale_is_tunable(self) -> None:
         quiet_scale = WeightSet.from_overrides({"kscore": {"momentum_scale": 2.0}})
@@ -162,9 +132,6 @@ class TestEvaluate:
                 pressure_index=90.0,
                 rule_of_three=1.0,
                 npei=80.0,
-                omega_acceleration=20.0,
-                omega_baseline=3.0,
-                omega_level=70.0,
             ),
             signals(),
         )
@@ -195,9 +162,6 @@ class TestEvaluate:
                 pressure_index=100.0,
                 rule_of_three=1.0,
                 npei=100.0,
-                omega_acceleration=40.0,
-                omega_baseline=5.0,
-                omega_level=90.0,
             ),
             signals(),
             threshold=DEFAULT_THRESHOLD,
@@ -217,9 +181,6 @@ class TestEvaluate:
             pressure_index=100.0,
             rule_of_three=1.0,
             npei=100.0,
-            omega_acceleration=40.0,
-            omega_baseline=5.0,
-            omega_level=90.0,
         )
         result = evaluate(identical, identical, threshold=50.0)
         assert result.home.score == result.away.score
@@ -233,42 +194,13 @@ class TestEvaluate:
         assert high.probability_raw == pytest.approx(low.probability_raw)
 
 
-class TestOmegaSsot:
-    """Full TeamOmega is the only supporting path; incomplete is neutral."""
-
-    def test_accel_only_does_not_change_the_score(self) -> None:
-        without = evaluate_team(signals(delta_5min=15.0, pressure_index=60.0, npei=50.0))
-        incomplete = evaluate_team(
-            signals(
-                delta_5min=15.0,
-                pressure_index=60.0,
-                npei=50.0,
-                omega_acceleration=50.0,
-            )
-        )
-        assert incomplete.votes["omega"] == pytest.approx(0.5)
-        assert incomplete.score == without.score
-
-    def test_full_omega_signals_can_raise_the_score(self) -> None:
-        without = evaluate_team(signals(delta_5min=15.0, pressure_index=60.0, npei=50.0))
-        with_full = evaluate_team(
-            signals(
-                delta_5min=15.0,
-                pressure_index=60.0,
-                npei=50.0,
-                omega_acceleration=50.0,
-                omega_baseline=5.0,
-                omega_level=90.0,
-            )
-        )
-        assert with_full.votes["omega"] > 0.5
-        assert with_full.score >= without.score
-
-
 class TestRemovedDeadControls:
     def test_horizon_is_not_in_the_registry(self) -> None:
         """2.2 showed a horizon slider that the formula never read."""
         assert "horizon" not in WeightSet.defaults().for_strategy("kscore")
+
+    def test_omega_trust_is_not_in_the_registry(self) -> None:
+        assert "trust_omega" not in WeightSet.defaults().for_strategy("kscore")
 
 
 class TestWeightTuning:

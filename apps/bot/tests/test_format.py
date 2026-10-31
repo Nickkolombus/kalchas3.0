@@ -154,38 +154,18 @@ def test_html_escapes_team_names():
     assert "<b>A &lt;B&gt; &amp; C</b> vs D &quot;E&quot; · 1′" in text
 
 
-def test_omega_uses_degrees_over_ceiling():
-    text = format_alert_html(
-        {
-            "home_team": "Home",
-            "away_team": "Away",
-            "minute": 20,
-            "score": "1-0",
-            "strategy_key": "omega",
-            "team": "home",
-            "value": 0.5,
-            "payload": {"theta": 22.0, "k_scale": 0.5, "league": "Test"},
-        }
-    )
-    assert "<b>Ω</b> (Omega): 22° for <b>Home</b>" in text
-    assert "/ 40" not in text
-    assert "<b>Home</b> vs Away · 20′" in text
-
-
-def test_omega_caption_uses_last_10min():
+def test_sustained_pressure_caption_uses_last_10min():
     text = format_alert_html(
         {
             "home_team": "Home",
             "away_team": "Away",
             "minute": 84,
             "score": "1-1",
-            "strategy_key": "omega",
+            "strategy_key": "pressure_index",
             "team": "home",
-            "value": 0.5,
+            "value": 82,
             "payload": {
                 "league": "Test",
-                "theta": 22.0,
-                "k_scale": 0.5,
                 "sot": {"home": 10, "away": 2},
                 "sofft": {"home": 6, "away": 5},
                 "da": {"home": 82, "away": 44},
@@ -203,7 +183,7 @@ def test_omega_caption_uses_last_10min():
             },
         }
     )
-    assert "<b>Ω</b> (Omega): 22° for <b>Home</b>" in text
+    assert "82 / 100 for <b>Home</b>" in text
     assert "<b>Last 10 mins (74′-84′):</b>" in text
     assert "SOT: <b>3</b> - 1" in text
     assert "DA: <b>12</b> - 4" in text
@@ -388,7 +368,7 @@ def _window(span_start: int, end: int, sot: tuple[int, int]) -> dict:
     }
 
 
-def test_joint_omega_and_urg_uses_last_10_minutes():
+def test_joint_sustained_pressure_and_urg_uses_last_10_minutes():
     text = format_joint_html(
         [
             {
@@ -415,24 +395,22 @@ def test_joint_omega_and_urg_uses_last_10_minutes():
             },
             {
                 "id": 1,
-                "strategy_slot": 6,
-                "strategy_key": "omega",
+                "strategy_slot": 2,
+                "strategy_key": "pressure_index",
                 "team": "away",
                 "home_team": "Bolivar",
                 "away_team": "Mineros",
                 "minute": 82,
-                "value": 0.7,
+                "value": 78,
                 "payload": {
                     "league": "Copa Venezuela",
-                    "theta": 36.0,
-                    "k_scale": 0.5,
                     "last_10min": _window(72, 82, (0, 1)),
                     "last_5min": _window(77, 82, (0, 1)),
                 },
             },
         ]
     )
-    assert text.index("<b>UrG</b>") < text.index("<b>Ω</b>")
+    assert text.index("<b>UrG</b>") < text.index("<b>Δ10′</b>")
     assert "Bolivar vs <b>Mineros</b> · 82′" in text
     assert text.count("Copa Venezuela") == 1
     assert "<b>Last 10 mins (72′-82′):</b>" in text
@@ -477,7 +455,7 @@ def test_joint_delta5_and_urg_uses_last_5_minutes():
 
 
 def test_joint_with_a_third_strategy_stays_on_10_minutes():
-    assert joint_window_span(["delta_5min", "rule_of_three", "omega"]) == 10
+    assert joint_window_span(["delta_5min", "rule_of_three", "kscore"]) == 10
 
 
 def test_form_bar_shows_goals_behind_pace_and_the_reading():

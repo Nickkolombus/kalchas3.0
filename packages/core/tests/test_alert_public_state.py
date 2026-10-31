@@ -77,11 +77,11 @@ class TestEvaluatePublicSignal:
             == PUBLIC_EXPIRED
         )
 
-    def test_omega_ignores_opponent_goal(self) -> None:
+    def test_team_specific_ignores_opponent_goal(self) -> None:
         assert (
             _score(
-                strategy_slot=6,
-                strategy_key="omega",
+                strategy_slot=7,
+                strategy_key="kscore",
                 trigger_team="home",
                 current_minute=28,
                 current_score="0-1",
@@ -90,11 +90,11 @@ class TestEvaluatePublicSignal:
             == PUBLIC_MONITORING
         )
 
-    def test_omega_confirms_trigger_team_goal(self) -> None:
+    def test_team_specific_confirms_trigger_team_goal(self) -> None:
         assert (
             _score(
-                strategy_slot=6,
-                strategy_key="omega",
+                strategy_slot=7,
+                strategy_key="kscore",
                 trigger_team="home",
                 current_minute=28,
                 current_score="1-0",
@@ -373,8 +373,8 @@ class TestEvaluatePublicSignal:
     def test_ht_zero_clock_confirms_from_live_score_without_events(self) -> None:
         assert (
             _score(
-                strategy_slot=6,
-                strategy_key="omega",
+                strategy_slot=7,
+                strategy_key="kscore",
                 trigger_team="away",
                 alert_minute=44,
                 alert_score="0-0",
@@ -421,11 +421,11 @@ class TestEvaluatePublicSignal:
             == PUBLIC_CONFIRMED
         )
 
-    def test_ht_score_delta_does_not_confirm_omega_opponent(self) -> None:
+    def test_ht_score_delta_does_not_confirm_team_specific_opponent(self) -> None:
         assert (
             _score(
-                strategy_slot=6,
-                strategy_key="omega",
+                strategy_slot=7,
+                strategy_key="kscore",
                 trigger_team="home",
                 alert_minute=44,
                 alert_score="0-0",
@@ -531,12 +531,12 @@ class TestScorePublicSignal:
         assert signal.kind == "too_late"
         assert signal.goal_minute == 45
 
-    def test_omega_opponent_after_window_is_counter(self) -> None:
+    def test_team_specific_opponent_after_window_is_counter(self) -> None:
         signal = score_public_signal(
             alert_minute=20,
             alert_score="0-0",
-            strategy_slot=6,
-            strategy_key="omega",
+            strategy_slot=7,
+            strategy_key="kscore",
             trigger_team="home",
             current_minute=43,
             current_score="0-1",

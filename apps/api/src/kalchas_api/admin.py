@@ -12,11 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from kalchas_core.alert_factors import CSV_COLUMNS, csv_row, factors_from_payload, pattern_summary
 from kalchas_core.alert_outcomes import DEFAULT_RULES
 from kalchas_core.conditions import condition_catalog, prepare_extra_conditions
-from kalchas_core.cooldown import (
-    DEFAULT_BASE_COOLDOWN,
-    DEFAULT_BYPASS_DELTA,
-    DEFAULT_OMEGA_COOLDOWN,
-)
+from kalchas_core.cooldown import DEFAULT_BASE_COOLDOWN, DEFAULT_BYPASS_DELTA
 from kalchas_core.runner import DEFAULT_THRESHOLDS
 from kalchas_core.weights import BUILTIN_PRESETS, REGISTRY, STRATEGY_INFO, WeightSet, spec_for
 from kalchas_db.settings import KEY_BY_SLOT, SLOT_BY_KEY
@@ -205,8 +201,7 @@ def admin_config(request: Request) -> dict[str, Any]:
                 "blurb": info.blurb if info else "",
                 "threshold": float(stored_th.get(slot, DEFAULT_THRESHOLDS.get(slot, 0.0))),
                 "cooldown_minutes": int(
-                    (row or {}).get("cooldown_minutes")
-                    or (DEFAULT_OMEGA_COOLDOWN if slot == 6 else DEFAULT_BASE_COOLDOWN)
+                    (row or {}).get("cooldown_minutes") or DEFAULT_BASE_COOLDOWN
                 ),
                 "cooldown_bypass_delta": (
                     float(row["cooldown_bypass_delta"])
@@ -587,7 +582,6 @@ def _result_item(row: dict[str, Any]) -> dict[str, Any]:
         "slot": int(row["strategy_slot"]),
         "team": str(row["team"]) if row.get("team") else None,
         "value": float(row["value"]),
-        "theta": payload.get("theta"),
         "minute": int(row["minute"]),
         "score": str(row["score"]) if row.get("score") else None,
         "home_team": str(row["home_team"]) if row.get("home_team") else None,

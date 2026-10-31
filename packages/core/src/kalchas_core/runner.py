@@ -20,7 +20,6 @@ from kalchas_core.strategies import (
     delta_5min,
     delta_goal,
     kscore,
-    omega,
     pressure_index,
     rule_of_three,
 )
@@ -34,7 +33,6 @@ DEFAULT_THRESHOLDS: dict[int, float] = {
     2: 75.0,  # Pressure Index
     3: 1.0,  # Form Bar: goals behind expected pace
     4: 7.0,  # Delta 5min
-    6: 0.0,  # Omega uses its own gate; threshold unused
     7: 60.0,  # K-Score
 }
 
@@ -90,7 +88,6 @@ def _condition_match(
     pi: Any,
     d5: Any,
     dg: Any,
-    om: Any,
     npei_snap: Any,
     ks: Any,
     home_odds: float | None,
@@ -106,14 +103,12 @@ def _condition_match(
 
     def _side(side: Side, index: int) -> dict[str, float | None]:
         team = snap.team(side) if snap is not None else None
-        omega_team = om.team(side) if om is not None else None
         return {
             "rule_of_three": float(ro3.team(side).unrealised_goals) if ro3 is not None else 0.0,
             "pressure_index": float(pi.team(side).pressure) if pi is not None else 0.0,
             "delta_5min": float(d5.team(side).pressure) if d5 is not None else 0.0,
             "delta_goal": dg.team(side).gap if dg is not None else None,
             "npei": float(npei_snap.team(side).score) if npei_snap is not None else 0.0,
-            "omega": float(omega_team.theta) if omega_team is not None else 0.0,
             "kscore": float(ks.team(side).score) if ks is not None else 0.0,
             "shots_on_target": float(team.shots_on_target) if team is not None else 0.0,
             "shots_off_target": float(team.shots_off_target) if team is not None else 0.0,
@@ -183,7 +178,7 @@ def evaluate_match(
     away_goals: int = 0,
     weights: WeightSet | None = None,
     thresholds: dict[int, float] | None = None,
-    slots: tuple[int, ...] = (1, 2, 3, 4, 6, 7),
+    slots: tuple[int, ...] = (1, 2, 3, 4, 7),
     league_id: str | int | None = None,
     league_name: str | None = None,
     country_name: str | None = None,
@@ -206,7 +201,6 @@ def evaluate_match(
     npei_snap = compute_npei(timeline, weights=w) if 7 in slots else None
     pi = None
     d5 = None
-    om = None
     ro3 = None
     dg = None
     ks = None
@@ -287,27 +281,6 @@ def evaluate_match(
                 )
             )
 
-    if 6 in slots or 7 in slots:
-        om = omega.evaluate(timeline, weights=w)
-
-    if 6 in slots:
-        if om is not None and om.triggering_team is not None:
-            side = om.triggering_team
-            reading = om.team(side)
-            candidates.append(
-                AlertCandidate(
-                    6,
-                    "omega",
-                    side,
-                    float(om.trigger_value),
-                    {
-                        "accel": om.trigger_value,
-                        "theta": float(reading.theta) if reading else 0.0,
-                        "k_scale": float(om.settings.angle_scale),
-                    },
-                )
-            )
-
     if 7 in slots:
         # Consultants needed for K-Score even when their own slots are off.
         if pi is None and 2 not in slots:
@@ -325,8 +298,7 @@ def evaluate_match(
             )
 
         def _signals(side: Side) -> TeamSignals:
-            return TeamSignals.from_omega(
-                om.team(side) if om else None,
+            return TeamSignals(
                 delta_5min=float(d5.team(side).pressure) if d5 else 0.0,
                 pressure_index=float(pi.team(side).pressure) if pi else 0.0,
                 rule_of_three=float(ro3.team(side).unrealised_goals) if ro3 else 0.0,
@@ -371,13 +343,10 @@ def evaluate_match(
                 away_recent_form=away_team_form,
                 threshold=th[3],
             )
-        if om is None:
-            om = omega.evaluate(timeline, weights=w)
         if ks is None:
 
             def _cond_signals(side: Side) -> TeamSignals:
-                return TeamSignals.from_omega(
-                    om.team(side) if om else None,
+                return TeamSignals(
                     delta_5min=float(d5.team(side).pressure) if d5 else 0.0,
                     pressure_index=float(pi.team(side).pressure) if pi else 0.0,
                     rule_of_three=float(ro3.team(side).unrealised_goals) if ro3 else 0.0,
@@ -398,7 +367,6 @@ def evaluate_match(
             pi=pi,
             d5=d5,
             dg=dg,
-            om=om,
             npei_snap=npei_snap,
             ks=ks,
             home_odds=home_odds,
@@ -480,12 +448,10 @@ def board_snapshot(
         away_recent_form=away_team_form,
         threshold=th[3],
     )
-    om = omega.evaluate(timeline, weights=w)
     npei_snap = compute_npei(timeline, weights=w)
 
     def _signals(side: Side) -> TeamSignals:
-        return TeamSignals.from_omega(
-            om.team(side) if om else None,
+        return TeamSignals(
             delta_5min=float(d5.team(side).pressure) if d5 else 0.0,
             pressure_index=float(pi.team(side).pressure) if pi else 0.0,
             rule_of_three=float(ro3.team(side).unrealised_goals) if ro3 else 0.0,
@@ -504,7 +470,6 @@ def board_snapshot(
             pi=pi,
             d5=d5,
             dg=dg,
-            om=om,
             npei_snap=npei_snap,
             ks=ks,
             home_odds=home_odds,
@@ -607,27 +572,6 @@ def board_snapshot(
                 ),
             },
             "threshold": npei_th,
-        },
-        "omega": {
-            "teams": {
-                "home": _team_cell(
-                    (om.home.theta if om and om.home else 0.0),
-                    triggered=_fired(
-                        6, Side.HOME, bool(om and om.home and om.home.meets(om.settings))
-                    ),
-                    digits=0,
-                ),
-                "away": _team_cell(
-                    (om.away.theta if om and om.away else 0.0),
-                    triggered=_fired(
-                        6, Side.AWAY, bool(om and om.away and om.away.meets(om.settings))
-                    ),
-                    digits=0,
-                ),
-            },
-            "threshold": round(
-                om.settings.theta_threshold if om else omega.DEFAULT_THETA_THRESHOLD
-            ),
         },
         "kscore": {
             "teams": {

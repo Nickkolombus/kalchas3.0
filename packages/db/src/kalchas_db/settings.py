@@ -14,7 +14,6 @@ KEY_BY_SLOT: dict[int, str] = {
     2: "pressure_index",
     3: "delta_goal",
     4: "delta_5min",
-    6: "omega",
     7: "kscore",
 }
 SLOT_BY_KEY: dict[str, int] = {key: slot for slot, key in KEY_BY_SLOT.items()}

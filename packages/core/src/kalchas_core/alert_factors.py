@@ -22,7 +22,6 @@ BOARD_KEYS: tuple[str, ...] = (
     "delta_5min",
     "delta_goal",
     "npei",
-    "omega",
     "kscore",
 )
 
@@ -69,8 +68,6 @@ CSV_COLUMNS: tuple[str, ...] = (
     "lbar_away",
     "phi_home",
     "phi_away",
-    "omega_home",
-    "omega_away",
     "k_home",
     "k_away",
     "k_match",
@@ -323,7 +320,6 @@ def factors_from_payload(
     d10 = _board_side(board, "pressure_index")
     lbar = _board_side(board, "delta_goal")
     phi = _board_side(board, "npei")
-    omega = _board_side(board, "omega")
     k = _board_side(board, "kscore")
     k_match = None
     k_row = board.get("kscore") if isinstance(board.get("kscore"), Mapping) else {}
@@ -357,7 +353,6 @@ def factors_from_payload(
         "d10": d10,
         "lbar": lbar,
         "phi": phi,
-        "omega": omega,
         "k": k,
         "k_match": k_match,
         "also_firing": also_firing(board, strategy, side),
@@ -459,8 +454,8 @@ def _trigger_value_group(
     """Hit rate by fire-value band -- 2.2's per-strategy threshold-optimization
     report: did a higher or lower reading at fire time actually convert more?
 
-    `value` is on each strategy's own scale (K-Score 0-100, Omega degrees,
-    Delta 5min raw pressure, ...), so this mixes scales when "All strategies"
+    `value` is on each strategy's own scale (K-Score 0-100, Delta 5min raw
+    pressure, ...), so this mixes scales when "All strategies"
     is selected. Filtering to one strategy chip first -- already how the
     League/team filters work on this page -- gives the clean per-strategy
     read; the mixed view still isn't wrong, just coarser.
@@ -605,8 +600,6 @@ def csv_row(item: Mapping[str, Any]) -> dict[str, Any]:
         "lbar_away": side(factors.get("lbar"), "away"),
         "phi_home": side(factors.get("phi"), "home"),
         "phi_away": side(factors.get("phi"), "away"),
-        "omega_home": side(factors.get("omega"), "home"),
-        "omega_away": side(factors.get("omega"), "away"),
         "k_home": side(factors.get("k"), "home"),
         "k_away": side(factors.get("k"), "away"),
         "k_match": factors.get("k_match"),

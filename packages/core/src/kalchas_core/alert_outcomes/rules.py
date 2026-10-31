@@ -5,7 +5,7 @@ inside the evaluator. Here they are an injected sequence: adapters load them
 once and hand them over. Resolution order is unchanged.
 
 3.0 product default: slots 2–4 are match-level (``team_specific=False``, any
-goal counts). Rule of 3 / Omega / K-Score stay team-specific. Admins can
+goal counts). Rule of 3 / K-Score stay team-specific. Admins can
 override any row via ``strategy_rules.team_specific`` in settings.
 """
 
@@ -36,10 +36,6 @@ ALERT_NAME_HINTS: Final[tuple[tuple[str, int], ...]] = (
     ("delta(5min)", 4),
     ("delta 5", 4),
     ("δ5", 4),
-    # slot 6 — Omega (previously Nephos Delta)
-    ("nephos", 6),
-    ("omega", 6),
-    ("ω", 6),
 )
 
 
@@ -75,7 +71,6 @@ DEFAULT_RULES: Final[tuple[StrategyRule, ...]] = (
     StrategyRule(2, "InPlay Pressure", 20, 2, False, False),
     StrategyRule(3, "Form Bar", 20, 2, False, False, enabled=False),
     StrategyRule(4, "Δ(5min)", 20, 2, False, False),
-    StrategyRule(6, "Omega", 20, 2, False, True),
     StrategyRule(7, "K-Score", 20, 2, False, True),
     StrategyRule(9, "Team Form", 20, 2, False, False),
     StrategyRule(10, "H2H Insights", 20, 2, False, False),

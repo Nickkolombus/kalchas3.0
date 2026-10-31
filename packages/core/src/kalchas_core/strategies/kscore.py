@@ -1,4 +1,4 @@
-"""K-Score (Strategy 7) -- four consultants, one number.
+"""K-Score (Strategy 7) -- three consultants, one number.
 
 Unlike every other strategy, K-Score does not read the match timeline. It
 takes the *outputs* of other strategies as inputs and blends them into a
@@ -7,7 +7,6 @@ takes the *outputs* of other strategies as inputs and blends them into a
     momentum  ← Delta 5min pressure
     pressure  ← Pressure Index
     rule3     ← Rule of Three unrealised goals
-    omega     ← Omega (acceleration + baseline + level) — same TeamOmega SSOT
     focus ΦI  ← NPEI, as a multiplier rather than a fifth vote
 
 Each consultant produces a vote in [0, 1]. The votes are levered around 0.5,
@@ -20,34 +19,23 @@ normal `WeightSet` strategy key. Removed: the database resolver, the
 `_formula_cache` mutation, and the orchestrator that assembled signals from
 whatever earlier slots had written onto the match dict.
 
-3.0 SSOT: Omega's consultant vote always uses the full ``TeamOmega`` reading
-(acceleration, baseline slope, level). The 2.2 alert path that forwarded
-acceleration alone is retired — incomplete Omega inputs vote neutral (0.5)
-instead of applying the truncated drag. The unused 2.2 ``horizon`` admin
-control is not carried forward.
+Omega was a fourth consultant until it was retired as a method; dropping its
+vote scores every team as if Omega had voted neutral. The unused 2.2
+``horizon`` admin control is not carried forward.
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Final
 
 from kalchas_core.match import Side
-from kalchas_core.strategies.omega import TeamOmega
 from kalchas_core.weights import WeightSet
 
 STRATEGY_KEY = "kscore"
 
 DEFAULT_THRESHOLD: Final = 60.0
-
-# Hardcoded inside the Omega vote -- scaled for 3.0's window-normalised
-# accel / baseline (2.2 used 8.0 and 2.5 on the unnormalised slopes).
-_OMEGA_ACCEL_SCALE: Final = 0.8
-_OMEGA_BASELINE_SCALE: Final = 0.4
-_OMEGA_LEVEL_DIVISOR: Final = 55.0
-_OMEGA_LEVEL_FLOOR: Final = 0.2
-_OMEGA_BASELINE_MIX: Final = (0.45, 0.55)
 
 _RULE3_OFFSET: Final = 0.3
 _RULE3_SPAN: Final = 1.3
@@ -102,37 +90,12 @@ class MatchContext:
 
 @dataclass(frozen=True, slots=True)
 class TeamSignals:
-    """One team's consultant inputs.
-
-    Omega SSOT: pass acceleration, baseline, and level together from
-    ``TeamOmega``. Use ``TeamSignals.from_omega`` so the three fields stay
-    aligned. Incomplete Omega (acceleration without baseline/level) votes
-    neutral rather than applying the retired 2.2 accel-only drag.
-    """
+    """One team's consultant inputs."""
 
     delta_5min: float = 0.0
     pressure_index: float = 0.0
     rule_of_three: float = 0.0
     npei: float = 0.0
-    omega_acceleration: float | None = None
-    omega_baseline: float | None = None
-    omega_level: float | None = None
-    omega_theta: float = 0.0
-    omega_alpha: float = 0.0
-
-    @classmethod
-    def from_omega(cls, omega: TeamOmega | None, **kwargs: Any) -> TeamSignals:
-        """Build signals with Omega fields copied from a ``TeamOmega`` reading."""
-        if omega is None:
-            return cls(**kwargs)
-        return cls(
-            omega_acceleration=float(omega.acceleration),
-            omega_baseline=float(omega.baseline_slope),
-            omega_level=float(omega.level),
-            omega_theta=float(omega.theta),
-            omega_alpha=float(omega.alpha),
-            **kwargs,
-        )
 
 
 # --------------------------------------------------------------------------
@@ -140,50 +103,8 @@ class TeamSignals:
 # --------------------------------------------------------------------------
 
 
-def omega_vote(
-    *,
-    acceleration: float | None = None,
-    baseline: float | None = None,
-    level: float | None = None,
-    theta: float = 0.0,
-    alpha: float = 0.0,
-) -> float:
-    """Omega's consultant vote in [0, 1].
-
-    Full linear form (SSOT — requires acceleration, baseline, and level):
-
-        σ(accel/0.8) · (0.45 + 0.55 · σ(baseline/0.4)) · clamp(level/55, 0.2, 1)
-
-    Incomplete Omega (acceleration set but baseline or level missing) returns
-    neutral 0.5 so a truncated feed cannot drag the score. Legacy angle form
-    when acceleration is absent: sine product of the display angles.
-    """
-    if acceleration is not None:
-        if baseline is None or level is None:
-            return 0.5
-        accel = max(0.0, float(acceleration))
-        base = max(0.0, float(baseline))
-        lvl = float(level)
-        return _clamp(
-            sigmoid(accel / _OMEGA_ACCEL_SCALE)
-            * (
-                _OMEGA_BASELINE_MIX[0]
-                + _OMEGA_BASELINE_MIX[1] * sigmoid(base / _OMEGA_BASELINE_SCALE)
-            )
-            * _clamp(lvl / _OMEGA_LEVEL_DIVISOR, _OMEGA_LEVEL_FLOOR, 1.0),
-            0.0,
-            1.0,
-        )
-
-    return _clamp(
-        0.5 + 0.5 * math.sin(math.radians(alpha)) * math.sin(math.radians(theta)),
-        0.0,
-        1.0,
-    )
-
-
 def consultant_votes(signals: TeamSignals, weights: WeightSet) -> dict[str, float]:
-    """The four consultant votes in [0, 1]."""
+    """The three consultant votes in [0, 1]."""
     scale = weights.get(STRATEGY_KEY, "momentum_scale")
     if scale <= 0:
         scale = 8.0
@@ -192,13 +113,6 @@ def consultant_votes(signals: TeamSignals, weights: WeightSet) -> dict[str, floa
         "momentum": sigmoid(signals.delta_5min / scale),
         "pressure": _clamp(signals.pressure_index / 100.0, 0.0, 1.0),
         "rule3": _clamp((signals.rule_of_three + _RULE3_OFFSET) / _RULE3_SPAN, 0.0, 1.0),
-        "omega": omega_vote(
-            acceleration=signals.omega_acceleration,
-            baseline=signals.omega_baseline,
-            level=signals.omega_level,
-            theta=signals.omega_theta,
-            alpha=signals.omega_alpha,
-        ),
     }
 
 
@@ -337,7 +251,6 @@ def evaluate_team(
         + w.get(STRATEGY_KEY, "trust_momentum") * _lever(votes["momentum"])
         + w.get(STRATEGY_KEY, "trust_pressure") * _lever(votes["pressure"])
         + w.get(STRATEGY_KEY, "trust_rule3") * _lever(votes["rule3"])
-        + w.get(STRATEGY_KEY, "trust_omega") * _lever(votes["omega"])
     )
     if side is not None:
         logit += context_logit_delta(side, context, w)

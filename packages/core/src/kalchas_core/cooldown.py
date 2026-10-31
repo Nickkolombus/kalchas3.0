@@ -7,7 +7,7 @@ admin-settings lookups stay in the app layer. Core owns the decision tree:
 2. Red-card mute for the trigger team
 3. Per-strategy cut-offs: none past ``max_fire_minute_1h`` in the first half
    (or at half-time), none past ``max_fire_minute`` at all
-4. Team stack: one non-Omega speaking turn per side
+4. Team stack: one speaking turn per side
 5. Per-strategy window with optional value-delta bypass
 6. Same-minute and reservation blocks
 """
@@ -23,7 +23,6 @@ Clock = Callable[[], datetime]
 
 
 DEFAULT_BASE_COOLDOWN = 10
-DEFAULT_OMEGA_COOLDOWN = 15
 DEFAULT_REARM_DROP_RATIO = 0.5
 DEFAULT_TEAM_STACK_MINUTES = 10
 DEFAULT_BYPASS_DELTA: Mapping[int, float] = {
@@ -53,12 +52,10 @@ class CooldownRules:
 
     @staticmethod
     def for_slot(strategy_slot: int) -> CooldownRules:
-        if strategy_slot in {4, 6}:
+        if strategy_slot == 4:
             return CooldownRules(
                 strategy_slot=strategy_slot,
-                base_cooldown_minutes=(
-                    DEFAULT_OMEGA_COOLDOWN if strategy_slot == 6 else DEFAULT_BASE_COOLDOWN
-                ),
+                base_cooldown_minutes=DEFAULT_BASE_COOLDOWN,
                 value_delta_threshold=None,
                 rearm_after_drop=True,
             )
@@ -188,8 +185,8 @@ class CooldownBook:
         current_minute: int,
         team: str | None,
     ) -> CooldownDecision | None:
-        """One speaking turn per team. Omega can still interrupt."""
-        if strategy_slot == 6 or not team or self.team_stack_minutes <= 0:
+        """One speaking turn per team."""
+        if not team or self.team_stack_minutes <= 0:
             return None
         for state in self._state.values():
             if state.match_id != match_id:

@@ -54,7 +54,6 @@ type TimelinePoint = {
   shots_on_target: SideValue;
   possession: SideValue;
   rule_of_three: SideValue;
-  omega: SideValue;
   kscore: number;
 };
 
@@ -164,12 +163,11 @@ const TIMING_SLOTS: { key: keyof H2HTiming; label: string; threshold: number }[]
   { key: "btts_first_half", label: "BTTS in 1st half", threshold: 75 },
 ];
 
-type TabId = "stats" | "timeline" | "omega" | "h2h" | "lineups";
+type TabId = "stats" | "timeline" | "h2h" | "lineups";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "stats", label: "Stats" },
   { id: "timeline", label: "Timeline" },
-  { id: "omega", label: "Omega" },
   { id: "h2h", label: "H2H" },
   { id: "lineups", label: "Lineups" },
 ];
@@ -234,15 +232,6 @@ const STRAT_ROWS: {
     tone: "phi",
     scale: { min: 0, max: 100 },
     tip: "How well attacks become shots, out of 100. A higher number means more shots from the same attacks.",
-  },
-  {
-    key: "omega",
-    label: "Omega",
-    digits: 0,
-    suffix: "°",
-    tone: "omega",
-    scale: { min: -15, max: 40 },
-    tip: "How steeply pressure is building, in degrees. 20° is building. 30° fires. 35°+ is rare. Negative means it is flattening.",
   },
   {
     key: "kscore",
@@ -1779,31 +1768,6 @@ export function MatchOverlay({
                 awayName={panel.away_team}
                 currentMinute={panel.minute}
               />
-              <MatchStory
-                events={events}
-                substitutions={panel.substitutions}
-                liveScore={panel.score}
-                status={panel.status_short || match.status_short}
-                minute={panel.minute}
-              />
-            </div>
-          ) : null}
-          {tab === "omega" ? (
-            <div className="overlay-timeline">
-              <SeriesChart
-                points={panel.timeline}
-                homeOf={(p) => Number(p.omega.home || 0)}
-                awayOf={(p) => Number(p.omega.away || 0)}
-                events={events}
-                title="Omega tilt"
-                blurb="How steeply pressure is building, in degrees. 20° is building. 30° fires. 35°+ is rare. Negative means the wave is flattening."
-                homeName={panel.home_team}
-                awayName={panel.away_team}
-                unit="°"
-                signed
-                guide={30}
-                guideLabel="Fire 30°"
-              />
               <SeriesChart
                 points={panel.timeline}
                 homeOf={(p) => Number(p.rule_of_three.home || 0)}
@@ -1814,6 +1778,13 @@ export function MatchOverlay({
                 homeName={panel.home_team}
                 awayName={panel.away_team}
                 signed
+              />
+              <MatchStory
+                events={events}
+                substitutions={panel.substitutions}
+                liveScore={panel.score}
+                status={panel.status_short || match.status_short}
+                minute={panel.minute}
               />
             </div>
           ) : null}

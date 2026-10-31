@@ -10,9 +10,9 @@ def test_compact_board_keeps_values_and_fire_flags() -> None:
     board = compact_board(
         {
             "strategy_status": {
-                "omega": {
+                "delta_5min": {
                     "teams": {
-                        "home": {"value": 31, "triggered": True},
+                        "home": {"value": 9.4, "triggered": True},
                         "away": {"value": 4, "triggered": False},
                     }
                 },
@@ -26,8 +26,8 @@ def test_compact_board_keeps_values_and_fire_flags() -> None:
             }
         }
     )
-    assert board["omega"]["home"] == 31
-    assert board["omega"]["home_fired"] is True
+    assert board["delta_5min"]["home"] == 9.4
+    assert board["delta_5min"]["home_fired"] is True
     assert board["kscore"]["match"] == 72
 
 
@@ -46,7 +46,7 @@ def test_old_payload_still_exposes_stats_and_odds() -> None:
                 "kickoff": {"home": 1.7, "draw": 3.6, "away": 5.2},
             },
         },
-        strategy="omega",
+        strategy="delta_5min",
         team="home",
         minute=38,
         score="0-0",
@@ -192,9 +192,9 @@ def test_csv_row_flattens_pairs() -> None:
     row = csv_row(
         {
             "state": "Confirmed",
-            "strategy": "omega",
+            "strategy": "kscore",
             "team": "home",
-            "value": 0.4,
+            "value": 72,
             "minute": 40,
             "score": "0-0",
             "home_team": "A",
@@ -202,11 +202,12 @@ def test_csv_row_flattens_pairs() -> None:
             "league": "L",
             "factors": {
                 "sot": {"home": 2, "away": 0},
-                "omega": {"home": 31, "away": 2},
+                "k": {"home": 72, "away": 11},
                 "also_firing": ["delta_5min"],
             },
         }
     )
     assert row["sot_home"] == 2
-    assert row["omega_home"] == 31
+    assert row["k_home"] == 72
+    assert "omega_home" not in row
     assert row["also_firing"] == "delta_5min"

@@ -24,8 +24,8 @@ def test_ht_score_change_settles_confirmed() -> None:
     snap = outcome_snapshot(
         {
             "id": 11,
-            "strategy_slot": 6,
-            "strategy_key": "omega",
+            "strategy_slot": 7,
+            "strategy_key": "kscore",
             "team": "away",
             "minute": 44,
             "score": "0-0",
@@ -118,12 +118,12 @@ def test_frozen_feed_settles_expired() -> None:
 def test_admin_checkbox_off_confirms_any_goal() -> None:
     from kalchas_core.alert_outcomes import StrategyRule
 
-    rules = (StrategyRule(6, "Omega", team_specific=False),)
+    rules = (StrategyRule(7, "K-Score", team_specific=False),)
     snap = outcome_snapshot(
         {
             "id": 14,
-            "strategy_slot": 6,
-            "strategy_key": "omega",
+            "strategy_slot": 7,
+            "strategy_key": "kscore",
             "team": "home",
             "minute": 20,
             "score": "0-0",

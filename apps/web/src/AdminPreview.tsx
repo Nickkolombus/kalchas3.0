@@ -29,13 +29,12 @@ export type PreviewMatch = {
 const DIGITS: Record<string, number> = {
   pressure_index: 0,
   npei: 0,
-  omega: 0,
   kscore: 0,
 };
 
-function fmt(value: number, digits: number, suffix = ""): string {
+function fmt(value: number, digits: number): string {
   if (!Number.isFinite(value)) return "–";
-  return `${value.toFixed(digits)}${suffix}`;
+  return value.toFixed(digits);
 }
 
 function deltaClass(now: number, was: number | undefined, digits: number): string | null {
@@ -54,13 +53,11 @@ function MetricCell({
   now,
   was,
   digits,
-  suffix,
   triggered,
 }: {
   now: number;
   was?: number;
   digits: number;
-  suffix?: string;
   triggered?: boolean;
 }) {
   const change = deltaText(now, was, digits);
@@ -68,7 +65,7 @@ function MetricCell({
   return (
     <div className="admin-preview-cell">
       <strong>
-        {fmt(now, digits, suffix)}
+        {fmt(now, digits)}
         {triggered ? <span className="admin-preview-fire">Fire</span> : null}
       </strong>
       {change ? <small className={tone || undefined}>{change}</small> : null}
@@ -93,7 +90,6 @@ export function AdminPreview({
   const [rows, setRows] = useState<PreviewMatch[]>([]);
   const [error, setError] = useState("");
   const digits = DIGITS[strategy] ?? 1;
-  const suffix = strategy === "omega" ? "°" : "";
 
   useEffect(() => {
     let cancelled = false;
@@ -181,14 +177,12 @@ export function AdminPreview({
               now={selected.strategy.home}
               was={selected.baseline?.strategy?.home}
               digits={digits}
-              suffix={suffix}
               triggered={selected.strategy.home_triggered}
             />
             <MetricCell
               now={selected.strategy.away}
               was={selected.baseline?.strategy?.away}
               digits={digits}
-              suffix={suffix}
               triggered={selected.strategy.away_triggered}
             />
           </div>

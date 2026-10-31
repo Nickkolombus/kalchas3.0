@@ -431,8 +431,8 @@ def test_live_confirms_ht_score_change_without_events(monkeypatch) -> None:
             {
                 "id": 11,
                 "match_id": "m1",
-                "strategy_key": "omega",
-                "strategy_slot": 6,
+                "strategy_key": "kscore",
+                "strategy_slot": 7,
                 "team": "away",
                 "value": 0.2,
                 "minute": 44,
@@ -661,8 +661,8 @@ def test_live_frozen_clock_alert_expires(monkeypatch) -> None:
             {
                 "id": 22,
                 "match_id": "m1",
-                "strategy_key": "omega",
-                "strategy_slot": 6,
+                "strategy_key": "kscore",
+                "strategy_slot": 7,
                 "team": "away",
                 "value": 0.2,
                 "minute": 70,
@@ -679,7 +679,7 @@ def test_live_frozen_clock_alert_expires(monkeypatch) -> None:
     assert body["recent_alerts"][0]["kind"] == "no_goal"
 
 
-def test_live_omega_stays_monitoring_on_opponent_goal(monkeypatch) -> None:
+def test_live_team_specific_stays_monitoring_on_opponent_goal(monkeypatch) -> None:
     _stub_live(
         monkeypatch,
         match={
@@ -710,8 +710,8 @@ def test_live_omega_stays_monitoring_on_opponent_goal(monkeypatch) -> None:
             {
                 "id": 11,
                 "match_id": "m1",
-                "strategy_key": "omega",
-                "strategy_slot": 6,
+                "strategy_key": "kscore",
+                "strategy_slot": 7,
                 "team": "home",
                 "value": 0.2,
                 "minute": 20,
@@ -725,16 +725,46 @@ def test_live_omega_stays_monitoring_on_opponent_goal(monkeypatch) -> None:
     )
     body = TestClient(app).get("/api/live").json()
     assert body["recent_alerts"][0]["state"] == "Monitoring"
-    assert body["recent_alerts"][0]["value"] == 8  # stored 0.2 ω → θ° at k_scale 1.5
+    assert body["recent_alerts"][0]["value"] == 0.2
 
 
-def test_recent_omega_alert_display_is_degrees() -> None:
-    from kalchas_api.app import _recent_alert_display_value
-    from kalchas_core.weights import WeightSet
-
-    weights = WeightSet.defaults()
-    assert _recent_alert_display_value("omega", 0.5, weights) == 18
-    assert _recent_alert_display_value("pressure_index", 64.5, weights) == 64.5
+def test_live_hides_retired_omega_alerts(monkeypatch) -> None:
+    _stub_live(
+        monkeypatch,
+        match={
+            "match_id": "m1",
+            "home_team": "Lesotho",
+            "away_team": "Morocco",
+            "minute": 28,
+            "home_score": 0,
+            "away_score": 0,
+            "league_name": "Africa Cup",
+            "status_short": "1H",
+            "home_team_id": 1,
+            "away_team_id": 2,
+            "home_stats": {},
+            "away_stats": {},
+        },
+        events=[],
+        alerts=[
+            {
+                "id": 11,
+                "match_id": "m1",
+                "strategy_key": "omega",
+                "strategy_slot": 6,
+                "team": "home",
+                "value": 0.9,
+                "minute": 20,
+                "score": "0-0",
+                "home_team": "Lesotho",
+                "away_team": "Morocco",
+                "delivery_status": "sent",
+                "created_at": datetime.now(UTC),
+            }
+        ],
+    )
+    body = TestClient(app).get("/api/live").json()
+    assert body["recent_alerts"] == []
 
 
 def test_strategy_rules_defaults() -> None:
@@ -774,12 +804,12 @@ def test_match_panel_from_persisted_live_row(monkeypatch) -> None:
             "status_short": "2H",
             "stat_lines": {"dangerous_attacks": {"home": 18, "away": 9}},
             "strategy_status": {
-                "omega": {
+                "kscore": {
                     "teams": {
-                        "home": {"value": 12, "triggered": False},
-                        "away": {"value": 4, "triggered": False},
+                        "home": {"value": 41, "triggered": False},
+                        "away": {"value": 12, "triggered": False},
                     },
-                    "threshold": 0,
+                    "threshold": 60,
                 }
             },
             "events": [
@@ -808,7 +838,6 @@ def test_match_panel_from_persisted_live_row(monkeypatch) -> None:
                     "shots_on_target": {"home": 2, "away": 1},
                     "possession": {"home": 55, "away": 45},
                     "rule_of_three": {"home": 0.4, "away": 0.1},
-                    "omega": {"home": 8, "away": 2},
                     "kscore": 41,
                 }
             ],
@@ -826,7 +855,7 @@ def test_match_panel_from_persisted_live_row(monkeypatch) -> None:
     assert body["score"] == "1-0"
     assert body["substitutions"][0]["player_in"] == "M. Cornet"
     assert body["lineup"]["home"]["starting"][0]["player"] == "Keeper"
-    assert body["timeline"][0]["omega"]["home"] == 8
+    assert "omega" not in body["timeline"][0]
     assert body["home_team_logo"].endswith("10_home.jpg")
     assert "get_lineups" not in str(body)
 

@@ -1,7 +1,7 @@
 """HTML Telegram captions from an outbox row.
 
 Crests go on the photo. Fire captions: strategy, firing team, clock,
-last-5-minute counts for Δ5, last-10-minute counts for Δ10 and Ω, H2H
+last-5-minute counts for Δ5, last-10-minute counts for Δ10, H2H
 when the sample is at least 5. Outcome replies: fire lede plus GOAL /
 No goal under the original fire message.
 """
@@ -15,7 +15,6 @@ from typing import Any
 
 from kalchas_core.alert_outcomes import DEFAULT_RULES, rule_for_alert
 from kalchas_core.h2h import DEFAULT_MIN_SAMPLE
-from kalchas_core.strategies.omega import DEFAULT_ANGLE_SCALE, alert_theta_degrees
 from kalchas_core.weights import short_label_for
 
 ALERT_NAMES: dict[str, str] = {
@@ -24,7 +23,6 @@ ALERT_NAMES: dict[str, str] = {
     "pressure_index": "Sustained pressure",
     "delta_goal": "Form Bar",
     "npei": "Efficiency",
-    "omega": "Omega",
     "kscore": "K-Score",
 }
 
@@ -38,7 +36,6 @@ ALERT_CEILING: dict[str, tuple[float | None, int, str]] = {
     "pressure_index": (100.0, 0, ""),
     "delta_goal": (None, 1, ""),
     "npei": (100.0, 0, ""),
-    "omega": (None, 0, "°"),
     "kscore": (100.0, 0, ""),
 }
 
@@ -237,7 +234,7 @@ def _title_line(
 ) -> str:
     if key == "delta_goal":
         return _form_bar_title(row.get("value"), trigger=trigger)
-    shown = _value_over_ceiling(row.get("value"), key=key, payload=payload)
+    shown = _value_over_ceiling(row.get("value"), key=key)
     if short == name:
         head = f"<b>{short}</b>: {shown}" if shown else f"<b>{short}</b>"
     elif shown:
@@ -310,7 +307,7 @@ def _versus_line(
 def _stat_block(key: str, payload: Mapping[str, Any], minute: object) -> list[str]:
     if key == "delta_5min":
         return _window_stat_lines(payload.get("last_5min"), minute, span=5)
-    if key in ("pressure_index", "omega"):
+    if key == "pressure_index":
         windowed = _window_stat_lines(payload.get("last_10min"), minute, span=10)
         if windowed or isinstance(payload.get("last_10min"), Mapping):
             return windowed
@@ -453,7 +450,7 @@ def _minute(raw: object) -> str:
     return _plain_minute(raw)
 
 
-def _value_over_ceiling(raw: object, *, key: str, payload: Mapping[str, Any]) -> str:
+def _value_over_ceiling(raw: object, *, key: str) -> str:
     if raw is None or raw == "":
         return ""
     try:
@@ -461,24 +458,6 @@ def _value_over_ceiling(raw: object, *, key: str, payload: Mapping[str, Any]) ->
     except (TypeError, ValueError):
         return ""
     ceiling, digits, suffix = ALERT_CEILING.get(key, (None, 1, ""))
-    if key == "omega":
-        k_scale = DEFAULT_ANGLE_SCALE
-        theta: float | None = None
-        raw_k = payload.get("k_scale")
-        if raw_k is not None:
-            try:
-                k_scale = float(raw_k)
-            except (TypeError, ValueError):
-                pass
-        raw_th = payload.get("theta")
-        if raw_th is not None:
-            try:
-                theta = float(raw_th)
-            except (TypeError, ValueError):
-                theta = None
-        numeric = alert_theta_degrees(numeric, k_scale, theta=theta)
-        digits = 0
-        suffix = "°"
     if digits <= 0:
         shown = f"{numeric:.0f}{suffix}"
         cap = f"{ceiling:.0f}{suffix}" if ceiling is not None else ""

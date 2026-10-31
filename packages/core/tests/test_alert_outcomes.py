@@ -53,9 +53,9 @@ class TestMatchRule:
         assert rule.strategy_slot == 3
         assert rule.strategy_name == "Form Bar"
 
-    def test_hint_omega_resolves_slot_6(self) -> None:
-        assert match_rule(["Ω Surge"], DEFAULT_RULES).strategy_slot == 6
-        assert match_rule(["Nephos Delta"], DEFAULT_RULES).strategy_slot == 6
+    def test_retired_omega_names_fall_back(self) -> None:
+        assert match_rule(["Ω Surge"], DEFAULT_RULES) == FALLBACK_RULE
+        assert match_rule(["Omega"], DEFAULT_RULES) == FALLBACK_RULE
 
     def test_unrealised_goals_maps_to_slot_1(self) -> None:
         assert match_rule(["Unrealised goals"], DEFAULT_RULES).strategy_slot == 1
@@ -203,7 +203,7 @@ class TestOnExpiration:
         decision = evaluator.on_expiration(
             30,
             55,
-            strategy_names=["Omega"],
+            strategy_names=["K-Score"],
             trigger_team="home",
             opponent_goal_team="away",
             opponent_goal_minute=40,

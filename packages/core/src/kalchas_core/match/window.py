@@ -172,8 +172,7 @@ def resolve_window(
     instead of dropping it. Without it, a gap yields None.
 
     `at_minute` ends the window somewhere other than the timeline's current
-    minute, for walking back over a match. Omega needs this to build a
-    pressure series and differentiate it.
+    minute, for walking back over a match.
     """
     current_minute = timeline.current_minute if at_minute is None else at_minute
     if require_full_span and current_minute < span:
