@@ -2096,6 +2096,7 @@ export function App() {
   ]);
 
   const selected = display.find((m) => m.match_id === selectedId) ?? null;
+  const pinnedCount = display.filter((m) => favorites.has(m.match_id)).length;
   const displayedAlerts = groupRecentAlerts(recentAlerts);
   const oddsByMatch = useMemo(() => {
     const map = new Map<string, OddsFlat | null | undefined>();
@@ -2368,9 +2369,20 @@ export function App() {
             </tr>
           </thead>
           <tbody>
+            {pinnedCount > 0 ? (
+              <tr className="pin-cap">
+                <td colSpan={22}>
+                  <span className="pin-cap-label">
+                    ★ Pinned · {pinnedCount} <em>stay on top while live</em>
+                  </span>
+                </td>
+              </tr>
+            ) : null}
             {display.map((m, idx) => {
               const ss = m.strategy_status || {};
               const fav = favorites.has(m.match_id);
+              // Pinned rows sort first, so the last one closes the shelf.
+              const favLast = fav && !favorites.has(display[idx + 1]?.match_id ?? "");
               const hot = Boolean(m.active_strategies?.length);
               const zebra = idx % 2 === 0 ? "row-a" : "row-b";
               const flash = goalFlashes[m.match_id];
@@ -2383,6 +2395,7 @@ export function App() {
                     hot ? "row-hot" : "",
                     selectedId === m.match_id ? "row-sel" : "",
                     fav ? "row-fav" : "",
+                    favLast ? "row-fav-last" : "",
                     celebrating ? "row-goal" : "",
                   ]
                     .filter(Boolean)
