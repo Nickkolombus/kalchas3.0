@@ -118,3 +118,58 @@ def test_cards_render_as_16_by_9_pngs():
 def test_an_empty_week_still_renders_a_cover():
     data = build_recap([], week_start=LAST_WEEK)
     assert len(render_recap_cards(data, data.pop("texts"))) == 1
+
+
+class _Conn:
+    def __init__(self, existing: dict | None) -> None:
+        self.existing = existing
+
+    async def fetchrow(self, *args: object) -> dict | None:
+        return self.existing
+
+
+class _Pool:
+    def __init__(self, conn: _Conn) -> None:
+        self.conn = conn
+
+    def acquire(self) -> _Pool:
+        return self
+
+    async def __aenter__(self) -> _Conn:
+        return self.conn
+
+    async def __aexit__(self, *args: object) -> bool:
+        return False
+
+
+@pytest.mark.parametrize(
+    ("existing", "expect"),
+    [
+        (None, "insert"),
+        ({"status": "draft", "created_at": datetime(2026, 11, 1, 21, tzinfo=UTC)}, "refresh"),
+        ({"status": "draft", "created_at": datetime(2026, 11, 2, 8, tzinfo=UTC)}, None),
+        ({"status": "posted", "created_at": datetime(2026, 11, 1, 21, tzinfo=UTC)}, None),
+    ],
+)
+async def test_monday_replaces_only_a_preview_made_before_the_week_ended(
+    existing: dict | None, expect: str | None, monkeypatch: pytest.MonkeyPatch
+):
+    import kalchas_db.recaps as recaps
+
+    calls: list[str] = []
+
+    async def track(name: str) -> bool:
+        calls.append(name)
+        return True
+
+    monkeypatch.setattr(recaps, "fetch_week_signals", AsyncMock(return_value=[]))
+    monkeypatch.setattr(recaps, "fetch_threshold_overrides", AsyncMock(return_value={}))
+    monkeypatch.setattr(recaps, "insert_draft", lambda *a, **k: track("insert"))
+    monkeypatch.setattr(recaps, "refresh_early_draft", lambda *a, **k: track("refresh"))
+    monkeypatch.setattr(recaps, "mark_notified", AsyncMock())
+    bot = Mock()
+    bot.send_message = AsyncMock()
+    targets = RecapTargets("paid", None, "593", None, None)
+    await recap_job._maybe_draft(bot, _Pool(_Conn(existing)), targets, at(2, 9))
+    assert calls == ([expect] if expect else [])
+    assert bot.send_message.await_count == (1 if expect else 0)

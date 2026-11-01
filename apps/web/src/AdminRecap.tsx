@@ -50,7 +50,12 @@ type Recap = {
   posted_at: string | null;
 };
 
-type Payload = { recap: Recap | null; weeks?: { week_start: string; status: string }[]; last_week?: string };
+type Payload = {
+  recap: Recap | null;
+  weeks?: { week_start: string; status: string }[];
+  last_week?: string;
+  this_week?: string;
+};
 
 const CHANNELS: [string, string][] = [
   ["x", "X"],
@@ -119,7 +124,13 @@ export function AdminRecap({ api }: { api: Api }) {
   const recap = payload?.recap ?? null;
 
   const adopt = useCallback((next: Payload) => {
-    setPayload((prev) => ({ ...prev, ...next, weeks: next.weeks ?? prev?.weeks, last_week: next.last_week ?? prev?.last_week }));
+    setPayload((prev) => ({
+      ...prev,
+      ...next,
+      weeks: next.weeks ?? prev?.weeks,
+      last_week: next.last_week ?? prev?.last_week,
+      this_week: next.this_week ?? prev?.this_week,
+    }));
     setTexts(next.recap ? { ...next.recap.texts, calls: [...(next.recap.texts.calls || [])] } : null);
     setChannels(next.recap?.channels ?? {});
   }, []);
@@ -243,9 +254,20 @@ export function AdminRecap({ api }: { api: Api }) {
           The bot drafts last week's recap every Monday at 08:00 UTC and messages you on Telegram. You can build it now
           instead to see how it looks.
         </p>
-        <button type="button" className="kit-btn is-primary" disabled={busy} onClick={() => void draftNow()}>
-          Draft last week now
-        </button>
+        <div className="rc-actions">
+          <button type="button" className="kit-btn is-primary" disabled={busy} onClick={() => void draftNow()}>
+            Draft last week ({payload.last_week ? fmtWeek(payload.last_week) : "…"})
+          </button>
+          {payload.this_week ? (
+            <button type="button" className="kit-btn" disabled={busy} onClick={() => void draftNow(payload.this_week)}>
+              This week so far ({fmtWeek(payload.this_week)})
+            </button>
+          ) : null}
+        </div>
+        <p className="kit-muted">
+          A draft of a week that hasn't ended is a preview: on Monday the bot replaces it with the full week and
+          messages you.
+        </p>
         {error ? <p className="kit-error">{error}</p> : null}
       </div>
     );

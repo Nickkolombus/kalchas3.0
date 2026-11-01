@@ -120,6 +120,8 @@ def get_recap(request: Request, week: str | None = None) -> dict[str, Any]:
         "recap": _view(row) if row else None,
         "weeks": weeks,
         "last_week": last_week.isoformat(),
+        # Still running: a preview. Monday's draft replaces it with the full week.
+        "this_week": (last_week + timedelta(days=7)).isoformat(),
     }
 
 

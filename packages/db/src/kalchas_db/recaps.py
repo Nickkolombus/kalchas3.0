@@ -44,6 +44,15 @@ RETURNING week_start
 
 MARK_NOTIFIED = "UPDATE weekly_recaps SET notified_at = NOW() WHERE week_start = $1"
 
+# A draft made before its week ended (a "this week so far" preview) is
+# replaced by the full week; one made after is the admin's and is left alone.
+REFRESH_EARLY_DRAFT = """
+UPDATE weekly_recaps
+SET data = $2::jsonb, texts = $3::jsonb, created_at = NOW(), updated_at = NOW()
+WHERE week_start = $1 AND status = 'draft' AND created_at < $4
+RETURNING week_start
+"""
+
 CLAIM_APPROVED = """
 UPDATE weekly_recaps
 SET status = 'posting', updated_at = NOW()
@@ -141,6 +150,21 @@ async def insert_draft(
     """False when that week already has a recap (drafted on an earlier tick)."""
     created = await conn.fetchval(INSERT_DRAFT, week_start, json.dumps(data), json.dumps(texts))
     return created is not None
+
+
+async def refresh_early_draft(
+    conn: asyncpg.Connection,
+    week_start: date,
+    data: dict[str, Any],
+    texts: dict[str, Any],
+    *,
+    week_ended_at: datetime,
+) -> bool:
+    """True when a preview draft made before `week_ended_at` was replaced."""
+    replaced = await conn.fetchval(
+        REFRESH_EARLY_DRAFT, week_start, json.dumps(data), json.dumps(texts), week_ended_at
+    )
+    return replaced is not None
 
 
 async def mark_notified(conn: asyncpg.Connection, week_start: date) -> None:

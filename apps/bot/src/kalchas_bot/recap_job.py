@@ -102,18 +102,24 @@ async def _maybe_draft(bot: Bot, pool: Any, targets: RecapTargets, now: datetime
         fetch_week_signals,
         insert_draft,
         mark_notified,
+        refresh_early_draft,
     )
     from kalchas_db.settings import KEY_BY_SLOT
 
     week = draft_due(now)
     if week is None:
         return
+    start = datetime.combine(week, time.min, tzinfo=UTC)
+    ended = start + timedelta(days=7)
     async with pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM weekly_recaps WHERE week_start = $1", week)
-        if exists:
+        existing = await conn.fetchrow(
+            "SELECT status, created_at FROM weekly_recaps WHERE week_start = $1", week
+        )
+        if existing is not None and not (
+            existing["status"] == "draft" and existing["created_at"] < ended
+        ):
             return
-        start = datetime.combine(week, time.min, tzinfo=UTC)
-        rows = await fetch_week_signals(conn, start, start + timedelta(days=7))
+        rows = await fetch_week_signals(conn, start, ended)
         overrides = await fetch_threshold_overrides(conn)
         thresholds = {
             key: overrides.get(slot, DEFAULT_THRESHOLDS.get(slot, 0.0))
@@ -121,7 +127,11 @@ async def _maybe_draft(bot: Bot, pool: Any, targets: RecapTargets, now: datetime
         }
         data = build_recap(rows, week_start=week, thresholds=thresholds)
         texts = data.pop("texts")
-        if not await insert_draft(conn, week, data, texts):
+        if existing is None:
+            saved = await insert_draft(conn, week, data, texts)
+        else:
+            saved = await refresh_early_draft(conn, week, data, texts, week_ended_at=ended)
+        if not saved:
             return
         logger.info("weekly recap drafted for %s: %s", week, headline(data))
         if targets.admin_chat_id and await _ping_admin(bot, targets.admin_chat_id, data):
