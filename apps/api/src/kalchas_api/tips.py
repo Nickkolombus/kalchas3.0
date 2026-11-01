@@ -14,6 +14,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from kalchas_api.admin_auth import require_admin
+from kalchas_api.betfair_names import Fixture, correlate, get_fixtures, source_status
 
 logger = logging.getLogger("kalchas.api.tips")
 
@@ -74,8 +75,15 @@ def event_name_for(home: str, away: str) -> str:
     return f"{home} v {away}"
 
 
-def rows_from_alerts(alerts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """One CSV row per match: earliest open alert in the window."""
+def rows_from_alerts(
+    alerts: list[dict[str, Any]],
+    fixtures: list[Fixture] | None = None,
+) -> list[dict[str, Any]]:
+    """One CSV row per match: earliest open alert in the window.
+
+    With `fixtures` (the Betfair list) the event name is the Betfair spelling;
+    without, the API names pass through untouched.
+    """
     grouped: dict[str, dict[str, Any]] = {}
     order: list[str] = []
     for alert in alerts:
@@ -89,16 +97,23 @@ def rows_from_alerts(alerts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             minute = int(alert.get("minute") or 0)
             score = str(alert.get("score") or "0-0")
             market, selection = market_for(score, minute)
+            if fixtures is None:
+                event_name = event_name_for(home, away)
+                method, fuzzy = CORRELATION_PASSTHROUGH, None
+            else:
+                found = correlate(home, away, fixtures)
+                event_name = event_name_for(found.home, found.away)
+                method, fuzzy = found.method, found.fuzzy_applied
             grouped[match_id] = {
                 "match_id": match_id,
                 "alert_time": str(alert.get("created_at") or ""),
                 "api_home": home,
                 "api_away": away,
-                "event_name": event_name_for(home, away),
+                "event_name": event_name,
                 "market_type": market,
                 "selection_name": selection,
-                "correlation_method": CORRELATION_PASSTHROUGH,
-                "fuzzy_applied": None,
+                "correlation_method": method,
+                "fuzzy_applied": fuzzy,
                 "strategies": [strategy] if strategy else [],
                 "minute": minute,
                 "score": score,
@@ -130,7 +145,9 @@ def _live_rows(dsn: str, window: int) -> list[dict[str, Any]]:
     from kalchas_db.tips_export import list_open_alerts_in_window_sync
 
     alerts = list_open_alerts_in_window_sync(dsn, window_seconds=window)
-    return rows_from_alerts(alerts)
+    if not alerts:
+        return []
+    return rows_from_alerts(alerts, get_fixtures())
 
 
 def csv_response(body: str) -> Response:
@@ -199,6 +216,7 @@ def admin_tips(
     return {
         "settings": settings,
         "feed_path": "/tips.csv",
+        "betfair_source": source_status(),
         "live": _live_rows(dsn, window),
         "history": list_log_sync(dsn, days=days, limit=500),
         "polls": list_polls_sync(dsn, limit=50),

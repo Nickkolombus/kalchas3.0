@@ -31,6 +31,12 @@ type TipsPayload = {
     updated_at: string | null;
   };
   feed_path: string;
+  betfair_source?: {
+    fixtures: number;
+    newest_open_date: string | null;
+    ok: boolean;
+    error: string | null;
+  };
   live: LiveRow[];
   history: HistoryRow[];
   polls: PollRow[];
@@ -109,7 +115,8 @@ export function AdminTips({
     <>
       <p className="adm-intro">
         CSV BFbot polls. One row per match from open alerts in the window.
-        Names are the API-Football names until the Betfair map is ported.
+        Team names are matched to Betfair fixtures; unmatched ones keep the
+        API-Football spelling.
       </p>
 
       <article className="admin-card">
@@ -134,6 +141,17 @@ export function AdminTips({
             last rows <strong>{settings?.last_row_count ?? 0}</strong>
           </span>
         </div>
+        {body?.betfair_source ? (
+          <p className="admin-hint">
+            Betfair fixture list: {body.betfair_source.fixtures} fixtures, newest{" "}
+            {body.betfair_source.newest_open_date
+              ? fmtTime(body.betfair_source.newest_open_date)
+              : "none"}
+            {body.betfair_source.ok ? "" : ` (fetch failed: ${body.betfair_source.error ?? "unknown"})`}
+            . Refresh it from a machine with Betfair access
+            (scripts/update_gist_manual.py in the 2.2 repo).
+          </p>
+        ) : null}
       </article>
 
       <article className="admin-card">
