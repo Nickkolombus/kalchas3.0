@@ -90,6 +90,37 @@ async def send_discord_message(
             await http_client.aclose()
 
 
+async def send_discord_album(
+    token: str,
+    channel_id: str,
+    *,
+    images: list[bytes],
+    content: str,
+    client: httpx.AsyncClient | None = None,
+) -> int | None:
+    """One message with several PNG attachments and plain-text content."""
+    owns_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=30.0)
+    try:
+        response = await http_client.post(
+            f"{API_BASE}/channels/{channel_id}/messages",
+            headers=_headers(token),
+            data={"payload_json": json.dumps({"content": _clip(content)})},
+            files={
+                f"files[{i}]": (f"recap-{i + 1}.png", image, "image/png")
+                for i, image in enumerate(images[:10])
+            },
+        )
+        response.raise_for_status()
+        return int(response.json()["id"])
+    except Exception:
+        logger.exception("discord album failed")
+        return None
+    finally:
+        if owns_client:
+            await http_client.aclose()
+
+
 async def edit_discord_message(
     token: str,
     channel_id: str,

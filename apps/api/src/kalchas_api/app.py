@@ -24,6 +24,7 @@ from kalchas_football import apifootball_badge_url, https_asset_url
 from pydantic import BaseModel, Field
 
 from kalchas_api.admin import router as admin_router
+from kalchas_api.recap import router as recap_router
 from kalchas_api.signals import (
     goals_from_events,
     public_alert_signal,
@@ -1209,6 +1210,7 @@ def _mount_web_ui() -> None:
 
 
 app.include_router(admin_router)
+app.include_router(recap_router)
 app.include_router(tips_admin_router)
 app.include_router(tips_public_router)
 app.include_router(visit_public_router)

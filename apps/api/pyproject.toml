@@ -9,6 +9,8 @@ dependencies = [
     "httpx>=0.27",
     "kalchas-core",
     "kalchas-db",
+    # Recap card previews reuse the bot's renderer so admin sees the exact PNG.
+    "kalchas-bot",
     "tzdata>=2024.1",
 ]
 

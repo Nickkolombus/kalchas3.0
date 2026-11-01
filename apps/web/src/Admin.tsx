@@ -3,6 +3,7 @@ import { AdminConditions, type ConditionCatalog, type ExtraCondition } from "./A
 import { RangePicker, browserZone, defaultRange, fmtWindow, isoDay, pct, rangeQuery, rangeValid, type Range } from "./AdminKit";
 import { AdminOverview, type DiscordState } from "./AdminOverview";
 import { AdminPreview } from "./AdminPreview";
+import { AdminRecap } from "./AdminRecap";
 import { AdminResults, type ResultsInsights, type StrategyMeta } from "./AdminResults";
 import { AdminTips } from "./AdminTips";
 import { AdminVisitors } from "./AdminVisitors";
@@ -66,7 +67,7 @@ const DEFAULT_DISCORD: DiscordState = {
   paid_enabled: true,
 };
 
-type Page = "overview" | "results" | "visitors" | "strategies" | "board" | "tips" | "discord";
+type Page = "overview" | "results" | "visitors" | "strategies" | "board" | "recap" | "tips" | "discord";
 
 const PAGES: Record<Page, { group: string; title: string }> = {
   overview: { group: "Today", title: "Overview" },
@@ -74,6 +75,7 @@ const PAGES: Record<Page, { group: string; title: string }> = {
   visitors: { group: "Insights", title: "Visitors" },
   strategies: { group: "Strategy", title: "Strategies" },
   board: { group: "Strategy", title: "Board filters" },
+  recap: { group: "Distribution", title: "Weekly recap" },
   tips: { group: "Distribution", title: "Tips feed" },
   discord: { group: "Distribution", title: "Discord" },
 };
@@ -147,6 +149,12 @@ const ICONS: Record<Page, ReactNode> = {
   ),
   tips: <path d="M3 3h10v7H7l-3 3v-3H3z" />,
   discord: <path d="M2 8h3l2-5 2 10 2-5h3" />,
+  recap: (
+    <>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
+      <path d="M5 10.5V8M8 10.5V5.5M11 10.5V7" />
+    </>
+  ),
 };
 
 function NavItem({ page, on, onClick, badge }: { page: Page; on: boolean; onClick: () => void; badge?: ReactNode }) {
@@ -547,6 +555,7 @@ export function AdminApp() {
         />
         <NavItem page="board" on={page === "board"} onClick={() => go("board")} />
         <div className="adm-nav-group">Distribution</div>
+        <NavItem page="recap" on={page === "recap"} onClick={() => go("recap")} />
         <NavItem page="tips" on={page === "tips"} onClick={() => go("tips")} />
         <NavItem page="discord" on={page === "discord"} onClick={() => go("discord")} />
         <div className="adm-side-foot">
@@ -623,6 +632,7 @@ export function AdminApp() {
               onDiscard={() => setVarious(savedVarious)}
             />
           ) : null}
+          {page === "recap" ? <AdminRecap api={api} /> : null}
           {page === "tips" ? <AdminTips api={api} /> : null}
           {page === "discord" ? (
             <DiscordPage

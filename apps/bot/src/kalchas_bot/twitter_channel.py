@@ -190,14 +190,16 @@ async def post_tweet(
     text: str,
     *,
     media_id: str | None = None,
+    media_ids: Sequence[str] = (),
     reply_to: str | None = None,
     client: httpx.AsyncClient,
 ) -> str | None:
     """Post one tweet. Returns its id, or None on failure."""
     url = f"{API_BASE}/tweets"
     body: dict[str, object] = {"text": text}
-    if media_id:
-        body["media"] = {"media_ids": [media_id]}
+    attached = [media_id] if media_id else list(media_ids)[:4]
+    if attached:
+        body["media"] = {"media_ids": attached}
     if reply_to:
         body["reply"] = {"in_reply_to_tweet_id": str(reply_to)}
     try:
@@ -266,6 +268,39 @@ async def post_alert_tweet(
     """The free-channel caption as a tweet (thread if long) with a link to the match."""
     chunks = thread_chunks(html_to_tweet(caption), link=match_link(match_id))
     return await post_thread(creds, chunks, photo_bytes=photo_bytes, client=client)
+
+
+async def post_album_tweet(
+    creds: TwitterCredentials,
+    text: str,
+    images: Sequence[bytes],
+    *,
+    reply_text: str | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> str | None:
+    """One tweet with up to four images, and an optional reply under it.
+
+    All-or-nothing on the images: a recap missing one of its cards reads wrong,
+    so a failed upload posts nothing and returns None.
+    """
+    owns_client = client is None
+    http_client = client or httpx.AsyncClient(timeout=60.0)
+    try:
+        media_ids = []
+        for image in list(images)[:4]:
+            media_id = await upload_media(creds, image, client=http_client)
+            if media_id is None:
+                return None
+            media_ids.append(media_id)
+        tweet_id = await post_tweet(
+            creds, _hard_clip(text, TWEET_LIMIT), media_ids=media_ids, client=http_client
+        )
+        if tweet_id and reply_text:
+            await post_tweet(creds, reply_text, reply_to=tweet_id, client=http_client)
+        return tweet_id
+    finally:
+        if owns_client:
+            await http_client.aclose()
 
 
 async def reply_tweet(

@@ -61,6 +61,17 @@ async def _maybe_start_delivery(application: Application) -> None:
         )
     )
 
+    from kalchas_bot.recap_job import RecapTargets, recap_admin_chat_id, recap_loop
+
+    targets = RecapTargets(
+        paid_chat_id=chat_id,
+        free_chat_id=free_chat_id,
+        admin_chat_id=recap_admin_chat_id(),
+        discord_token=discord_bot_token(),
+        twitter=twitter_credentials(),
+    )
+    application.bot_data["recap_task"] = asyncio.create_task(recap_loop(application.bot, targets))
+
 
 def build_app(token: str) -> Application:
     app = Application.builder().token(token).post_init(_maybe_start_delivery).build()
