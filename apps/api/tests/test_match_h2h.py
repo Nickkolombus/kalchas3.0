@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 from kalchas_api.app import app
-from kalchas_api.h2h import build_h2h_payload
+from kalchas_core.h2h import build_h2h_payload
 
 
 def test_build_h2h_payload_counts_and_timing() -> None:
@@ -135,6 +135,58 @@ def test_h2h_endpoint_from_cache(monkeypatch) -> None:
     assert body["source"] == "cache"
     assert body["data"]["home_team"] == "Home"
     assert body["data"]["summary"]["home_wins"] == 4
+
+
+def test_h2h_endpoint_flips_a_row_cached_for_the_reverse_fixture(monkeypatch) -> None:
+    import kalchas_db.matches
+    import kalchas_db.panel_cache
+
+    def meeting(i: int, home: int, away: int, hs: int, aws: int) -> dict:
+        return {
+            "match_id": str(i),
+            "home_team_id": home,
+            "away_team_id": away,
+            "home_score": hs,
+            "away_score": aws,
+            "match_date": f"2026-0{i}-01",
+        }
+
+    # Cached when team 20 was at home: 20 won 3, drew 1, lost 1, clean sheets at home twice.
+    cached = build_h2h_payload(
+        [
+            meeting(1, 20, 10, 2, 0),
+            meeting(2, 10, 20, 0, 1),
+            meeting(3, 20, 10, 1, 1),
+            meeting(4, 10, 20, 2, 1),
+            meeting(5, 20, 10, 3, 0),
+        ],
+        home_team_id=20,
+        away_team_id=10,
+        home_team="Away",
+        away_team="Home",
+    )
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
+    monkeypatch.setattr(
+        kalchas_db.matches,
+        "get_match_sync",
+        lambda dsn, match_id: {
+            "match_id": match_id,
+            "home_team": "Home",
+            "away_team": "Away",
+            "home_team_id": 10,
+            "away_team_id": 20,
+        },
+    )
+    monkeypatch.setattr(kalchas_db.panel_cache, "load_panel_cache", lambda *a, **k: cached)
+
+    data = TestClient(app).get("/api/match/m1/h2h").json()["data"]
+
+    assert data["home_team"] == "Home"
+    assert data["summary"] == {"home_wins": 1, "draws": 1, "away_wins": 3, "sample": 5}
+    assert data["patterns"]["home_goals"] == 3
+    assert data["patterns"]["away_goals"] == 8
+    assert data["patterns"]["away_cs"]["count"] == 2
+    assert data["patterns"]["away_cs"]["team"] == "Away"
 
 
 def test_h2h_endpoint_fetches_on_cache_miss(monkeypatch) -> None:

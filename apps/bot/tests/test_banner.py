@@ -9,10 +9,12 @@ from kalchas_bot.banner import (
     GLOW_LUMA,
     HEIGHT,
     WIDTH,
+    _ball,
     _country_label,
     _ellipsize,
     _even_glow,
     _fit_logo,
+    _h2h,
     _team_colour,
     render_alert_photo,
 )
@@ -103,6 +105,40 @@ def test_glows_share_one_brightness():
 
     for colour in ((255, 220, 0), (20, 30, 120), (210, 30, 40), (30, 160, 60)):
         assert abs(luma(_even_glow(colour)) - GLOW_LUMA) < 4
+
+
+H2H = {"sample": 8, "home_avg": 2.5, "away_avg": 0.0, "home_wins": 8, "draws": 0, "away_wins": 0}
+
+
+def test_banner_renders_the_h2h_strip():
+    buf = render_alert_photo(
+        {
+            "home_team": "OL Lyonnes W",
+            "away_team": "Montpellier W",
+            "minute": 40,
+            "score": "1-0",
+            "payload": {"league": "Première Ligue", "country": "France", "h2h": H2H},
+        }
+    )
+    assert buf is not None
+    assert Image.open(BytesIO(buf.getvalue())).size == (WIDTH, HEIGHT)
+
+
+def test_h2h_needs_the_same_sample_as_the_caption_rule():
+    assert _h2h({"h2h": H2H}) is not None
+    assert _h2h({"h2h": {**H2H, "sample": 4}}) is None
+    assert _h2h({"h2h": {**H2H, "draws": None}}) is None
+    assert _h2h({}) is None
+
+
+def test_partial_ball_fills_clockwise_from_twelve():
+    quarter = _ball(0.25)
+    size = quarter.width
+    top_right = quarter.getpixel((size * 3 // 4, size // 4))
+    bottom_left = quarter.getpixel((size // 4, size * 3 // 4))
+    assert top_right[3] > bottom_left[3]
+    full = _ball(1.0)
+    assert full.getpixel((size // 4, size * 3 // 4))[3] > bottom_left[3]
 
 
 def test_long_names_ellipsize_to_the_column():

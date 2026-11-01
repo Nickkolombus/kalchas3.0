@@ -29,7 +29,12 @@ from kalchas_core.form import (
     form_from_cache_payload,
     played_fixtures,
 )
-from kalchas_core.h2h import DEFAULT_LAST, compute_h2h_stats, h2h_meeting_averages
+from kalchas_core.h2h import (
+    DEFAULT_LAST,
+    DEFAULT_MIN_SAMPLE,
+    build_h2h_payload,
+    orient_h2h_payload,
+)
 from kalchas_core.runner import (
     DEFAULT_THRESHOLDS,
     board_snapshot,
@@ -114,6 +119,31 @@ def _tally_yellow(
             elif side == "away":
                 away_yc += 1
     return {"home": home_yc, "away": away_yc}
+
+
+def _alert_h2h(overlay: dict) -> dict | None:
+    """The banner's H2H numbers from a match-panel H2H payload, or None under 5 meetings."""
+    try:
+        summary = overlay.get("summary") or {}
+        sample = int(summary.get("sample") or 0)
+        patterns = overlay.get("patterns") or {}
+        home_goals = float(patterns.get("home_goals"))
+        away_goals = float(patterns.get("away_goals"))
+        home_wins = int(summary.get("home_wins") or 0)
+        draws = int(summary.get("draws") or 0)
+        away_wins = int(summary.get("away_wins") or 0)
+    except (TypeError, ValueError):
+        return None
+    if sample < DEFAULT_MIN_SAMPLE:
+        return None
+    return {
+        "sample": sample,
+        "home_avg": round(home_goals / sample, 1),
+        "away_avg": round(away_goals / sample, 1),
+        "home_wins": home_wins,
+        "draws": draws,
+        "away_wins": away_wins,
+    }
 
 
 @dataclass
@@ -302,7 +332,12 @@ class Scanner:
         )
 
     def _h2h_for_alert(self, match: LiveMatch) -> dict | None:
-        """Goals-per-meeting for Telegram. Skips samples under 5. Cache first."""
+        """Goals-per-meeting and W/D/L for the Telegram banner. Cache first.
+
+        A miss fetches once and writes the same ``panel_cache`` row the match
+        panel's H2H tab reads, so opening H2H on the board after an alert
+        costs no second ``get_H2H`` call.
+        """
         try:
             home_id = int(match.home_team_id or 0)
             away_id = int(match.away_team_id or 0)
@@ -311,7 +346,7 @@ class Scanner:
         if home_id <= 0 or away_id <= 0 or home_id == away_id:
             return None
         pair = (min(home_id, away_id), max(home_id, away_id))
-        overlay = self._h2h_from_panel_cache(home_id, away_id)
+        overlay = self._h2h_from_panel_cache(match, home_id, away_id)
         if overlay is not None:
             self._h2h_alert_by_pair[pair] = overlay
             return overlay
@@ -328,18 +363,27 @@ class Scanner:
         except Exception:
             logger.exception("h2h fetch failed for %s", match.match_id)
             return None
-        stats = compute_h2h_stats(
+        overlay = build_h2h_payload(
             fixtures or [],
-            team1_id=home_id,
-            team2_id=away_id,
-            team1_name=match.home_team,
-            team2_name=match.away_team,
+            home_team_id=home_id,
+            away_team_id=away_id,
+            home_team=match.home_team,
+            away_team=match.away_team,
         )
-        snippet = h2h_meeting_averages(stats)
+        # Same rule as the API route: thin samples are not cached.
+        dsn = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
+        if dsn and overlay["summary"]["sample"] >= DEFAULT_MIN_SAMPLE:
+            try:
+                from kalchas_db.panel_cache import pair_cache_key, save_panel_cache
+
+                save_panel_cache(dsn, pair_cache_key("h2h", home_id, away_id), overlay)
+            except Exception:
+                logger.exception("failed caching h2h for %s", match.match_id)
+        snippet = _alert_h2h(overlay)
         self._h2h_alert_by_pair[pair] = snippet
         return snippet
 
-    def _h2h_from_panel_cache(self, home_id: int, away_id: int) -> dict | None:
+    def _h2h_from_panel_cache(self, match: LiveMatch, home_id: int, away_id: int) -> dict | None:
         dsn = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
         if not dsn:
             return None
@@ -351,27 +395,15 @@ class Scanner:
             return None
         if not isinstance(cached, dict):
             return None
-        try:
-            summary = cached.get("summary") or {}
-            sample = int(summary.get("sample") or 0)
-            patterns = cached.get("patterns") or {}
-            home_goals = float(patterns.get("home_goals"))
-            away_goals = float(patterns.get("away_goals"))
-            home_wins = int(summary.get("home_wins") or 0)
-            draws = int(summary.get("draws") or 0)
-            away_wins = int(summary.get("away_wins") or 0)
-        except (TypeError, ValueError):
-            return None
-        if sample < 5:
-            return None
-        return {
-            "sample": sample,
-            "home_avg": round(home_goals / sample, 1),
-            "away_avg": round(away_goals / sample, 1),
-            "home_wins": home_wins,
-            "draws": draws,
-            "away_wins": away_wins,
-        }
+        return _alert_h2h(
+            orient_h2h_payload(
+                cached,
+                home_team_id=home_id,
+                away_team_id=away_id,
+                home_team=match.home_team,
+                away_team=match.away_team,
+            )
+        )
 
     def _team_form_for(self, team_id: int) -> TeamForm | None:
         """Recent goals scored/conceded for Form Bar. `None` only when nothing

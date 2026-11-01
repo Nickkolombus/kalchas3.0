@@ -12,12 +12,14 @@ from __future__ import annotations
 import colorsys
 import json
 import logging
+import math
 from collections import Counter
 from collections.abc import Mapping
 from io import BytesIO
 from typing import Any
 from urllib.request import Request, urlopen
 
+from kalchas_core.h2h import DEFAULT_MIN_SAMPLE
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 logger = logging.getLogger("kalchas.bot.banner")
@@ -30,6 +32,12 @@ CREAM = (243, 234, 210)
 MUTED = (139, 154, 171)
 NEUTRAL_GLOW = (70, 104, 146)
 GLOW_LUMA = 100.0  # every glow is moved to this brightness, whatever its hue
+DRAW_GREY = (78, 90, 108)
+BALL = 24  # one ball = one goal per meeting; partial balls in quarters
+BALL_GAP = 5
+BALL_PATCH = (34, 44, 60)
+BAR_H = 30
+H2H_H = 14 + BALL + 12 + BAR_H  # gap, ball row, gap, W/D/L bar
 CREST = 180  # 112 * 1.6; names stay the same size
 PAD_X = 52
 # The feed's code for cross-border competitions; the league name says enough.
@@ -85,13 +93,15 @@ def render_alert_photo(row: Mapping[str, Any]) -> BytesIO | None:
             lb = probe.textbbox((0, 0), league or country, font=title_font)
             league_h = (lb[3] - lb[1]) + 18
 
+        h2h = _h2h(payload)
         name_h = 28
         crest_gap = 16
-        block_h = league_h + CREST + crest_gap + name_h
+        block_h = league_h + CREST + crest_gap + name_h + (H2H_H if h2h else 0)
         y = max(PAD_X // 2, int((HEIGHT - block_h) / 2))
         left_x = PAD_X
         right_x = WIDTH - PAD_X - CREST
         crest_y = y + league_h
+        h2h_y = crest_y + CREST + crest_gap + name_h
         mid = WIDTH / 2
 
         img = _backdrop(
@@ -99,6 +109,7 @@ def render_alert_photo(row: Mapping[str, Any]) -> BytesIO | None:
             (right_x + CREST / 2, crest_y + CREST / 2, right_glow),
             centre=(mid, crest_y + CREST / 2),
             header_y=y if (league or country) else crest_y,
+            footer_y=h2h_y if h2h else HEIGHT,
         )
         draw = ImageDraw.Draw(img)
 
@@ -129,6 +140,15 @@ def render_alert_photo(row: Mapping[str, Any]) -> BytesIO | None:
         name_max = int(WIDTH / 2 - PAD_X - 16)
         _fitted(draw, home, left_x + CREST / 2, name_y, name_font, CREAM, name_max)
         _fitted(draw, away, right_x + CREST / 2, name_y, name_font, CREAM, name_max)
+
+        if h2h:
+            _h2h_strip(
+                img,
+                h2h,
+                h2h_y,
+                (left_x + CREST / 2, right_x + CREST / 2),
+                (_even_glow(left_glow or NEUTRAL_GLOW), _even_glow(right_glow or NEUTRAL_GLOW)),
+            )
 
         buf = BytesIO()
         img.save(buf, format="JPEG", quality=95, subsampling=0, optimize=True)
@@ -216,10 +236,12 @@ def _backdrop(
     *glows: tuple[float, float, tuple[int, int, int] | None],
     centre: tuple[float, float],
     header_y: float,
+    footer_y: float,
 ) -> Image.Image:
     """Navy gradient, a soft team-colour glow behind each crest, faint pitch lines.
 
-    The halfway line stops short of the header so it never strikes through it.
+    The halfway line stops short of the header and the H2H strip so it never
+    strikes through text.
     """
     column = Image.linear_gradient("L").resize((1, HEIGHT))
     img = Image.composite(
@@ -245,8 +267,192 @@ def _backdrop(
     pen.ellipse((cx - ring, cy - ring, cx + ring, cy + ring), outline=ink, width=2)
     if header_y - 14 > 0:
         pen.line((cx, 0, cx, header_y - 14), fill=ink, width=2)
-    pen.line((cx, cy + ring, cx, HEIGHT), fill=ink, width=2)
+    if footer_y - 14 > cy + ring:
+        pen.line((cx, cy + ring, cx, footer_y - 14), fill=ink, width=2)
     return Image.alpha_composite(img, lines).convert("RGB")
+
+
+def _h2h(payload: Mapping[str, Any]) -> dict[str, float] | None:
+    """Head-to-head numbers when the sample is big enough to show, else None."""
+    raw = payload.get("h2h")
+    if not isinstance(raw, Mapping):
+        return None
+    try:
+        out = {
+            key: float(raw.get(key))  # type: ignore[arg-type]
+            for key in ("sample", "home_avg", "away_avg", "home_wins", "draws", "away_wins")
+        }
+    except (TypeError, ValueError):
+        return None
+    if out["sample"] < DEFAULT_MIN_SAMPLE:
+        return None
+    return out
+
+
+def _h2h_strip(
+    img: Image.Image,
+    h2h: Mapping[str, float],
+    top: float,
+    centres: tuple[float, float],
+    tints: tuple[tuple[int, int, int], tuple[int, int, int]],
+) -> None:
+    """Goals per meeting as balls under each name, then a W/D/L bar across."""
+    draw = ImageDraw.Draw(img)
+    num_font = _font(20, bold=True)
+    label_font = _font(16, bold=False)
+    row_y = top + 14
+    for cx, avg in zip(centres, (h2h["home_avg"], h2h["away_avg"]), strict=True):
+        _ball_row(img, draw, cx, row_y, avg, num_font)
+
+    label = f"H2H · LAST {int(h2h['sample'])}"
+    lw = draw.textlength(label, font=label_font)
+    lb = draw.textbbox((0, 0), label, font=label_font)
+    draw.text(
+        (WIDTH / 2 - lw / 2, row_y + (BALL - (lb[3] - lb[1])) / 2 - lb[1]),
+        label,
+        font=label_font,
+        fill=MUTED,
+    )
+
+    bar_y = row_y + BALL + 12
+    _wdl_bar(
+        img,
+        (PAD_X, bar_y, WIDTH - PAD_X, bar_y + BAR_H),
+        (int(h2h["home_wins"]), int(h2h["draws"]), int(h2h["away_wins"])),
+        (tints[0], DRAW_GREY, tints[1]),
+    )
+
+
+def _ball_row(
+    img: Image.Image,
+    draw: ImageDraw.ImageDraw,
+    cx: float,
+    y: float,
+    avg: float,
+    font: ImageFont.ImageFont,
+) -> None:
+    """Whole balls plus one quarter-step partial ball, then the exact number."""
+    quarters = max(0, min(20, round(avg * 4)))  # cap at 5 goals per meeting
+    fills = [1.0] * (quarters // 4)
+    if quarters % 4:
+        fills.append((quarters % 4) / 4)
+    if not fills:
+        fills = [0.0]
+    text = f"{avg:.1f}"
+    tw = draw.textlength(text, font=font)
+    width = len(fills) * BALL + (len(fills) - 1) * BALL_GAP + 9 + tw
+    x = cx - width / 2
+    for frac in fills:
+        ball = _ball(frac)
+        img.paste(ball, (round(x), round(y)), ball)
+        x += BALL + BALL_GAP
+    tb = draw.textbbox((0, 0), text, font=font)
+    draw.text(
+        (x - BALL_GAP + 9, y + (BALL - (tb[3] - tb[1])) / 2 - tb[1]),
+        text,
+        font=font,
+        fill=CREAM,
+    )
+
+
+def _ball(frac: float) -> Image.Image:
+    """A football icon filled clockwise from 12 o'clock to ``frac`` (0..1)."""
+    scale = 4
+    size = BALL * scale
+    r = size / 2
+    full = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    pen = ImageDraw.Draw(full)
+    pen.ellipse((0, 0, size - 1, size - 1), fill=(*CREAM, 255))
+    patch = (*BALL_PATCH, 255)
+    seam = max(1, round(r * 0.07))
+    for k in range(5):
+        angle = math.radians(-90 + 72 * k)
+        inner = (r + math.cos(angle) * r * 0.28, r + math.sin(angle) * r * 0.28)
+        outer = (r + math.cos(angle) * r * 0.86, r + math.sin(angle) * r * 0.86)
+        pen.line((inner, outer), fill=patch, width=seam)
+        pen.regular_polygon((*outer, r * 0.2), 5, rotation=36 - 72 * k, fill=patch)
+    pen.regular_polygon((r, r, r * 0.3), 5, rotation=0, fill=patch)
+    # Cream rim keeps the silhouette, since patches are dark like the card.
+    rim = round(r * 0.1)
+    pen.ellipse((0, 0, size - 1, size - 1), outline=(*CREAM, 255), width=rim)
+    circle = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(circle).ellipse((0, 0, size - 1, size - 1), fill=255)
+    full.putalpha(Image.composite(full.getchannel("A"), circle, circle))
+
+    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    ImageDraw.Draw(out).ellipse(
+        (scale, scale, size - 1 - scale, size - 1 - scale),
+        fill=(*CREAM, 22),
+        outline=(*CREAM, 90),
+        width=scale * 2,
+    )
+    if frac > 0:
+        mask = Image.new("L", (size, size), 0)
+        if frac >= 1:
+            mask.paste(255, (0, 0, size, size))
+        else:
+            ImageDraw.Draw(mask).pieslice(
+                (0, 0, size - 1, size - 1), -90, -90 + 360 * frac, fill=255
+            )
+        out.paste(full, (0, 0), Image.composite(full.getchannel("A"), mask, mask))
+    return out.resize((BALL, BALL), Image.Resampling.LANCZOS)
+
+
+def _wdl_bar(
+    img: Image.Image,
+    box: tuple[float, float, float, float],
+    counts: tuple[int, int, int],
+    colours: tuple[tuple[int, int, int], ...],
+) -> None:
+    """Home wins | draws | away wins, each segment sized by its share.
+
+    A side with no wins keeps a dim "0 W" stub, so a one-sided record still
+    shows whose wins fill the bar.
+    """
+    x0, y0, x1, y1 = box
+    total = sum(counts)
+    if total <= 0:
+        return
+    font = _font(18, bold=True)
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    pen = ImageDraw.Draw(layer)
+    gap = 3
+    stub = 58
+    shown = [
+        (n, colour if n else _mix(colour, BG, 0.55), tag)
+        for i, (n, colour, tag) in enumerate(zip(counts, colours, ("W", "D", "W"), strict=True))
+        if n or i != 1
+    ]
+    stubs = sum(1 for n, _, _ in shown if not n)
+    room = (x1 - x0) - gap * (len(shown) - 1) - stub * stubs
+    x = x0
+    for i, (n, colour, tag) in enumerate(shown):
+        w = room * n / total if n else stub
+        end = x1 if i == len(shown) - 1 else x + w
+        pen.rectangle((x, y0, end, y1), fill=(*colour, 255))
+        text = f"{n} {tag}"
+        tw = pen.textlength(text, font=font)
+        if end - x >= tw + 14:
+            tb = pen.textbbox((0, 0), text, font=font)
+            pen.text(
+                (x + (end - x - tw) / 2, y0 + (y1 - y0 - (tb[3] - tb[1])) / 2 - tb[1]),
+                text,
+                font=font,
+                fill=CREAM,
+            )
+        x = end + gap
+    rounded = Image.new("L", img.size, 0)
+    ImageDraw.Draw(rounded).rounded_rectangle((x0, y0, x1, y1), radius=7, fill=255)
+    layer.putalpha(Image.composite(layer.getchannel("A"), rounded, rounded))
+    img.paste(layer, (0, 0), layer)
+
+
+def _mix(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
+    return (
+        round(a[0] + (b[0] - a[0]) * t),
+        round(a[1] + (b[1] - a[1]) * t),
+        round(a[2] + (b[2] - a[2]) * t),
+    )
 
 
 def _luma(rgb: tuple[int, int, int]) -> float:

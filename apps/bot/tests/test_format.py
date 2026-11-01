@@ -58,14 +58,12 @@ def test_delta_5min_caption():
     assert "DA: <b>6</b> - 1" in text
     assert "Corners: <b>2</b> - 0" in text
     assert "Possession: <b>58%</b> - 42%" in text
-    assert "· Patriotas average 1.3 goals per meeting vs Boca Juniors 0.3, last 8." in text
-    assert "· 5W-1D-2L for Patriotas." in text
     assert "KO " not in text
     assert "TSLG" not in text
     assert "1-2" not in text
 
 
-def test_h2h_and_title_use_away_triggerer():
+def test_title_uses_away_triggerer():
     text = format_alert_html(
         _delta5_row(
             home_team="Sittard",
@@ -76,8 +74,6 @@ def test_h2h_and_title_use_away_triggerer():
     )
     assert "Sittard vs <b>Twente</b> · 45′" in text
     assert "<b>Δ5′</b> (5-minute pressure): 9.0 / 12.0 for <b>Twente</b>" in text
-    assert "· Twente average 0.3 goals per meeting vs Sittard 1.3, last 8." in text
-    assert "· 2W-1D-5L for Twente." in text
     assert "for Sittard" not in text
     assert "for Patriotas" not in text
 
@@ -113,26 +109,10 @@ def test_equal_numbers_are_not_bold():
     assert "<b>1</b>" not in text.split("SOT:", 1)[1].split("\n", 1)[0]
 
 
-def test_skips_h2h_under_five_meetings():
-    row = _delta5_row()
-    row["payload"]["h2h"] = {"sample": 4, "home_avg": 1.0, "away_avg": 0.5}
-    text = format_alert_html(row)
+def test_h2h_lives_on_the_banner_not_the_caption():
+    text = format_alert_html(_delta5_row())
     assert "goals per meeting" not in text
-
-
-def test_skips_h2h_when_missing():
-    row = _delta5_row()
-    del row["payload"]["h2h"]
-    text = format_alert_html(row)
-    assert "goals per meeting" not in text
-
-
-def test_h2h_goals_line_without_record_if_wins_missing():
-    row = _delta5_row()
-    row["payload"]["h2h"] = {"sample": 8, "home_avg": 1.3, "away_avg": 0.3}
-    text = format_alert_html(row)
-    assert "· Patriotas average 1.3 goals per meeting vs Boca Juniors 0.3, last 8." in text
-    assert "W-" not in text
+    assert "5W-1D-2L" not in text
 
 
 def test_html_escapes_team_names():
@@ -417,7 +397,7 @@ def test_joint_sustained_pressure_and_urg_uses_last_10_minutes():
     assert "Last 5 mins" not in text
     assert "SOT: 0 - <b>1</b>" in text
     assert "SOT: <b>4</b>" not in text
-    assert text.count("average 1.7 goals") == 1
+    assert "goals per meeting" not in text
 
 
 def test_joint_delta5_and_urg_uses_last_5_minutes():

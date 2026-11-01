@@ -1,12 +1,14 @@
-"""H2H overlay payload: cached stats + optional timing from the H2H row."""
+"""H2H overlay payload: cached stats + optional timing from the H2H row.
+
+One shape for the ``panel_cache`` row, whoever fetches first: the API when a
+user opens H2H, or the scanner when an alert needs it for the banner.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
-from kalchas_core.h2h import compute_h2h_stats, compute_timing_counts
-
-DEFAULT_LAST = 10
+from kalchas_core.h2h.stats import H2HStats, compute_h2h_stats, compute_timing_counts
 
 
 def _count(raw: Any) -> dict[str, int]:
@@ -67,10 +69,50 @@ def build_h2h_payload(
             "first_goal_before_30": _count(timing_raw.first_goal_before_30),
         }
 
-    n = stats.sample
     return {
         "home_team": home_team,
         "away_team": away_team,
+        "fixtures": listed,
+        **_sided_fields(stats, home_team, away_team, timing),
+    }
+
+
+def orient_h2h_payload(
+    cached: dict[str, Any],
+    *,
+    home_team_id: int,
+    away_team_id: int,
+    home_team: str,
+    away_team: str,
+) -> dict[str, Any]:
+    """A cached row seen from this match's home side.
+
+    The cache key is the unordered team pair, but wins, goals and clean
+    sheets are stored from whichever side was home when it was fetched. A
+    reverse fixture inside the cache window would read them the wrong way
+    round, so they are recounted here from the stored meetings. Timing
+    counts are per meeting, not per side, and are kept as stored.
+    """
+    fixtures = cached.get("fixtures") or []
+    out = {**cached, "home_team": home_team, "away_team": away_team}
+    if not fixtures:
+        return out
+    stats = compute_h2h_stats(
+        fixtures,
+        team1_id=home_team_id,
+        team2_id=away_team_id,
+        team1_name=home_team,
+        team2_name=away_team,
+    )
+    timing = (cached.get("patterns") or {}).get("timing")
+    return {**out, **_sided_fields(stats, home_team, away_team, timing)}
+
+
+def _sided_fields(
+    stats: H2HStats, home_team: str, away_team: str, timing: dict[str, Any] | None
+) -> dict[str, Any]:
+    n = stats.sample
+    return {
         "insufficient": stats.insufficient,
         "reason": stats.reason,
         "summary": {
@@ -79,7 +121,6 @@ def build_h2h_payload(
             "away_wins": stats.team2.wins,
             "sample": n,
         },
-        "fixtures": listed,
         "patterns": {
             "sample": n,
             "over_2_5": _count(stats.over_2_5),

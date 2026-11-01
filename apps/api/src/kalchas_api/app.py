@@ -988,10 +988,15 @@ def match_h2h(match_id: str) -> H2HResponse:
     dsn = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
     if not dsn:
         raise HTTPException(status_code=503, detail="live feed unavailable")
+    from kalchas_core.h2h import (
+        DEFAULT_LAST,
+        build_h2h_payload,
+        empty_h2h_payload,
+        orient_h2h_payload,
+    )
     from kalchas_db.matches import get_match_sync
     from kalchas_db.panel_cache import load_panel_cache, pair_cache_key, save_panel_cache
 
-    from kalchas_api.h2h import DEFAULT_LAST, build_h2h_payload, empty_h2h_payload
     from kalchas_api.standings import attach_league_ranks
 
     header = get_match_sync(dsn, match_id)
@@ -1028,8 +1033,13 @@ def match_h2h(match_id: str) -> H2HResponse:
     except Exception:  # noqa: BLE001 — missing table still serves a live fetch
         cached = None
     if cached:
-        cached["home_team"] = home_team or cached.get("home_team") or ""
-        cached["away_team"] = away_team or cached.get("away_team") or ""
+        cached = orient_h2h_payload(
+            cached,
+            home_team_id=home_id,
+            away_team_id=away_id,
+            home_team=home_team or cached.get("home_team") or "",
+            away_team=away_team or cached.get("away_team") or "",
+        )
         return H2HResponse(
             source="cache",
             data=H2HDataOut.model_validate(

@@ -1,9 +1,9 @@
 """HTML Telegram captions from an outbox row.
 
-Crests go on the photo. Fire captions: strategy, firing team, clock,
-last-5-minute counts for Δ5, last-10-minute counts for Δ10, H2H
-when the sample is at least 5. Outcome replies: fire lede plus GOAL /
-No goal under the original fire message.
+Crests and H2H go on the photo (banner.py). Fire captions: strategy,
+firing team, clock, last-5-minute counts for Δ5, last-10-minute counts
+for Δ10. Outcome replies: fire lede plus GOAL / No goal under the
+original fire message.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from kalchas_core.alert_outcomes import DEFAULT_RULES, rule_for_alert
-from kalchas_core.h2h import DEFAULT_MIN_SAMPLE
 from kalchas_core.weights import short_label_for
 
 ALERT_NAMES: dict[str, str] = {
@@ -73,11 +72,6 @@ def format_alert_html(
     if stats:
         lines.append("")
         lines.extend(stats)
-
-    h2h = _h2h_lines(payload, home, away, side=side)
-    if h2h:
-        lines.append("")
-        lines.extend(h2h)
     return "\n".join(lines)
 
 
@@ -135,12 +129,6 @@ def format_joint_html(
     if stats:
         lines.append("")
         lines.extend(stats)
-
-    h2h_side = next(iter(sides)) if len(sides) == 1 else ""
-    h2h = _h2h_lines(payload, home, away, side=h2h_side)
-    if h2h:
-        lines.append("")
-        lines.extend(h2h)
     return "\n".join(lines)
 
 
@@ -370,42 +358,6 @@ def _bold_bigger(home: int, away: int, *, percent: bool) -> str:
     if away > home:
         return f"{home_s} - <b>{away_s}</b>"
     return f"{home_s} - {away_s}"
-
-
-def _h2h_lines(payload: Mapping[str, Any], home: str, away: str, *, side: str) -> list[str]:
-    raw = payload.get("h2h")
-    if not isinstance(raw, Mapping):
-        return []
-    try:
-        sample = int(raw.get("sample") or 0)
-        home_avg = float(raw.get("home_avg"))
-        away_avg = float(raw.get("away_avg"))
-    except (TypeError, ValueError):
-        return []
-    if sample < DEFAULT_MIN_SAMPLE:
-        return []
-    if side == "away":
-        subject, other = away, home
-        subject_avg, other_avg = away_avg, home_avg
-    else:
-        subject, other = home, away
-        subject_avg, other_avg = home_avg, away_avg
-    lines = [
-        f"· {subject} average {subject_avg:.1f} goals per meeting vs {other} {other_avg:.1f}, "
-        f"last {sample}."
-    ]
-    try:
-        home_wins = int(raw.get("home_wins"))
-        draws = int(raw.get("draws"))
-        away_wins = int(raw.get("away_wins"))
-    except (TypeError, ValueError):
-        return lines
-    if side == "away":
-        wins, losses = away_wins, home_wins
-    else:
-        wins, losses = home_wins, away_wins
-    lines.append(f"· {wins}W-{draws}D-{losses}L for {subject}.")
-    return lines
 
 
 def _payload(raw: object) -> Mapping[str, Any]:
