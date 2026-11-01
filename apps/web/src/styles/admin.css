@@ -868,6 +868,28 @@
   text-align: center;
 }
 
+.kit-heat-wrap {
+  overflow-x: auto;
+}
+
+.kit-heat-wrap > .kit-heat {
+  min-width: min-content;
+}
+
+.kit-heat-group {
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 0.68rem;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.kit-heat .is-group-start {
+  margin-left: 10px;
+}
+
 .kit-heat-row {
   display: flex;
   align-items: center;

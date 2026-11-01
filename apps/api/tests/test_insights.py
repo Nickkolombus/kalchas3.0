@@ -13,6 +13,7 @@ from kalchas_api.insights import (
     alert_stats,
     best_slice,
     daily_visitors,
+    kickoff_role,
     results_insights,
     sources,
     strategy_drift,
@@ -36,6 +37,8 @@ def alert(
     hour: int = 18,
     clock: str = "61-75",
     team: str = "home",
+    odds: tuple[float | None, float | None] = (None, None),
+    score_state: str = "level",
 ) -> dict:
     return {
         "strategy": strategy,
@@ -48,8 +51,10 @@ def alert(
         "factors": {
             "clock_bucket": clock,
             "half": "2H",
-            "score_state": "level",
+            "score_state": score_state,
             "sweet_spot": True,
+            "odds_home": odds[0],
+            "odds_away": odds[1],
         },
     }
 
@@ -144,6 +149,44 @@ def test_results_insights_compares_periods_and_filters_strategy() -> None:
     assert cells[4] == {"confirmed": 3, "settled": 3}
     minute_slice = next(s for s in body["slices"] if s["dim"] == "Minute")
     assert minute_slice["label"] == "61-75'" and minute_slice["n"] == 3
+
+
+def test_side_matrix_splits_side_kickoff_role_and_score() -> None:
+    rows = [
+        alert(TODAY, "Confirmed", team="home", odds=(1.5, 6.0), score_state="0-0"),
+        alert(TODAY, "Expired", team="away", odds=(1.5, 6.0), score_state="trailing"),
+        alert(TODAY, "Confirmed", team="away", odds=(4.0, 1.8), score_state="leading"),
+        alert(TODAY, "Expired", team="home", score_state="level"),
+        alert(TODAY, "Monitoring", team="home", odds=(1.5, 6.0)),
+    ]
+    body = results_insights(rows, window=Window(TODAY, TODAY, ATHENS), known_keys=["kscore"])
+    matrix = body["side_matrix"]
+    labels = [c["label"] for c in matrix["columns"]]
+    assert labels == [
+        "Home",
+        "Away",
+        "Favourite",
+        "Underdog",
+        "0-0",
+        "Level",
+        "Leading",
+        "Trailing",
+    ]
+    cells = dict(zip(labels, matrix["rows"][0]["cells"], strict=True))
+    assert cells["Home"] == {"confirmed": 1, "settled": 2}
+    assert cells["Away"] == {"confirmed": 1, "settled": 2}
+    # The alert without kickoff odds sits out the favourite/underdog split.
+    assert cells["Favourite"] == {"confirmed": 2, "settled": 2}
+    assert cells["Underdog"] == {"confirmed": 0, "settled": 1}
+    assert cells["Trailing"] == {"confirmed": 0, "settled": 1}
+    roles = {s["label"]: s["n"] for s in body["slices"] if s["dim"] == "Kickoff role"}
+    assert roles == {"Favourite": 2, "Underdog": 1}
+
+
+def test_kickoff_role_needs_both_prices_and_a_difference() -> None:
+    assert kickoff_role(alert(TODAY, "Confirmed", team="away", odds=(1.5, 6.0))) == "Underdog"
+    assert kickoff_role(alert(TODAY, "Confirmed", team="home", odds=(2.4, 2.4))) is None
+    assert kickoff_role(alert(TODAY, "Confirmed", team="home", odds=(1.5, None))) is None
 
 
 def test_today_window_charts_two_weeks_of_context() -> None:

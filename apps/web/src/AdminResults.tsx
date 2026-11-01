@@ -79,6 +79,8 @@ type Win = { first: string; last: string; days: number };
 
 type Slice = { dim: string; label: string; n: number; confirmed: number; hit_rate: number };
 
+type MatrixRow = { strategy: string; cells: { confirmed: number; settled: number }[] };
+
 export type StrategyRow = {
   strategy: string;
   current: AlertStats;
@@ -96,7 +98,8 @@ export type ResultsInsights = {
   daily: { date: string; total: number; confirmed: number; settled: number; hit_rate: number | null }[];
   by_strategy: StrategyRow[];
   overall_hit_rate: number | null;
-  matrix: { columns: string[]; rows: { strategy: string; cells: { confirmed: number; settled: number }[] }[] };
+  matrix: { columns: string[]; rows: MatrixRow[] };
+  side_matrix: { columns: { group: string; label: string }[]; rows: MatrixRow[] };
   slices: Slice[];
   names: Record<string, string>;
 };
@@ -122,6 +125,104 @@ function triggerOdds(row: ResultItem): string {
   const f = row.factors;
   const raw = f?.trigger_odds ?? (row.team === "away" ? f?.odds_away : f?.odds_home);
   return raw == null ? "–" : Number(raw).toFixed(2);
+}
+
+type HeatColumn = { label: string; group?: string };
+
+// Strategy rows × columns of hit rate, coloured against all strategies. Columns
+// that carry a `group` get a header above them and a gap where the group changes.
+function HeatGrid({
+  columns,
+  rows,
+  overall,
+  short,
+  cellName,
+}: {
+  columns: HeatColumn[];
+  rows: MatrixRow[];
+  overall: number | null;
+  short: (key: string) => string;
+  cellName: (strategy: string, column: HeatColumn) => string;
+}) {
+  const starts = columns.map((c, i) => i > 0 && c.group !== columns[i - 1].group);
+  const groups = columns.some((c) => c.group)
+    ? columns.reduce<{ label: string; span: number }[]>((out, c, i) => {
+        if (i && !starts[i]) out[out.length - 1].span += 1;
+        else out.push({ label: c.group || "", span: 1 });
+        return out;
+      }, [])
+    : [];
+  const gap = (i: number) => (starts[i] ? "is-group-start" : "");
+  return (
+    <>
+      <div className="kit-heat-wrap">
+        <div className="kit-heat" style={{ gridTemplateColumns: `58px repeat(${columns.length}, minmax(34px, 1fr))` }}>
+          {groups.length ? (
+            <>
+              <span />
+              {groups.map((g, i) => (
+                <span key={g.label} className={`kit-heat-group ${i ? "is-group-start" : ""}`} style={{ gridColumn: `span ${g.span}` }}>
+                  {g.label}
+                </span>
+              ))}
+            </>
+          ) : null}
+          <span />
+          {columns.map((c, i) => (
+            <span key={`${c.group}:${c.label}`} className={`kit-heat-col ${gap(i)}`}>
+              {c.label}
+            </span>
+          ))}
+          {rows.map((row) => (
+            <Fragment key={row.strategy}>
+              <span className="kit-heat-row">{short(row.strategy)}</span>
+              {row.cells.map((cell, i) => {
+                const name = cellName(row.strategy, columns[i]);
+                if (cell.settled < 5 || overall == null) {
+                  return (
+                    <span
+                      key={i}
+                      className={`kit-heat-cell is-empty ${gap(i)}`}
+                      {...tip(name, [["Settled", String(cell.settled)], ["Hit rate", cell.settled ? pct(cell.confirmed / cell.settled) : "–"]])}
+                    >
+                      {cell.settled ? "·" : ""}
+                    </span>
+                  );
+                }
+                const rate = cell.confirmed / cell.settled;
+                const bg = diverging(rate - overall);
+                return (
+                  <span
+                    key={i}
+                    className={`kit-heat-cell ${gap(i)}`}
+                    style={{ background: bg, color: inkFor(bg) }}
+                    {...tip(name, [
+                      ["Hit rate", pct1(rate)],
+                      ["Hits / settled", `${cell.confirmed} / ${cell.settled}`],
+                      ["vs all strategies", `${rate >= overall ? "+" : ""}${((rate - overall) * 100).toFixed(1)} pts`],
+                    ])}
+                  >
+                    {pct(rate)}
+                  </span>
+                );
+              })}
+            </Fragment>
+          ))}
+        </div>
+      </div>
+      <div className="kit-legend kit-legend-gap">
+        <span>
+          worse
+          <i className="kit-ramp" style={{ background: "linear-gradient(90deg,#d95926,#2a3340,#3987e5)" }} />
+          better
+        </span>
+        <span>
+          <i className="kit-hatch" />
+          fewer than 5 settled
+        </span>
+      </div>
+    </>
+  );
 }
 
 // Local-day bounds of the picked period, as UTC instants for /results.
@@ -469,65 +570,30 @@ export function AdminResults({
           />
         </Card>
         <Card title="Minute of fire × strategy" sub="Hit rate per cell, coloured against all strategies">
-          <div
-            className="kit-heat"
-            style={{ gridTemplateColumns: `58px repeat(${body.matrix.columns.length}, minmax(34px, 1fr))` }}
-          >
-            <span />
-            {body.matrix.columns.map((c) => (
-              <span key={c} className="kit-heat-col">
-                {c}′
-              </span>
-            ))}
-            {body.matrix.rows.map((row) => (
-              <Fragment key={row.strategy}>
-                <span className="kit-heat-row">{short(row.strategy)}</span>
-                {row.cells.map((cell, i) => {
-                  const name = `${short(row.strategy)} · fired ${body.matrix.columns[i]}′`;
-                  if (cell.settled < 5 || overall == null) {
-                    return (
-                      <span
-                        key={i}
-                        className="kit-heat-cell is-empty"
-                        {...tip(name, [["Settled", String(cell.settled)], ["Hit rate", cell.settled ? pct(cell.confirmed / cell.settled) : "–"]])}
-                      >
-                        {cell.settled ? "·" : ""}
-                      </span>
-                    );
-                  }
-                  const rate = cell.confirmed / cell.settled;
-                  const bg = diverging(rate - overall);
-                  return (
-                    <span
-                      key={i}
-                      className="kit-heat-cell"
-                      style={{ background: bg, color: inkFor(bg) }}
-                      {...tip(name, [
-                        ["Hit rate", pct1(rate)],
-                        ["Hits / settled", `${cell.confirmed} / ${cell.settled}`],
-                        ["vs all strategies", `${rate >= overall ? "+" : ""}${((rate - overall) * 100).toFixed(1)} pts`],
-                      ])}
-                    >
-                      {pct(rate)}
-                    </span>
-                  );
-                })}
-              </Fragment>
-            ))}
-          </div>
-          <div className="kit-legend kit-legend-gap">
-            <span>
-              worse
-              <i className="kit-ramp" style={{ background: "linear-gradient(90deg,#d95926,#2a3340,#3987e5)" }} />
-              better
-            </span>
-            <span>
-              <i className="kit-hatch" />
-              fewer than 5 settled
-            </span>
-          </div>
+          <HeatGrid
+            columns={body.matrix.columns.map((c) => ({ label: `${c}′` }))}
+            rows={body.matrix.rows}
+            overall={overall}
+            short={short}
+            cellName={(key, c) => `${short(key)} · fired ${c.label}`}
+          />
         </Card>
       </div>
+
+      {body.side_matrix ? (
+        <Card
+          title="Trigger side × strategy"
+          sub="Who the alert fired for: home or away, kickoff favourite or underdog, and that side's score at fire. Alerts without both kickoff prices sit out the favourite/underdog pair."
+        >
+          <HeatGrid
+            columns={body.side_matrix.columns}
+            rows={body.side_matrix.rows}
+            overall={overall}
+            short={short}
+            cellName={(key, c) => `${short(key)} · ${c.group}: ${c.label}`}
+          />
+        </Card>
+      ) : null}
 
       <Card
         title="Where it works"

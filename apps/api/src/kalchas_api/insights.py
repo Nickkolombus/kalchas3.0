@@ -198,6 +198,28 @@ _SCORE_LABELS = {
 }
 
 
+def _price(value: Any) -> float | None:
+    try:
+        price = float(value)
+    except (TypeError, ValueError):
+        return None
+    return price if price > 1 else None
+
+
+def kickoff_role(row: Mapping[str, Any]) -> str | None:
+    """`Favourite` or `Underdog`: the trigger side's kickoff price against the
+    other side's. `None` without both prices, or when they are equal."""
+    factors = _factors(row)
+    home, away = _price(factors.get("odds_home")), _price(factors.get("odds_away"))
+    team = row.get("team")
+    own, other = (
+        (home, away) if team == "home" else (away, home) if team == "away" else (None, None)
+    )
+    if own is None or other is None or own == other:
+        return None
+    return "Favourite" if own < other else "Underdog"
+
+
 def _slice_dims(zone: tzinfo) -> tuple[tuple[str, Callable[[Mapping[str, Any]], Any]], ...]:
     def clock(row: Mapping[str, Any]) -> str | None:
         bucket = _factors(row).get("clock_bucket")
@@ -225,6 +247,7 @@ def _slice_dims(zone: tzinfo) -> tuple[tuple[str, Callable[[Mapping[str, Any]], 
         ("Half", half),
         ("Score", lambda row: _SCORE_LABELS.get(str(_factors(row).get("score_state") or ""))),
         ("Kickoff odds", lambda row: known(_factors(row).get("odds_bucket"))),
+        ("Kickoff role", kickoff_role),
         ("Side", lambda row: {"home": "Home team", "away": "Away team"}.get(row.get("team") or "")),
         ("Sweet spot", sweet),
         ("Time since last goal", lambda row: known(_factors(row).get("tslg_bucket"))),
@@ -303,6 +326,63 @@ def clock_matrix(rows: Sequence[Mapping[str, Any]], keys: Sequence[str]) -> dict
     }
 
 
+_SIDE_GROUPS: tuple[tuple[str, tuple[str, ...], Callable[[Mapping[str, Any]], str | None]], ...] = (
+    (
+        "Side",
+        ("Home", "Away"),
+        lambda row: {"home": "Home", "away": "Away"}.get(row.get("team") or ""),
+    ),
+    ("Kickoff odds", ("Favourite", "Underdog"), kickoff_role),
+    (
+        "Score at fire",
+        ("0-0", "Level", "Leading", "Trailing"),
+        lambda row: {
+            "0-0": "0-0",
+            "level": "Level",
+            "leading": "Leading",
+            "trailing": "Trailing",
+        }.get(str(_factors(row).get("score_state") or "")),
+    ),
+)
+
+
+def side_matrix(rows: Sequence[Mapping[str, Any]], keys: Sequence[str]) -> dict[str, Any]:
+    """Hit rate per strategy by who it fired for: home or away, kickoff favourite
+    or underdog, and the trigger side's score. Each group counts an alert once;
+    an alert with no reading for a group (no kickoff odds) is left out of it."""
+    cells: dict[tuple[str, str, str], list[int]] = defaultdict(lambda: [0, 0])
+    for row in rows:
+        if row.get("state") not in SETTLED:
+            continue
+        for group, _labels, getter in _SIDE_GROUPS:
+            label = getter(row)
+            if not label:
+                continue
+            cell = cells[(str(row.get("strategy")), group, label)]
+            cell[1] += 1
+            if row.get("state") == "Confirmed":
+                cell[0] += 1
+    columns = [
+        {"group": group, "label": label} for group, labels, _ in _SIDE_GROUPS for label in labels
+    ]
+    return {
+        "columns": columns,
+        "rows": [
+            {
+                "strategy": key,
+                "cells": [
+                    {
+                        "confirmed": cells[(key, c["group"], c["label"])][0],
+                        "settled": cells[(key, c["group"], c["label"])][1],
+                    }
+                    for c in columns
+                ],
+            }
+            for key in keys
+        ],
+    }
+
+
 def strategy_order(rows: Iterable[Mapping[str, Any]], known: Sequence[str]) -> list[str]:
     """Current strategies in slot order, then any retired key that still has rows."""
     seen = {str(row.get("strategy")) for row in rows if row.get("strategy")}
@@ -356,6 +436,7 @@ def results_insights(
         "by_strategy": by_strategy,
         "overall_hit_rate": alert_stats(cur_all)["hit_rate"],
         "matrix": clock_matrix(cur_all, keys),
+        "side_matrix": side_matrix(cur_all, keys),
         "slices": slices(cur, zone),
     }
 
