@@ -30,7 +30,8 @@ DEFAULT_CSV_URL = (
 )
 CACHE_TTL_SECONDS = 300
 DEFAULT_MIN_SIMILARITY = 0.55
-MIN_INDIVIDUAL = 0.40
+# 2.2 used 0.40, which let "Rizespor" map to "Eyupspor" (0.44). Wrong game = wrong bet.
+MIN_INDIVIDUAL = 0.60
 
 METHOD_EXACT = "gist_exact"
 METHOD_FUZZY = "gist_fuzzy"
@@ -160,6 +161,15 @@ def normalize_name(name: str) -> str:
     return _REPLACEMENTS.get(text, text)
 
 
+def team_kind(name: str) -> tuple[bool, str, bool]:
+    """(women, youth age, reserve) markers. A men's side must never map to its W/U19/B team."""
+    tokens = re.sub(r"[()\.]", " ", name.lower()).split()
+    women = bool(tokens) and tokens[-1] in {"w", "women", "ladies"}
+    youth = next((tok for tok in tokens if re.fullmatch(r"u\d{2}", tok)), "")
+    reserve = len(tokens) > 1 and tokens[-1] in {"b", "2", "ii", "c"}
+    return women, youth, reserve
+
+
 def similarity(name1: str, name2: str) -> float:
     norm1 = normalize_name(name1)
     norm2 = normalize_name(name2)
@@ -204,10 +214,26 @@ def match_fixture(
 
     best: tuple[str, str] | None = None
     best_score = 0.0
+    kind_home = team_kind(api_home)
+    kind_away = team_kind(api_away)
     for fx in fixtures:
-        if normalize_name(fx.home) == norm_home and normalize_name(fx.away) == norm_away:
+        kind_fx_home = team_kind(fx.home)
+        kind_fx_away = team_kind(fx.away)
+        straight_kinds = kind_home == kind_fx_home and kind_away == kind_fx_away
+        reverse_kinds = kind_home == kind_fx_away and kind_away == kind_fx_home
+        if not (straight_kinds or reverse_kinds):
+            continue
+        if (
+            straight_kinds
+            and normalize_name(fx.home) == norm_home
+            and normalize_name(fx.away) == norm_away
+        ):
             return NameMatch(fx.home, fx.away, METHOD_EXACT, False)
-        if normalize_name(fx.away) == norm_home and normalize_name(fx.home) == norm_away:
+        if (
+            reverse_kinds
+            and normalize_name(fx.away) == norm_home
+            and normalize_name(fx.home) == norm_away
+        ):
             return NameMatch(fx.away, fx.home, METHOD_EXACT, False)
 
         s1 = similarity(api_home, fx.home)
@@ -217,10 +243,12 @@ def match_fixture(
         straight = (s1 + s2) / 2
         reverse = (s1r + s2r) / 2
         if straight >= reverse:
-            score, valid = straight, s1 >= MIN_INDIVIDUAL and s2 >= MIN_INDIVIDUAL
+            score = straight
+            valid = straight_kinds and s1 >= MIN_INDIVIDUAL and s2 >= MIN_INDIVIDUAL
             pair = (fx.home, fx.away)
         else:
-            score, valid = reverse, s1r >= MIN_INDIVIDUAL and s2r >= MIN_INDIVIDUAL
+            score = reverse
+            valid = reverse_kinds and s1r >= MIN_INDIVIDUAL and s2r >= MIN_INDIVIDUAL
             pair = (fx.away, fx.home)
         if valid and score > best_score and score >= thr:
             best_score = score

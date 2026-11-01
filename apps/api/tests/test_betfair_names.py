@@ -114,3 +114,19 @@ def test_failed_refresh_keeps_last_good_list(monkeypatch) -> None:
     betfair_names._cache["at"] = 0.0  # expire
     assert len(betfair_names.get_fixtures(client=client)) == 1
     assert betfair_names._cache["ok"] is False
+
+
+def test_womens_and_youth_sides_never_map_to_senior_teams() -> None:
+    fixtures = [Fixture("Necaxa", "Santos Laguna"), Fixture("Las Palmas", "Atletico Central")]
+    assert match_fixture("Necaxa W", "Santos Laguna W", fixtures) is None
+    assert match_fixture("Las Palmas B", "Atletico Central", fixtures) is None
+    assert match_fixture("Necaxa U19", "Santos Laguna U19", fixtures) is None
+    womens = [Fixture("Necaxa W", "Santos Laguna W")]
+    found = match_fixture("Necaxa Women", "Santos Laguna W", womens)
+    assert found is not None
+    assert found.home == "Necaxa W"
+
+
+def test_one_similar_team_is_not_enough() -> None:
+    fixtures = [Fixture("Kocaelispor", "Eyupspor")]
+    assert match_fixture("Kocaelispor", "Rizespor", fixtures) is None
