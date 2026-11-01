@@ -424,6 +424,8 @@ def cover_line(data: Mapping[str, Any]) -> str:
             f"{_day_name(worst['day'])} was the hardest ({worst['goals']} of {worst['total']})."
         )
     if data.get("fastest") is not None:
+        if int(data["fastest"]) == 0:
+            return "The quickest goal came the same minute as the signal."
         return f"The quickest goal came {_minutes(data['fastest'])} after the signal."
     return ""
 
@@ -485,7 +487,7 @@ def x_text(data: Mapping[str, Any]) -> str:
         best = data["calls"][0]
         lines += [
             "",
-            f"Best call: {best['home']} v {best['away']}, goal {_minutes(best['gap'])} after the signal.",
+            f"Best call: {best['home']} v {best['away']}, {_goal_after(best['gap'])}.",
         ]
     if data.get("miss"):
         miss = data["miss"]
@@ -568,6 +570,13 @@ def _shots_on(miss: Mapping[str, Any]) -> int:
 
 def _day_name(short: str) -> str:
     return DAY_NAMES[WEEKDAYS.index(short)] if short in WEEKDAYS else short
+
+
+def _goal_after(gap: Any) -> str:
+    n = int(gap or 0)
+    return (
+        "goal the same minute as the signal" if n == 0 else f"goal {_minutes(n)} after the signal"
+    )
 
 
 def _minutes(gap: Any) -> str:

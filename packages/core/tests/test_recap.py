@@ -275,3 +275,12 @@ def test_empty_week():
     assert data["total"] == 0
     assert data["calls"] == [] and data["miss"] is None
     assert data["texts"]["cover_line"] == ""
+
+
+def test_a_goal_in_the_signal_minute_is_worded_as_such():
+    same = {**FAR, "match_id": "same", "detail": {**FAR["detail"], "goal_minute": 76}}
+    data = build_recap([same], week_start=WEEK)
+    assert data["fastest"] == 0
+    assert data["texts"]["cover_line"] == "The quickest goal came the same minute as the signal."
+    assert "goal the same minute as the signal" in data["texts"]["x"]
+    assert call_story(data["calls"][0]).endswith("They scored that same minute.")

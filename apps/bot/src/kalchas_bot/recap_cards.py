@@ -260,11 +260,14 @@ def _cover(data: Mapping[str, Any], texts: Mapping[str, Any]) -> Card:
     settled = int(data["goals"]) + int(data["misses"])
     lead = f"{data['goals']} of {settled}"
     y = 138.0
-    lead_w = card.text((left, y), lead, size=50, weight=800, fill=GOAL)
-    card.text((left + lead_w + 12, y), "signals", size=50, weight=800)
-    card.text((left, y + 51), "found a goal", size=50, weight=800)
+    # A busy week ("273 of 516") is wider than the column: shrink to fit, never spill.
+    natural = card.width(f"{lead} signals", size=50, weight=800) + 12
+    size = min(50.0, 50.0 * 360 / natural)
+    lead_w = card.text((left, y), lead, size=size, weight=800, fill=GOAL)
+    card.text((left + lead_w + 12 * size / 50, y), "signals", size=size, weight=800)
+    card.text((left, y + size * 1.02), "found a goal", size=size, weight=800)
     y = card.wrap(
-        (left, y + 122),
+        (left, y + size * 2.44),
         str(texts.get("cover_line") or ""),
         width=360,
         size=20,
@@ -340,7 +343,15 @@ def _cover(data: Mapping[str, Any], texts: Mapping[str, Any]) -> Card:
 def _facts(data: Mapping[str, Any]) -> list[tuple[str, str]]:
     out = []
     if data.get("fastest") is not None:
-        out.append(("Fastest goal", f"{_mins(data['fastest'])} after the signal"))
+        fastest = int(data["fastest"])
+        out.append(
+            (
+                "Fastest goal",
+                "Same minute as the signal"
+                if fastest == 0
+                else f"{_mins(fastest)} after the signal",
+            )
+        )
     if data.get("average_wait") is not None:
         out.append(("Average wait for a goal", f"{data['average_wait']} min"))
     worst = data.get("worst_day")
