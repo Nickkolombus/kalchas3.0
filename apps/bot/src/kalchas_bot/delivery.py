@@ -1,4 +1,4 @@
-"""Delivery worker — paid feed always, free channel when the gate allows."""
+"""Delivery worker — paid feed always, free channel (and X) when the gate allows."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from kalchas_bot.discord_channel import (
 )
 from kalchas_bot.format import format_alert_html, format_joint_html, format_outcome_html
 from kalchas_bot.free_channel import allow_free_fire, gathering_open
+from kalchas_bot.twitter_channel import TwitterCredentials, post_alert_tweet, reply_tweet
 
 logger = logging.getLogger("kalchas.bot.delivery")
 
@@ -32,6 +33,7 @@ async def deliver_loop(
     free_chat_id: str | None = None,
     unlimited_until: str | None = None,
     discord_bot_token: str | None = None,
+    twitter: TwitterCredentials | None = None,
     poll_sec: float = 2.0,
 ) -> None:
     """Claim pending outbox rows and send. Requires DATABASE_URL + migrated schema."""
@@ -63,6 +65,7 @@ async def deliver_loop(
                         unlimited_until=unlimited_until,
                         discord_bot_token=discord_bot_token,
                         discord_settings=discord_settings,
+                        twitter=twitter,
                     )
                 except Exception as exc:
                     logger.exception("send failed for match %s", group[0].get("match_id"))
@@ -79,6 +82,7 @@ async def deliver_loop(
                 free_chat_id=free_chat_id,
                 discord_bot_token=discord_bot_token,
                 discord_settings=discord_settings,
+                twitter=twitter,
             )
         except Exception:
             logger.exception("delivery cycle failed")
@@ -122,12 +126,14 @@ async def _deliver_group(
     unlimited_until: str | None,
     discord_bot_token: str | None = None,
     discord_settings: Mapping[str, Any] | None = None,
+    twitter: TwitterCredentials | None = None,
 ) -> None:
     from kalchas_db.alerts import (
         attach_free_message,
         mark_discord_free_sent,
         mark_discord_sent,
         mark_sent,
+        mark_twitter_sent,
         sent_same_minute,
     )
 
@@ -183,11 +189,19 @@ async def _deliver_group(
             await _discord_edit_existing(
                 discord_bot_token, discord_settings, "free", discord_free_existing, caption
             )
+            # A tweet cannot be edited: the new strategy shares the original tweet
+            # so its outcome still replies under it.
+            tweet_existing = next(
+                (str(tid) for row in posted if (tid := row.get("twitter_tweet_id"))),
+                None,
+            )
             async with pool.acquire() as conn:
                 for row in group:
                     await attach_free_message(conn, int(row["id"]), free_existing)
                     if discord_free_existing is not None:
                         await mark_discord_free_sent(conn, int(row["id"]), discord_free_existing)
+                    if tweet_existing is not None:
+                        await mark_twitter_sent(conn, int(row["id"]), tweet_existing)
         except Exception:
             logger.exception("free-channel edit failed for match %s", first.get("match_id"))
         return
@@ -217,6 +231,16 @@ async def _deliver_group(
             await attach_free_message(conn, int(row["id"]), sent_free)
             if discord_free_id is not None:
                 await mark_discord_free_sent(conn, int(row["id"]), discord_free_id)
+    if twitter is None:
+        return
+    tweet_id = await post_alert_tweet(
+        twitter, caption=caption, match_id=first.get("match_id"), photo_bytes=photo_bytes
+    )
+    if tweet_id is None:
+        return
+    async with pool.acquire() as conn:
+        for row in group:
+            await mark_twitter_sent(conn, int(row["id"]), tweet_id)
 
 
 async def _deliver_outcomes(
@@ -228,6 +252,7 @@ async def _deliver_outcomes(
     free_chat_id: str | None,
     discord_bot_token: str | None = None,
     discord_settings: Mapping[str, Any] | None = None,
+    twitter: TwitterCredentials | None = None,
 ) -> None:
     from kalchas_db.alerts import (
         mark_outcome_failed,
@@ -285,6 +310,7 @@ async def _deliver_outcomes(
                     text,
                     _DISCORD_GOAL_EMOJI,
                 )
+                await _tweet_outcome(twitter, batch, f"✅ {text}")
             elif action == "miss":
                 await _react_on_fire(bot, chat_id, message_id, _MISS_REACTIONS)
                 await _discord_react(
@@ -305,6 +331,9 @@ async def _deliver_outcomes(
                     discord_free_reply,
                     _DISCORD_MISS_EMOJI,
                 )
+                # X has no reactions, so the miss is a reply, like 2.2's "Window closed".
+                missed = "\n\n".join(format_outcome_html(row) for row in batch)
+                await _tweet_outcome(twitter, batch, f"❌ {missed}")
             async with pool.acquire() as conn:
                 for row in batch:
                     await mark_outcome_sent(conn, int(row["alert_id"]))
@@ -490,6 +519,19 @@ async def _discord_reply_and_react(
         discord_bot_token, channel_id, text=text, reply_to_message_id=message_id
     )
     await react_discord_message(discord_bot_token, channel_id, message_id, emoji)
+
+
+async def _tweet_outcome(
+    twitter: TwitterCredentials | None,
+    batch: Sequence[Mapping[str, Any]],
+    text: str,
+) -> None:
+    if twitter is None:
+        return
+    tweet_id = next((str(tid) for row in batch if (tid := row.get("twitter_tweet_id"))), None)
+    if tweet_id is None:
+        return
+    await reply_tweet(twitter, text, tweet_id)
 
 
 async def _alert_payload(

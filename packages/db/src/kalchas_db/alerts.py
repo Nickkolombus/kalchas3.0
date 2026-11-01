@@ -97,7 +97,7 @@ WHERE o.alert_id = a.id
 RETURNING o.alert_id, o.state, o.decision, o.detail, o.evaluated_at,
           a.strategy_key, a.team, a.home_team, a.away_team, a.value, a.payload,
           a.telegram_message_id, a.telegram_free_message_id, a.minute, a.score,
-          a.discord_message_id, a.discord_free_message_id
+          a.discord_message_id, a.discord_free_message_id, a.twitter_tweet_id
 """
 
 SKIP_UNREPLIABLE_OUTCOMES = """
@@ -149,11 +149,17 @@ SET discord_free_message_id = $2
 WHERE id = $1
 """
 
+MARK_TWITTER_SENT = """
+UPDATE alerts
+SET twitter_tweet_id = $2
+WHERE id = $1
+"""
+
 SENT_SAME_MINUTE = """
 SELECT id, match_id, strategy_slot, strategy_key, team, value, minute,
        score, home_team, away_team, payload,
        telegram_message_id, telegram_free_message_id,
-       discord_message_id, discord_free_message_id
+       discord_message_id, discord_free_message_id, twitter_tweet_id
 FROM alerts
 WHERE match_id = $1
   AND minute = $2
@@ -269,6 +275,15 @@ async def mark_discord_free_sent(
 ) -> None:
     """Also used to share an existing Discord free post with a sibling alert."""
     await conn.execute(MARK_DISCORD_FREE_SENT, alert_id, discord_free_message_id)
+
+
+async def mark_twitter_sent(
+    conn: asyncpg.Connection,
+    alert_id: int,
+    twitter_tweet_id: str,
+) -> None:
+    """Also used to share an existing alert tweet with a sibling alert."""
+    await conn.execute(MARK_TWITTER_SENT, alert_id, twitter_tweet_id)
 
 
 async def sent_same_minute(

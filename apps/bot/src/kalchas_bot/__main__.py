@@ -13,6 +13,7 @@ from telegram.ext import Application, ChatMemberHandler, CommandHandler, Context
 from kalchas_bot.discord_channel import discord_bot_token
 from kalchas_bot.paid_channel import paid_chat_id
 from kalchas_bot.paid_join import on_paid_chat_member
+from kalchas_bot.twitter_channel import twitter_credentials
 
 logger = logging.getLogger("kalchas.bot")
 
@@ -56,6 +57,7 @@ async def _maybe_start_delivery(application: Application) -> None:
             free_chat_id=free_chat_id,
             unlimited_until=unlimited_until,
             discord_bot_token=discord_bot_token(),
+            twitter=twitter_credentials(),
         )
     )
 
