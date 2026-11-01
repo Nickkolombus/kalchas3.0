@@ -63,3 +63,23 @@ def save_panel_cache(dsn: str, cache_key: str, payload: dict[str, Any]) -> None:
             UPSERT,
             {"cache_key": cache_key, "payload": json.dumps(payload)},
         )
+
+
+DELETE_OLDER = text(
+    """
+    DELETE FROM panel_cache
+    WHERE cache_key LIKE :pattern
+      AND cached_at < NOW() - make_interval(hours => :hours)
+    """
+)
+
+
+def delete_panel_cache_older(dsn: str, prefix: str, *, hours: int) -> int:
+    """Drop rows whose key starts with `prefix` and that are older than `hours`.
+
+    The watchlist writes a row per match per day; this keeps them from piling up.
+    """
+    eng = sync_engine(dsn)
+    with eng.begin() as conn:
+        result = conn.execute(DELETE_OLDER, {"pattern": f"{prefix}%", "hours": int(hours)})
+    return int(result.rowcount or 0)

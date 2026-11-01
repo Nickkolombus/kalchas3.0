@@ -635,8 +635,8 @@ def test_parse_h2h_meetings_from_provider_shape() -> None:
     assert rows[0]["home_score"] == 2
     assert rows[0]["away_score"] == 1
     assert rows[0]["goal_events"] == [
-        {"minute": 12, "team": "home", "side": "home"},
-        {"minute": 80, "team": "away", "side": "away"},
+        {"minute": 12, "team": "home", "side": "home", "half": "1H"},
+        {"minute": 80, "team": "away", "side": "away", "half": "2H"},
     ]
 
 
@@ -698,6 +698,12 @@ def test_parse_team_fixtures_from_provider_shape() -> None:
         "away_team_id": 20,
         "home_score": 2,
         "away_score": 1,
+        "home_team": "",
+        "away_team": "",
+        "home_ht_score": None,
+        "away_ht_score": None,
+        "league_id": 0,
+        "goal_events": [],
     }
 
 

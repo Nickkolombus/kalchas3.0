@@ -10,6 +10,7 @@ from kalchas_football import FootballAPIClient
 from kalchas_scanner.live_source import NullStatusReporter, WebSocketLiveSource
 from kalchas_scanner.loop import Scanner, ScannerConfig
 from kalchas_scanner.status import default_status_reporter
+from kalchas_scanner.watchlist import start_watchlist_thread
 
 
 def main() -> None:
@@ -38,7 +39,9 @@ def main() -> None:
         once = os.environ.get("SCANNER_ONCE", "").lower() in {"1", "true", "yes"}
         if once:
             scanner.run_once()
-        elif os.environ.get("SCANNER_USE_WEBSOCKET", "1").lower() not in {"0", "false", "no"}:
+            return
+        start_watchlist_thread()
+        if os.environ.get("SCANNER_USE_WEBSOCKET", "1").lower() not in {"0", "false", "no"}:
             reporter = default_status_reporter() or NullStatusReporter()
             WebSocketLiveSource(
                 scanner=scanner,

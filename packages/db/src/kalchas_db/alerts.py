@@ -458,3 +458,29 @@ def list_alert_results_sync(
         "expired": int(summary.get("expired") or 0),
         "monitoring": int(summary.get("monitoring") or 0),
     }
+
+
+ALERT_RECORD_BY_LEAGUE = text(
+    """
+    SELECT COALESCE(a.payload->>'country', '') AS country,
+           COALESCE(a.payload->>'league', '') AS league,
+           count(*) FILTER (WHERE o.state = 'Confirmed')::int AS confirmed,
+           count(*) FILTER (WHERE o.state IN ('Confirmed', 'Expired'))::int AS settled
+    FROM alerts a
+    JOIN alert_outcomes o ON o.alert_id = a.id
+    WHERE a.created_at >= :since
+    GROUP BY 1, 2
+    """
+)
+
+
+def alert_record_by_league_sync(dsn: str, *, since: datetime) -> list[dict[str, Any]]:
+    """Settled alerts per (country, league) since `since`: how often ours landed.
+
+    Keyed on the provider's names as the scanner stored them in the payload,
+    the same names the pre-match fixture feed uses.
+    """
+    eng = sync_engine(dsn)
+    with eng.connect() as conn:
+        rows = conn.execute(ALERT_RECORD_BY_LEAGUE, {"since": since}).mappings().all()
+    return [dict(row) for row in rows]

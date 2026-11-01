@@ -686,6 +686,120 @@ def parse_standings_positions(data: Any) -> dict[int, int]:
     return out
 
 
+def parse_standings_table(data: Any) -> list[dict[str, Any]]:
+    """Full league table from ``get_standings``, ordered by position.
+
+    ``parse_standings_positions`` keeps only ranks; the watchlist page shows
+    the rows around both teams, so it needs points and goal difference too.
+    """
+    rows = data if isinstance(data, list) else []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        team_id = _coerce_int(row.get("team_id"))
+        position = _coerce_int(row.get("overall_league_position"))
+        if team_id <= 0 or position <= 0:
+            continue
+        goals_for = _coerce_int(row.get("overall_league_GF"))
+        goals_against = _coerce_int(row.get("overall_league_GA"))
+        out.append(
+            {
+                "position": position,
+                "team_id": team_id,
+                "team": str(row.get("team_name") or ""),
+                "played": _coerce_int(row.get("overall_league_payed")),
+                "goal_difference": goals_for - goals_against,
+                "points": _coerce_int(row.get("overall_league_PTS")),
+            }
+        )
+    out.sort(key=lambda item: item["position"])
+    return out
+
+
+def _optional_score(value: Any) -> int | None:
+    text = str(value if value is not None else "").strip()
+    return int(text) if text.isdigit() else None
+
+
+def parse_upcoming_fixtures(data: Any) -> list[dict[str, Any]]:
+    """``get_events`` for a day, flattened to what a pre-match list needs.
+
+    ``match_date`` / ``match_time`` are in whatever ``timezone`` the request
+    asked for; the caller knows the offset and composes the kickoff.
+    """
+    rows = data if isinstance(data, list) else []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        match_id = str(row.get("match_id") or "").strip()
+        home_id = _coerce_int(row.get("match_hometeam_id"))
+        away_id = _coerce_int(row.get("match_awayteam_id"))
+        if not match_id or home_id <= 0 or away_id <= 0:
+            continue
+        out.append(
+            {
+                "match_id": match_id,
+                "match_date": str(row.get("match_date") or ""),
+                "match_time": str(row.get("match_time") or ""),
+                "status_short": _parse_elapsed(row.get("match_status"))[1],
+                "match_status": str(row.get("match_status") or ""),
+                "home_team_id": home_id,
+                "away_team_id": away_id,
+                "home_team": str(row.get("match_hometeam_name") or ""),
+                "away_team": str(row.get("match_awayteam_name") or ""),
+                "home_badge": https_asset_url(row.get("team_home_badge")),
+                "away_badge": https_asset_url(row.get("team_away_badge")),
+                "league_id": _coerce_int(row.get("league_id")),
+                "league_name": str(row.get("league_name") or ""),
+                "country_name": str(row.get("country_name") or ""),
+                "league_logo": https_asset_url(row.get("league_logo")),
+                "round": str(row.get("match_round") or ""),
+            }
+        )
+    return out
+
+
+_MARKET_FIELDS = {
+    "home": "odd_1",
+    "draw": "odd_x",
+    "away": "odd_2",
+    "over_2_5": "o+2.5",
+    "under_2_5": "u+2.5",
+    "btts_yes": "bts_yes",
+    "btts_no": "bts_no",
+}
+
+
+def odds_markets_from_provider_rows(rows: Any) -> dict[str, dict[str, float]]:
+    """``match_id`` → 1X2 plus Over/Under 2.5 and both-teams-to-score prices.
+
+    Each bookmaker is its own row and most leave some markets blank, so every
+    market takes the first bookmaker that prices it. A match without a full
+    1X2 is dropped: the pre-match list only covers games bookmakers price.
+    """
+    out: dict[str, dict[str, float]] = {}
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        match_id = str(row.get("match_id") or "")
+        if not match_id:
+            continue
+        markets = out.setdefault(match_id, {})
+        for name, field_name in _MARKET_FIELDS.items():
+            if name in markets:
+                continue
+            price = _odd_float(row.get(field_name))
+            if price is not None:
+                markets[name] = price
+    return {
+        match_id: markets
+        for match_id, markets in out.items()
+        if {"home", "draw", "away"} <= markets.keys()
+    }
+
+
 def parse_h2h_meetings(data: Any) -> list[dict[str, Any]]:
     """Flatten ``get_H2H`` into canonical meeting dicts.
 
@@ -746,6 +860,10 @@ def parse_team_fixtures(data: Any) -> list[dict[str, Any]]:
     is the provider's ``match_status`` text normalised (``"Finished"`` ->
     ``FT``), the same mapping the live feed uses; filter on that, not the raw
     text.
+
+    Goal minutes ride along in ``goal_events`` (same shape as H2H). The
+    provider times every goal in a match or none of them, so an empty list on
+    a scoring match means "untimed", not "no goals".
     """
     rows = data if isinstance(data, list) else []
     out: list[dict[str, Any]] = []
@@ -767,6 +885,12 @@ def parse_team_fixtures(data: Any) -> list[dict[str, Any]]:
                 "away_team_id": away_id,
                 "home_score": _coerce_int(row.get("match_hometeam_score")),
                 "away_score": _coerce_int(row.get("match_awayteam_score")),
+                "home_team": str(row.get("match_hometeam_name") or ""),
+                "away_team": str(row.get("match_awayteam_name") or ""),
+                "home_ht_score": _optional_score(row.get("match_hometeam_halftime_score")),
+                "away_ht_score": _optional_score(row.get("match_awayteam_halftime_score")),
+                "league_id": _coerce_int(row.get("league_id")),
+                "goal_events": _h2h_goal_events(row),
             }
         )
     return out
@@ -780,13 +904,14 @@ def _h2h_goal_events(row: dict[str, Any]) -> list[dict[str, Any]]:
     for item in raw:
         if not isinstance(item, dict):
             continue
-        minute, _status, _display = _parse_elapsed(item.get("time") or item.get("minute"))
+        minute, half, _display = _parse_elapsed(item.get("time") or item.get("minute"))
         if minute <= 0:
             continue
         home_scorer = str(item.get("home_scorer") or "").strip()
         away_scorer = str(item.get("away_scorer") or "").strip()
         side = "home" if home_scorer else "away" if away_scorer else str(item.get("team") or "")
-        events.append({"minute": minute, "team": side, "side": side})
+        # `half` keeps 45+3 in the first half although its minute reads 48.
+        events.append({"minute": minute, "team": side, "side": side, "half": half})
     return events
 
 
@@ -864,6 +989,9 @@ class FootballAPIClient:
             lowered = message.lower()
             # Quiet windows: provider returns this instead of [].
             if "no event found" in lowered or "no odds" in lowered:
+                return []
+            # Cups and knockout rounds have no table.
+            if "standing not found" in lowered:
                 return []
             raise RuntimeError(f"apifootball.com error: {data.get('message') or data}")
         return data
@@ -1037,3 +1165,45 @@ class FootballAPIClient:
         fixtures = parse_team_fixtures(data)
         fixtures.sort(key=lambda row: str(row.get("match_date") or ""), reverse=True)
         return fixtures
+
+    # The pre-match watchlist getters below let `RateLimitBudgetExceeded`
+    # propagate, like `get_team_fixtures`: the builder caches what it gets and
+    # must not store "not fetched" as "nothing there".
+
+    def get_fixtures_on(self, day: str, *, timezone: str) -> list[dict[str, Any]]:
+        """Every fixture on one calendar day, times in ``timezone`` (``+03:00``)."""
+        data = self._get("get_events", {"from": day, "to": day, "timezone": timezone})
+        return parse_upcoming_fixtures(data)
+
+    def get_odds_markets_on(self, day: str) -> dict[str, dict[str, float]]:
+        """One ``get_odds`` call for a day: 1X2, Over/Under 2.5 and BTTS prices."""
+        data = self._get("get_odds", {"from": day, "to": day})
+        return odds_markets_from_provider_rows(data)
+
+    def get_league_fixtures(self, league_id: int, *, days_back: int = 120) -> list[dict[str, Any]]:
+        """A league's fixtures over the last ``days_back`` days, newest first.
+
+        One call covers every team in the league, which is what keeps a
+        whole day's watchlist inside the hourly budget.
+        """
+        from datetime import UTC, datetime, timedelta
+
+        lid = _coerce_int(league_id)
+        if lid <= 0:
+            return []
+        today = datetime.now(UTC).date()
+        start = today - timedelta(days=days_back)
+        data = self._get(
+            "get_events",
+            {"league_id": lid, "from": start.isoformat(), "to": today.isoformat()},
+        )
+        fixtures = parse_team_fixtures(data)
+        fixtures.sort(key=lambda row: str(row.get("match_date") or ""), reverse=True)
+        return fixtures
+
+    def get_standings_table(self, league_id: int) -> list[dict[str, Any]]:
+        """``action=get_standings`` → the whole table (position, points, GD)."""
+        lid = _coerce_int(league_id)
+        if lid <= 0:
+            return []
+        return parse_standings_table(self._get("get_standings", {"league_id": lid}))
