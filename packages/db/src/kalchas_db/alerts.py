@@ -155,6 +155,21 @@ SET twitter_tweet_id = $2
 WHERE id = $1
 """
 
+FIND_TWEET_ID = """
+SELECT twitter_tweet_id
+FROM alerts
+WHERE twitter_tweet_id IS NOT NULL
+  AND (
+    id = ANY($1::bigint[])
+    OR telegram_free_message_id IN (
+        SELECT telegram_free_message_id FROM alerts
+        WHERE id = ANY($1::bigint[]) AND telegram_free_message_id IS NOT NULL
+    )
+  )
+ORDER BY id
+LIMIT 1
+"""
+
 SENT_SAME_MINUTE = """
 SELECT id, match_id, strategy_slot, strategy_key, team, value, minute,
        score, home_team, away_team, payload,
@@ -284,6 +299,12 @@ async def mark_twitter_sent(
 ) -> None:
     """Also used to share an existing alert tweet with a sibling alert."""
     await conn.execute(MARK_TWITTER_SENT, alert_id, twitter_tweet_id)
+
+
+async def find_tweet_id(conn: asyncpg.Connection, alert_ids: list[int]) -> str | None:
+    """The alert tweet for these alerts, or for any alert sharing their free post."""
+    value = await conn.fetchval(FIND_TWEET_ID, [int(alert_id) for alert_id in alert_ids])
+    return str(value) if value else None
 
 
 async def sent_same_minute(

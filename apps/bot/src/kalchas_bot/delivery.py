@@ -21,7 +21,8 @@ from kalchas_bot.discord_channel import (
 )
 from kalchas_bot.format import format_alert_html, format_joint_html, format_outcome_html
 from kalchas_bot.free_channel import allow_free_fire, gathering_open
-from kalchas_bot.twitter_channel import TwitterCredentials, post_alert_tweet, reply_tweet
+from kalchas_bot.twitter_channel import TwitterCredentials
+from kalchas_bot.twitter_queue import TwitterQueue
 
 logger = logging.getLogger("kalchas.bot.delivery")
 
@@ -47,6 +48,10 @@ async def deliver_loop(
 
     await create_pool()
     pool = get_pool()
+    # X posts run on their own worker so a slow X never delays Telegram or Discord.
+    twitter_queue = TwitterQueue(twitter, pool) if twitter is not None else None
+    if twitter_queue is not None:
+        twitter_queue.start()
     while True:
         try:
             async with pool.acquire() as conn:
@@ -65,7 +70,7 @@ async def deliver_loop(
                         unlimited_until=unlimited_until,
                         discord_bot_token=discord_bot_token,
                         discord_settings=discord_settings,
-                        twitter=twitter,
+                        twitter=twitter_queue,
                     )
                 except Exception as exc:
                     logger.exception("send failed for match %s", group[0].get("match_id"))
@@ -82,7 +87,7 @@ async def deliver_loop(
                 free_chat_id=free_chat_id,
                 discord_bot_token=discord_bot_token,
                 discord_settings=discord_settings,
-                twitter=twitter,
+                twitter=twitter_queue,
             )
         except Exception:
             logger.exception("delivery cycle failed")
@@ -126,7 +131,7 @@ async def _deliver_group(
     unlimited_until: str | None,
     discord_bot_token: str | None = None,
     discord_settings: Mapping[str, Any] | None = None,
-    twitter: TwitterCredentials | None = None,
+    twitter: TwitterQueue | None = None,
 ) -> None:
     from kalchas_db.alerts import (
         attach_free_message,
@@ -233,14 +238,13 @@ async def _deliver_group(
                 await mark_discord_free_sent(conn, int(row["id"]), discord_free_id)
     if twitter is None:
         return
-    tweet_id = await post_alert_tweet(
-        twitter, caption=caption, match_id=first.get("match_id"), photo_bytes=photo_bytes
+    # Last step, and non-blocking: the queue posts it and records the tweet id.
+    twitter.submit_alert(
+        alert_ids=[int(row["id"]) for row in group],
+        caption=caption,
+        match_id=first.get("match_id"),
+        photo_bytes=photo_bytes,
     )
-    if tweet_id is None:
-        return
-    async with pool.acquire() as conn:
-        for row in group:
-            await mark_twitter_sent(conn, int(row["id"]), tweet_id)
 
 
 async def _deliver_outcomes(
@@ -252,7 +256,7 @@ async def _deliver_outcomes(
     free_chat_id: str | None,
     discord_bot_token: str | None = None,
     discord_settings: Mapping[str, Any] | None = None,
-    twitter: TwitterCredentials | None = None,
+    twitter: TwitterQueue | None = None,
 ) -> None:
     from kalchas_db.alerts import (
         mark_outcome_failed,
@@ -284,6 +288,7 @@ async def _deliver_outcomes(
                         await release_outcome(conn, int(row["alert_id"]))
                 continue
             discord_message_id = _message_id(batch[0], "discord_message_id")
+            tweet_text: str | None = None
             if action == "goal":
                 confirmed = [row for row in batch if str(row.get("state") or "") == "Confirmed"]
                 text = "\n\n".join(format_outcome_html(row) for row in confirmed)
@@ -310,7 +315,7 @@ async def _deliver_outcomes(
                     text,
                     _DISCORD_GOAL_EMOJI,
                 )
-                await _tweet_outcome(twitter, batch, f"✅ {text}")
+                tweet_text = f"✅ {text}"
             elif action == "miss":
                 await _react_on_fire(bot, chat_id, message_id, _MISS_REACTIONS)
                 await _discord_react(
@@ -333,10 +338,15 @@ async def _deliver_outcomes(
                 )
                 # X has no reactions, so the miss is a reply, like 2.2's "Window closed".
                 missed = "\n\n".join(format_outcome_html(row) for row in batch)
-                await _tweet_outcome(twitter, batch, f"❌ {missed}")
+                tweet_text = f"❌ {missed}"
             async with pool.acquire() as conn:
                 for row in batch:
                     await mark_outcome_sent(conn, int(row["alert_id"]))
+            # After Telegram and Discord are done and marked; the queue sends it.
+            if twitter is not None and tweet_text is not None:
+                twitter.submit_outcome(
+                    alert_ids=[int(row["alert_id"]) for row in batch], text=tweet_text
+                )
         except Exception:
             logger.exception("outcome reply failed for message %s", message_id)
             async with pool.acquire() as conn:
@@ -519,19 +529,6 @@ async def _discord_reply_and_react(
         discord_bot_token, channel_id, text=text, reply_to_message_id=message_id
     )
     await react_discord_message(discord_bot_token, channel_id, message_id, emoji)
-
-
-async def _tweet_outcome(
-    twitter: TwitterCredentials | None,
-    batch: Sequence[Mapping[str, Any]],
-    text: str,
-) -> None:
-    if twitter is None:
-        return
-    tweet_id = next((str(tid) for row in batch if (tid := row.get("twitter_tweet_id"))), None)
-    if tweet_id is None:
-        return
-    await reply_tweet(twitter, text, tweet_id)
 
 
 async def _alert_payload(

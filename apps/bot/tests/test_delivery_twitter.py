@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from kalchas_bot.delivery import _deliver_group, _deliver_outcomes
 from kalchas_bot.twitter_channel import TwitterCredentials
+from kalchas_bot.twitter_queue import TwitterQueue
 
 TWITTER = TwitterCredentials("k", "ks", "t", "ts")
 
@@ -28,6 +30,10 @@ class FakePool:
 
     def acquire(self) -> _Acquire:
         return _Acquire(self.conn)
+
+
+def _queue() -> TwitterQueue:
+    return TwitterQueue(TWITTER, FakePool())
 
 
 def _fire(alert_id: int) -> dict[str, object]:
@@ -61,7 +67,7 @@ def _patch_group(
         return b"png", "<b>A</b> vs B · 67′", "fallback"
 
     mark_twitter = AsyncMock()
-    monkeypatch.setattr("kalchas_bot.delivery.post_alert_tweet", fake_tweet)
+    monkeypatch.setattr("kalchas_bot.twitter_queue.post_alert_tweet", fake_tweet)
     monkeypatch.setattr("kalchas_bot.delivery._alert_payload", fake_payload)
     monkeypatch.setattr("kalchas_bot.delivery._send_alert", AsyncMock(return_value=10))
     monkeypatch.setattr(
@@ -77,6 +83,7 @@ def _patch_group(
 @pytest.mark.asyncio
 async def test_free_fire_tweets_once_and_marks_every_row(monkeypatch: pytest.MonkeyPatch) -> None:
     tweets, mark_twitter = _patch_group(monkeypatch, free_result=(20, None))
+    queue = _queue()
     await _deliver_group(
         Mock(),
         FakePool(),
@@ -84,8 +91,10 @@ async def test_free_fire_tweets_once_and_marks_every_row(monkeypatch: pytest.Mon
         [_fire(1), _fire(2)],
         free_chat_id="-1002",
         unlimited_until=None,
-        twitter=TWITTER,
+        twitter=queue,
     )
+    assert tweets == []  # queued, not posted inline
+    await queue.drain()
     assert len(tweets) == 1
     assert tweets[0]["match_id"] == "555"
     assert tweets[0]["photo_bytes"] == b"png"
@@ -95,6 +104,7 @@ async def test_free_fire_tweets_once_and_marks_every_row(monkeypatch: pytest.Mon
 @pytest.mark.asyncio
 async def test_gate_closed_means_no_tweet(monkeypatch: pytest.MonkeyPatch) -> None:
     tweets, mark_twitter = _patch_group(monkeypatch, free_result=None)
+    queue = _queue()
     await _deliver_group(
         Mock(),
         FakePool(),
@@ -102,8 +112,9 @@ async def test_gate_closed_means_no_tweet(monkeypatch: pytest.MonkeyPatch) -> No
         [_fire(1)],
         free_chat_id="-1002",
         unlimited_until=None,
-        twitter=TWITTER,
+        twitter=queue,
     )
+    await queue.drain()
     assert tweets == []
     mark_twitter.assert_not_awaited()
 
@@ -153,17 +164,23 @@ async def _run_outcome(
         AsyncMock(return_value=[{"state": row["state"]}]),
     )
     monkeypatch.setattr("kalchas_db.alerts.mark_outcome_sent", AsyncMock())
+    monkeypatch.setattr(
+        "kalchas_db.alerts.find_tweet_id", AsyncMock(return_value=row["twitter_tweet_id"])
+    )
     replies: list[tuple[str, str]] = []
 
     async def fake_reply(creds: TwitterCredentials, text: str, reply_to: str) -> str:
         replies.append((text, reply_to))
         return "r1"
 
-    monkeypatch.setattr("kalchas_bot.delivery.reply_tweet", fake_reply)
+    monkeypatch.setattr("kalchas_bot.twitter_queue.reply_tweet", fake_reply)
     bot = Mock()
     bot.send_message = AsyncMock()
     bot.set_message_reaction = AsyncMock()
-    await _deliver_outcomes(bot, FakePool(), "-1001", [row], free_chat_id="-1002", twitter=TWITTER)
+    queue = _queue()
+    await _deliver_outcomes(bot, FakePool(), "-1001", [row], free_chat_id="-1002", twitter=queue)
+    assert replies == []  # queued, not posted inline
+    await queue.drain()
     return replies
 
 
@@ -189,3 +206,92 @@ async def test_miss_replies_under_the_tweet(monkeypatch: pytest.MonkeyPatch) -> 
 @pytest.mark.asyncio
 async def test_paid_only_fire_has_no_tweet_to_reply_to(monkeypatch: pytest.MonkeyPatch) -> None:
     assert await _run_outcome(monkeypatch, _outcome("Confirmed", None)) == []
+
+
+@pytest.mark.asyncio
+async def test_a_hung_x_does_not_block_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_group(monkeypatch, free_result=(20, None))
+    started = asyncio.Event()
+
+    async def hung_tweet(creds: TwitterCredentials, **kwargs: object) -> str:
+        started.set()
+        await asyncio.sleep(3600)
+        return "never"
+
+    monkeypatch.setattr("kalchas_bot.twitter_queue.post_alert_tweet", hung_tweet)
+    queue = _queue()
+    queue.start()
+    try:
+        await asyncio.wait_for(
+            _deliver_group(
+                Mock(),
+                FakePool(),
+                "-1001",
+                [_fire(1)],
+                free_chat_id="-1002",
+                unlimited_until=None,
+                twitter=queue,
+            ),
+            timeout=2,
+        )
+        await asyncio.wait_for(started.wait(), timeout=2)
+    finally:
+        assert queue._task is not None
+        queue._task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_outcome_reply_waits_for_its_alert_tweet(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Alert tweet and outcome are queued back to back; the reply finds the new id."""
+    stored: dict[str, str] = {}
+    order: list[str] = []
+
+    async def fake_tweet(creds: TwitterCredentials, **kwargs: object) -> str:
+        order.append("alert")
+        return "t9"
+
+    async def fake_mark(conn: object, alert_id: int, tweet_id: str) -> None:
+        stored["id"] = tweet_id
+
+    async def fake_find(conn: object, alert_ids: list[int]) -> str | None:
+        return stored.get("id")
+
+    async def fake_reply(creds: TwitterCredentials, text: str, reply_to: str) -> str:
+        order.append(f"reply:{reply_to}")
+        return "r1"
+
+    monkeypatch.setattr("kalchas_bot.twitter_queue.post_alert_tweet", fake_tweet)
+    monkeypatch.setattr("kalchas_bot.twitter_queue.reply_tweet", fake_reply)
+    monkeypatch.setattr("kalchas_db.alerts.mark_twitter_sent", fake_mark)
+    monkeypatch.setattr("kalchas_db.alerts.find_tweet_id", fake_find)
+    queue = _queue()
+    queue.submit_alert(alert_ids=[1], caption="c", match_id="555", photo_bytes=None)
+    queue.submit_outcome(alert_ids=[1], text="✅ goal")
+    await queue.drain()
+    assert order == ["alert", "reply:t9"]
+
+
+@pytest.mark.asyncio
+async def test_a_failing_job_does_not_stop_the_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    async def flaky_tweet(creds: TwitterCredentials, **kwargs: object) -> str:
+        calls.append(str(kwargs["match_id"]))
+        if kwargs["match_id"] == "a":
+            raise RuntimeError("boom")
+        return "t2"
+
+    monkeypatch.setattr("kalchas_bot.twitter_queue.post_alert_tweet", flaky_tweet)
+    monkeypatch.setattr("kalchas_db.alerts.mark_twitter_sent", AsyncMock())
+    queue = _queue()
+    queue.submit_alert(alert_ids=[1], caption="c", match_id="a", photo_bytes=None)
+    queue.submit_alert(alert_ids=[2], caption="c", match_id="b", photo_bytes=None)
+    await queue.drain()
+    assert calls == ["a", "b"]
+
+
+def test_full_queue_drops_instead_of_blocking() -> None:
+    queue = TwitterQueue(TWITTER, FakePool(), maxsize=1)
+    queue.submit_outcome(alert_ids=[1], text="one")
+    queue.submit_outcome(alert_ids=[2], text="two")  # must not raise or block
+    assert queue._jobs.qsize() == 1
