@@ -2,12 +2,17 @@
 
 520x168 (~3.1:1) is cropped on mobile Telegram, which clips crests and
 names at the sides. 16:9 fills the chat photo bubble without that crop.
+
+Identity only: crests, names, score, clock, country and league. Every
+number that explains a fire stays in the caption.
 """
 
 from __future__ import annotations
 
+import colorsys
 import json
 import logging
+from collections import Counter
 from collections.abc import Mapping
 from io import BytesIO
 from typing import Any
@@ -20,10 +25,15 @@ logger = logging.getLogger("kalchas.bot.banner")
 WIDTH = 800
 HEIGHT = 450
 BG = (11, 28, 51)
+BG_TOP = (16, 37, 64)
 CREAM = (243, 234, 210)
 MUTED = (139, 154, 171)
+NEUTRAL_GLOW = (70, 104, 146)
+GLOW_LUMA = 100.0  # every glow is moved to this brightness, whatever its hue
 CREST = 180  # 112 * 1.6; names stay the same size
 PAD_X = 52
+# The feed's code for cross-border competitions; the league name says enough.
+_NO_COUNTRY = {"intl", "world", "international"}
 _FONT_REGULAR = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "C:\\Windows\\Fonts\\arial.ttf",
@@ -56,40 +66,46 @@ def render_alert_photo(row: Mapping[str, Any]) -> BytesIO | None:
         if status:
             clock = f"{clock} {status}".strip()
         league = str(payload.get("league") or "").strip().upper()
+        country = _country_label(payload.get("country"), league)
         home_logo = str(payload.get("home_logo") or "")
         away_logo = str(payload.get("away_logo") or "")
 
-        img = Image.new("RGB", (WIDTH, HEIGHT), BG)
-        draw = ImageDraw.Draw(img)
+        left, left_glow = _crest(home_logo, home)
+        right, right_glow = _crest(away_logo, away)
+
         title_font = _font(18, bold=False)
+        country_font = _font(18, bold=True)
         score_font = _font(64, bold=False)
         name_font = _font(22, bold=False)
         clock_font = _font(20, bold=False)
 
+        probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
         league_h = 0
-        if league:
-            lb = draw.textbbox((0, 0), league, font=title_font)
+        if league or country:
+            lb = probe.textbbox((0, 0), league or country, font=title_font)
             league_h = (lb[3] - lb[1]) + 18
 
         name_h = 28
         crest_gap = 16
         block_h = league_h + CREST + crest_gap + name_h
         y = max(PAD_X // 2, int((HEIGHT - block_h) / 2))
-
-        if league:
-            bbox = draw.textbbox((0, 0), league, font=title_font)
-            draw.text(
-                ((WIDTH - (bbox[2] - bbox[0])) / 2, y),
-                league,
-                font=title_font,
-                fill=MUTED,
-            )
-            y += league_h
-
-        left = _crest(home_logo, home)
-        right = _crest(away_logo, away)
         left_x = PAD_X
         right_x = WIDTH - PAD_X - CREST
+        crest_y = y + league_h
+        mid = WIDTH / 2
+
+        img = _backdrop(
+            (left_x + CREST / 2, crest_y + CREST / 2, left_glow),
+            (right_x + CREST / 2, crest_y + CREST / 2, right_glow),
+            centre=(mid, crest_y + CREST / 2),
+            header_y=y if (league or country) else crest_y,
+        )
+        draw = ImageDraw.Draw(img)
+
+        if league or country:
+            _header(draw, country, league, y, country_font, title_font)
+        y = crest_y
+
         img.paste(left, (left_x, y), left)
         img.paste(right, (right_x, y), right)
 
@@ -100,7 +116,6 @@ def render_alert_photo(row: Mapping[str, Any]) -> BytesIO | None:
         clock_h = (clock_box[3] - clock_box[1] + 8) if clock else 0
         block = score_h + clock_h
         score_y = y + max(0, (CREST - block) / 2) - sb[1]
-        mid = WIDTH / 2
         draw.text((mid - score_w / 2, score_y), score, font=score_font, fill=CREAM)
         if clock:
             draw.text(
@@ -167,33 +182,171 @@ def _ellipsize(
     return "..."
 
 
-def _crest(url: str, name: str) -> Image.Image:
+def _country_label(raw: object, league: str) -> str:
+    """Upper-case country, or "" when it adds nothing to the league name."""
+    country = str(raw or "").strip()
+    if not country or country.lower() in _NO_COUNTRY:
+        return ""
+    country = country.upper()
+    return "" if country in league else country
+
+
+def _header(
+    draw: ImageDraw.ImageDraw,
+    country: str,
+    league: str,
+    y: float,
+    country_font: ImageFont.ImageFont,
+    league_font: ImageFont.ImageFont,
+) -> None:
+    """ "COUNTRY · LEAGUE" centred, country in cream, league muted."""
+    room = WIDTH - 2 * PAD_X
+    lead = f"{country}  ·  " if country and league else country
+    lead_w = draw.textlength(lead, font=country_font) if lead else 0
+    tail = _ellipsize(draw, league, league_font, int(room - lead_w)) if league else ""
+    total = lead_w + (draw.textlength(tail, font=league_font) if tail else 0)
+    x = (WIDTH - total) / 2
+    if lead:
+        draw.text((x, y), lead, font=country_font, fill=CREAM)
+    if tail:
+        draw.text((x + lead_w, y), tail, font=league_font, fill=MUTED)
+
+
+def _backdrop(
+    *glows: tuple[float, float, tuple[int, int, int] | None],
+    centre: tuple[float, float],
+    header_y: float,
+) -> Image.Image:
+    """Navy gradient, a soft team-colour glow behind each crest, faint pitch lines.
+
+    The halfway line stops short of the header so it never strikes through it.
+    """
+    column = Image.linear_gradient("L").resize((1, HEIGHT))
+    img = Image.composite(
+        Image.new("RGB", (1, HEIGHT), BG),
+        Image.new("RGB", (1, HEIGHT), BG_TOP),
+        column,
+    ).resize((WIDTH, HEIGHT))
+
+    light = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    paint = ImageDraw.Draw(light)
+    for cx, cy, colour in glows:
+        tint = _even_glow(colour or NEUTRAL_GLOW)
+        r = CREST * 0.82
+        paint.ellipse((cx - r, cy - r, cx + r, cy + r), fill=(*tint, 92))
+    light = light.filter(ImageFilter.GaussianBlur(62))
+    img = Image.alpha_composite(img.convert("RGBA"), light)
+
+    lines = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    pen = ImageDraw.Draw(lines)
+    ink = (*CREAM, 16)
+    cx, cy = centre
+    ring = 96
+    pen.ellipse((cx - ring, cy - ring, cx + ring, cy + ring), outline=ink, width=2)
+    if header_y - 14 > 0:
+        pen.line((cx, 0, cx, header_y - 14), fill=ink, width=2)
+    pen.line((cx, cy + ring, cx, HEIGHT), fill=ink, width=2)
+    return Image.alpha_composite(img, lines).convert("RGB")
+
+
+def _luma(rgb: tuple[int, int, int]) -> float:
+    r, g, b = rgb
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _even_glow(colour: tuple[int, int, int]) -> tuple[int, int, int]:
+    """Same hue, brightness moved to GLOW_LUMA so yellow and navy glow alike."""
+    h, _, s = colorsys.rgb_to_hls(*(c / 255 for c in colour))
+    s = min(s, 0.8)
+    lo, hi = 0.0, 1.0
+    rgb = colour
+    for _ in range(18):
+        mid = (lo + hi) / 2
+        rgb = tuple(round(c * 255) for c in colorsys.hls_to_rgb(h, mid, s))
+        if _luma(rgb) < GLOW_LUMA:
+            lo = mid
+        else:
+            hi = mid
+    return rgb  # type: ignore[return-value]
+
+
+def _crest(url: str, name: str) -> tuple[Image.Image, tuple[int, int, int] | None]:
+    """Crest on a transparent square, plus its dominant colour for the glow."""
     raw = _fetch(url) if url.startswith("http") else None
     if raw is not None:
         try:
-            return _fit_logo(Image.open(BytesIO(raw)), CREST)
+            logo = _fit_logo(Image.open(BytesIO(raw)), CREST)
+            return logo, _team_colour(logo)
         except Exception:  # noqa: BLE001 - fall through to letter badge
             logger.debug("crest decode failed for %s", name)
-    return _letter_badge(name)
+    return _letter_badge(name), None
 
 
 def _fit_logo(src: Image.Image, size: int) -> Image.Image:
-    """Fill the crest box. Matte onto the card, then Lanczos through 2x."""
-    src = src.convert("RGBA")
-    matted = Image.alpha_composite(Image.new("RGBA", src.size, (*BG, 255)), src)
-    hi = ImageOps.contain(matted, (size * 2, size * 2), Image.Resampling.LANCZOS)
+    """Fill the crest box, keeping transparency so the glow shows around it."""
+    src = _clear_flat_background(src.convert("RGBA"))
+    # Premultiplied while resampling, so clear edges do not pick up dark fringes.
+    hi = ImageOps.contain(src.convert("RGBa"), (size * 2, size * 2), Image.Resampling.LANCZOS)
     if min(src.width, src.height) < size:
         hi = hi.filter(ImageFilter.GaussianBlur(0.55))
     fitted = hi.resize(
         (max(1, round(hi.width / 2)), max(1, round(hi.height / 2))),
         Image.Resampling.LANCZOS,
-    )
-    canvas = Image.new("RGBA", (size, size), (*BG, 255))
+    ).convert("RGBA")
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     canvas.paste(
         fitted,
         ((size - fitted.width) // 2, (size - fitted.height) // 2),
     )
     return canvas
+
+
+def _clear_flat_background(src: Image.Image) -> Image.Image:
+    """Drop the white square some feed badges ship with (JPEGs, no alpha).
+
+    Only when all four corners are opaque and near-white: flood from each
+    corner, then pull the alpha in a pixel to lose the JPEG halo.
+    """
+    w, h = src.size
+    corners = [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]
+    pixels = [src.getpixel(xy) for xy in corners]
+    if not all(p[3] > 250 and min(p[:3]) > 215 for p in pixels):
+        return src
+    out = src.copy()
+    for xy in corners:
+        if out.getpixel(xy)[3]:
+            ImageDraw.floodfill(out, xy, (255, 255, 255, 0), thresh=48)
+    alpha = out.getchannel("A").filter(ImageFilter.MinFilter(3))
+    out.putalpha(alpha.filter(ImageFilter.GaussianBlur(0.6)))
+    return out
+
+
+def _team_colour(logo: Image.Image) -> tuple[int, int, int] | None:
+    """Most common saturated colour in the crest, or None for white/black/grey crests."""
+    small = logo.resize((48, 48), Image.Resampling.BILINEAR)
+    buckets: Counter[tuple[int, int, int]] = Counter()
+    sums: dict[tuple[int, int, int], list[int]] = {}
+    opaque = 0
+    for r, g, b, a in small.get_flattened_data():
+        if a < 200:
+            continue
+        opaque += 1
+        _, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+        if s < 0.35 or v < 0.25:
+            continue
+        key = (r // 32, g // 32, b // 32)
+        buckets[key] += 1
+        acc = sums.setdefault(key, [0, 0, 0])
+        acc[0] += r
+        acc[1] += g
+        acc[2] += b
+    if not buckets:
+        return None
+    key, count = buckets.most_common(1)[0]
+    if count < opaque * 0.04:
+        return None
+    r, g, b = sums[key]
+    return (r // count, g // count, b // count)
 
 
 def _letter_badge(name: str) -> Image.Image:
