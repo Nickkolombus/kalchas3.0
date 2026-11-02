@@ -254,6 +254,19 @@ def league_key(research: Mapping[str, Any]) -> str:
     return f"{int(league.get('id') or 0)}:{league.get('name') or ''}"
 
 
+def _tags(patterns: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Chips for the list: the strongest patterns, one per label (both teams
+    "struggling to score" is one chip, not two)."""
+    out: list[dict[str, Any]] = []
+    for p in patterns:
+        if len(out) >= TAGS_SHOWN or p["score"] < POINT_MIN:
+            break
+        if any(t["label"] == p["tag"] for t in out):
+            continue
+        out.append({"label": p["tag"], "outcome": p.get("outcome")})
+    return out
+
+
 def list_row(research: Mapping[str, Any], league_key: str) -> dict[str, Any]:
     """The compact row the day list shows for one match. Once it is played
     the row carries the score and whether its lead pattern landed."""
@@ -270,13 +283,10 @@ def list_row(research: Mapping[str, Any], league_key: str) -> dict[str, Any]:
         "odds": {k: odds[k] for k in ("home", "draw", "away") if k in odds} or None,
         "watch": research["watch"],
         "score": research["score"],
+        "lead_key": top["key"] if top else "",
         "headline": top["title"] if top else "",
         "reason": top["brief"] if top else "",
-        "tags": [
-            {"label": p["tag"], "outcome": p.get("outcome")}
-            for p in patterns[:TAGS_SHOWN]
-            if p["score"] >= POINT_MIN
-        ],
+        "tags": _tags(patterns),
         "result": {k: result.get(k) for k in ("status", "label", "home", "away", "pens")}
         if result
         else None,

@@ -126,3 +126,27 @@ def test_unknown_day_and_match(client: TestClient, monkeypatch) -> None:
     assert client.get("/api/watchlist/day/yesterday").status_code == 404
     assert client.get("/api/watchlist/match/100").status_code == 404
     assert client.get("/api/watchlist/match/abc").status_code == 404
+
+
+def test_picks_lists_strong_watches_and_the_next_to_kick_off(
+    client: TestClient, monkeypatch
+) -> None:
+    later = {
+        **DAY["matches"][0],
+        "match_id": "101",
+        "kickoff": "2099-01-01T20:00:00+03:00",
+        "result": None,
+    }
+    sooner = {**later, "match_id": "102", "kickoff": "2098-01-01T20:00:00+03:00"}
+    quiet = {**later, "match_id": "103", "watch": "quiet"}
+    played = {**DAY["matches"][0], "kickoff": "2020-01-01T20:00:00+03:00"}
+    today = {**DAY, "matches": [played, later, sooner, quiet]}
+    monkeypatch.setattr(
+        "kalchas_db.watchlist.load_watchlist_day",
+        lambda dsn, day: today if day == "2026-11-03" else None,
+    )
+    body = client.get("/api/watchlist/picks").json()
+    assert [p["match_id"] for p in body["picks"]] == ["100", "101", "102"]
+    assert body["next"]["match_id"] == "102"
+    assert body["picks"][0]["tag"] == "Both score"
+    assert body["picks"][0]["outcome"] == "landed"

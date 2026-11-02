@@ -36,11 +36,16 @@ DEFAULT_NORMS: Final = {
     "late_goal": 0.52,
     "clean_sheet": 0.28,
     "failed_to_score": 0.28,
+    "over_3_5": 0.30,
+    "scored_2plus": 0.38,
+    "cards_5plus": 0.39,
+    "red_card": 0.28,
 }
 """Rates across a typical slate of league football, used where a league has
 too few games of its own. Clean sheets and blanks are per team per game, and
 league-wide they are the same number: every clean sheet is the other side's
-blank."""
+blank. Card rates are over games the provider has card data for (about
+four in ten, from a 5,300-match sample in Oct 2026)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +63,9 @@ class PlayedGame:
     timed: bool
     for_by_bucket: tuple[int, ...]
     against_by_bucket: tuple[int, ...]
+    cards: int | None = None
+    """Cards in the 90 minutes; `None` when the provider has no card data."""
+    red_card: bool | None = None
 
     @property
     def result(self) -> str:
@@ -98,6 +106,10 @@ class TeamProfile:
         return tuple(game for game in self.games if game.timed)
 
     @property
+    def card_games(self) -> tuple[PlayedGame, ...]:
+        return tuple(game for game in self.games if game.cards is not None)
+
+    @property
     def ht_games(self) -> tuple[PlayedGame, ...]:
         return tuple(game for game in self.games if game.first_half_goal is not None)
 
@@ -134,6 +146,16 @@ def game_flag(game: PlayedGame, attr: str) -> bool:
         return game.result == "L"
     if attr == "first_half_goal":
         return bool(game.first_half_goal)
+    if attr == "over_3_5":
+        return game.total >= 4
+    if attr == "scored_2plus":
+        return game.goals_for >= 2
+    if attr == "conceded_2plus":
+        return game.goals_against >= 2
+    if attr == "cards_5plus":
+        return game.cards is not None and game.cards >= 5
+    if attr == "red_card":
+        return bool(game.red_card)
     if attr == "late_goal":
         return game.timed and game.late_goal
     raise KeyError(attr)
@@ -215,6 +237,8 @@ def played_game(row: dict[str, Any], team_id: int) -> PlayedGame | None:
         timed=timed,
         for_by_bucket=tuple(for_buckets),
         against_by_bucket=tuple(against_buckets),
+        cards=None if row.get("cards") is None else int(row["cards"]),
+        red_card=None if row.get("cards") is None else bool(row.get("red_card")),
     )
 
 
@@ -266,6 +290,8 @@ class LeagueNorms:
 
     games: int
     rates: dict[str, float]
+    card_games: int = 0
+    """League games with card data. Too few and card patterns stay quiet."""
 
     def rate(self, key: str) -> float:
         return self.rates.get(key, DEFAULT_NORMS[key])
@@ -296,6 +322,7 @@ def league_norms(rows: Sequence[dict[str, Any]]) -> LeagueNorms:
             games.append(game)
 
     n = len(games)
+    carded = [g for g in games if g.cards is not None]
     timed = [g for g in games if g.timed]
     halves = [g for g in games if g.first_half_goal is not None]
     sides = 2 * n
@@ -312,8 +339,12 @@ def league_norms(rows: Sequence[dict[str, Any]]) -> LeagueNorms:
             sum((g.goals_for == 0) + (g.goals_against == 0) for g in games),
             sides,
         ),
+        "over_3_5": (sum(1 for g in games if g.total >= 4), n),
+        "scored_2plus": (sum((g.goals_for >= 2) + (g.goals_against >= 2) for g in games), sides),
+        "cards_5plus": (sum(1 for g in carded if (g.cards or 0) >= 5), len(carded)),
+        "red_card": (sum(1 for g in carded if g.red_card), len(carded)),
     }
     if n < MIN_LEAGUE_GAMES:
-        return LeagueNorms(games=n, rates=dict(DEFAULT_NORMS))
+        return LeagueNorms(games=n, rates=dict(DEFAULT_NORMS), card_games=len(carded))
     rates = {key: _blend(c, total, DEFAULT_NORMS[key]) for key, (c, total) in counts.items()}
-    return LeagueNorms(games=n, rates=rates)
+    return LeagueNorms(games=n, rates=rates, card_games=len(carded))

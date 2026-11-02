@@ -704,6 +704,8 @@ def test_parse_team_fixtures_from_provider_shape() -> None:
         "away_ht_score": None,
         "league_id": 0,
         "goal_events": [],
+        "cards": None,
+        "red_card": None,
     }
 
 

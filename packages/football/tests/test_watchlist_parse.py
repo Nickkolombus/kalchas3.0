@@ -223,3 +223,23 @@ def test_shootouts_no_longer_inflate_form_scores() -> None:
     (row,) = parse_team_fixtures([{**SHOOTOUT, "match_hometeam_id": "1", "match_awayteam_id": "2"}])
     assert (row["home_score"], row["away_score"]) == (1, 1)
     assert len(row["goal_events"]) == 2
+
+
+def test_cards_count_the_90_minutes_and_missing_data_stays_unknown() -> None:
+    cards = [
+        {"time": "3", "card": "yellow card", "score_info_time": "1st Half"},
+        {"time": "88", "card": "red card", "score_info_time": "2nd Half"},
+        {"time": "105", "card": "yellow card", "score_info_time": "Extra Time"},
+    ]
+    base = {
+        "match_id": "1",
+        "match_status": "Finished",
+        "match_hometeam_id": "1",
+        "match_awayteam_id": "2",
+    }
+    (with_data,) = parse_team_fixtures([{**base, "cards": cards}])
+    assert (with_data["cards"], with_data["red_card"]) == (2, True)
+    (without,) = parse_team_fixtures([{**base, "cards": []}])
+    assert (without["cards"], without["red_card"]) == (None, None)
+    (result,) = parse_results([{**base, "cards": cards}])
+    assert result["cards"] == 2

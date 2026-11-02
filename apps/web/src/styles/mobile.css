@@ -506,6 +506,10 @@
   background-image: linear-gradient(90deg, rgba(var(--pin-rgb), 0.13), rgba(var(--pin-rgb), 0) 55%);
 }
 
+.m-row.is-pick:not(.is-fav) {
+  box-shadow: inset 3px 0 0 #2fd39a;
+}
+
 .m-row.is-fav-last {
   border-bottom-color: rgba(var(--pin-rgb), 0.38);
 }
@@ -1116,4 +1120,20 @@
   .m-switch::after {
     transition: none;
   }
+}
+
+.m-nav .m-nav-link.is-picks {
+  color: #2fd39a;
+}
+
+@media (max-width: 760px) {
+  .wl-entry {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    width: 100%;
+  }
+}
+
+.m-card .pick-box {
+  margin: 0.2rem 0 0.7rem;
 }

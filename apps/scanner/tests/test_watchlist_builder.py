@@ -152,7 +152,7 @@ def test_builds_priced_matches_into_day_and_match_rows() -> None:
     assert first["kickoff"] == "2026-11-03T22:45:00+03:00"
     assert first["points"][0]["key"] == "btts_yes"
     assert first["result"] is None
-    assert doc["matches"][0]["tags"][0] == {"label": "Both score", "outcome": None}
+    assert doc["matches"][0]["tags"][0] == {"label": "Both score: Yes", "outcome": None}
 
 
 def test_cup_teams_with_few_games_fall_back_to_all_competitions() -> None:

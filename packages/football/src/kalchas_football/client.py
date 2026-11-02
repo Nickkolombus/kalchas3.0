@@ -891,9 +891,30 @@ def parse_team_fixtures(data: Any) -> list[dict[str, Any]]:
                 "away_ht_score": _optional_score(row.get("match_awayteam_halftime_score")),
                 "league_id": _coerce_int(row.get("league_id")),
                 "goal_events": _h2h_goal_events(row),
+                **_regular_cards(row),
             }
         )
     return out
+
+
+def _regular_cards(row: dict[str, Any]) -> dict[str, Any]:
+    """Cards shown in the 90 minutes: ``{"cards": n, "red_card": bool}``.
+
+    Many leagues come with no card rows at all, and a played match without a
+    single booking is rare, so no rows means "not known" (`None`), never 0.
+    """
+    raw = row.get("cards")
+    if not isinstance(raw, list) or not raw:
+        return {"cards": None, "red_card": None}
+    regular = [
+        c
+        for c in raw
+        if isinstance(c, dict) and str(c.get("score_info_time") or "") in {"1st Half", "2nd Half"}
+    ]
+    return {
+        "cards": len(regular),
+        "red_card": any("red" in str(c.get("card") or "").lower() for c in regular),
+    }
 
 
 def _final_score(row: dict[str, Any], side: str) -> int:
@@ -987,6 +1008,7 @@ def parse_results(data: Any) -> list[dict[str, Any]]:
                 "home_pens": pens["home"] if status == "PEN" else None,
                 "away_pens": pens["away"] if status == "PEN" else None,
                 "goals": _h2h_goal_events(row),
+                **_regular_cards(row),
             }
         )
     return out

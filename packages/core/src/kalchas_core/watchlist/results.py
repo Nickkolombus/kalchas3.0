@@ -60,6 +60,8 @@ def match_result(row: Mapping[str, Any]) -> dict[str, Any] | None:
         if pens_home is not None and pens_away is not None
         else None,
         "timed": timed,
+        "cards": None if row.get("cards") is None else int(row["cards"]),
+        "red_card": None if row.get("cards") is None else bool(row.get("red_card")),
         "goals": [
             {
                 "time": str(g.get("display") or g.get("minute") or ""),
@@ -115,6 +117,16 @@ def settle(
         return outcome(total >= 3, _goals(total))
     if key == "under_2_5":
         return outcome(total <= 2, _goals(total))
+    if key == "over_3_5":
+        return outcome(total >= 4, _goals(total))
+    if key in {"cards_over_4_5", "red_card"}:
+        cards = result.get("cards")
+        if cards is None:
+            return None, ""  # the provider has no card data for this match
+        if key == "red_card":
+            red = bool(result.get("red_card"))
+            return outcome(red, "A red card was shown." if red else "No red card.")
+        return outcome(cards >= 5, "1 card." if cards == 1 else f"{cards} cards.")
     if key == "late_goal":
         if total == 0:
             return outcome(False, "No goals.")
@@ -139,7 +151,8 @@ def settle(
         early = [g for g in result.get("goals") or [] if g.get("half") == "1H"]
         return outcome(bool(early), "A first-half goal." if early else "No first-half goal.")
 
-    # One-team patterns: home_scoring_run, leaky_away, blanks_home, favourite_away.
+    # One-team patterns: home_scoring_run, leaky_away, blanks_home, favourite_away,
+    # team_over_1_5_home.
     if key.endswith("_scoring_run"):
         kind, side = "scoring_run", key.removesuffix("_scoring_run")
     else:
@@ -153,6 +166,8 @@ def settle(
         return outcome(ga > 0, f"{name} conceded." if ga else f"{name} kept a clean sheet.")
     if kind == "blanks":
         return outcome(gf == 0, f"{name} scored." if gf else f"{name} failed to score.")
+    if kind == "team_over_1_5":
+        return outcome(gf >= 2, f"{name} scored {gf}.")
     if kind == "favourite":
         note = f"{name} won." if gf > ga else f"{name} drew." if gf == ga else f"{name} lost."
         return outcome(gf > ga, note)

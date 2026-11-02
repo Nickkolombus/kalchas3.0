@@ -17,6 +17,7 @@ import {
   type HoverScale,
   type WindowBlock,
 } from "./HoverTip";
+import { PickBox, PickTag, SpyglassIcon, WatchlistButton, usePick } from "./WatchlistPicks";
 import { MatchOverlay } from "./MatchPanel";
 import kalchasMark from "./assets/kalchas-mark.png";
 
@@ -1049,6 +1050,7 @@ function TeamStack({
             </span>
           ) : null}
           {run?.side === "home" ? <UnderdogMark run={run} /> : null}
+          <PickTag matchId={match.match_id} score={match.score} minute={match.minute} />
         </div>
         <div className="team-line">
           <TeamBadge name={match.away_team} src={awayLogo} />
@@ -2152,6 +2154,7 @@ function MobileRow({
   onOpen: () => void;
 }) {
   const hot = Boolean(match.active_strategies?.length);
+  const pick = usePick(match.match_id);
   return (
     <div
       role="button"
@@ -2160,6 +2163,7 @@ function MobileRow({
         "m-grid m-row",
         `is-${lens}`,
         hot ? "is-hot" : "",
+        pick ? "is-pick" : "",
         fav ? "is-fav" : "",
         favLast ? "is-fav-last" : "",
         flash ? "is-goal" : "",
@@ -2319,6 +2323,7 @@ function MobileCard({
             <b>{stat("red_cards", "home")}–{stat("red_cards", "away")}</b>
           </span>
         </div>
+        <PickBox matchId={match.match_id} score={match.score} minute={match.minute} />
         <button type="button" className="m-card-open" onClick={onOpenFull}>
           Open full match · timeline · H2H ›
         </button>
@@ -2708,12 +2713,9 @@ function MobileBoard({
             </span>
           </button>
         ))}
-        <a className="m-nav-link" href="/tomorrow">
-          <svg viewBox="0 0 24 24" aria-hidden>
-            <rect x="4" y="5" width="16" height="15" rx="2" />
-            <path d="M4 10h16M9 3v4M15 3v4" />
-          </svg>
-          <span>Tomorrow</span>
+        <a className="m-nav-link is-picks" href="/today">
+          <SpyglassIcon size={20} />
+          <span>Picks</span>
         </a>
       </nav>
 
@@ -3019,9 +3021,7 @@ export function App() {
                   Join full feed
                   <span>€2.99 a week</span>
                 </a>
-                <a className="hero-watchlist" href="/tomorrow">
-                  Tomorrow's watchlist →
-                </a>
+                <WatchlistButton />
               </div>
             </div>
           </div>

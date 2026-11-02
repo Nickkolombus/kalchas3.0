@@ -173,11 +173,13 @@ export function HoverTip({
   body,
   children,
   cardClass,
+  anchorClass,
 }: {
   title?: string;
   body: ReactNode;
   children: ReactNode;
   cardClass?: string;
+  anchorClass?: string;
 }) {
   const anchorRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -224,12 +226,64 @@ export function HoverTip({
 
   useEffect(() => () => clearTimer(), [clearTimer]);
 
+  // A card must never outlive the pointer. `mouseleave` alone misses the
+  // cases that left cards stuck until a reload: the live board re-sorting a
+  // row out from under the cursor, scrolling, or the window losing focus.
+  useEffect(() => {
+    if (!open) return;
+    const close = () => {
+      clearTimer();
+      setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    const onPointer = (event: PointerEvent) => {
+      const anchor = anchorRef.current;
+      if (!anchor || !anchor.isConnected) return close();
+      const box = anchor.getBoundingClientRect();
+      const inside =
+        event.clientX >= box.left &&
+        event.clientX <= box.right &&
+        event.clientY >= box.top &&
+        event.clientY <= box.bottom;
+      if (!inside) close();
+    };
+    const onHidden = () => {
+      if (document.visibilityState === "hidden") close();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", close, { capture: true, passive: true });
+    window.addEventListener("resize", close);
+    window.addEventListener("blur", close);
+    document.addEventListener("pointermove", onPointer, { passive: true });
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", close, { capture: true });
+      window.removeEventListener("resize", close);
+      window.removeEventListener("blur", close);
+      document.removeEventListener("pointermove", onPointer);
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("visibilitychange", onHidden);
+    };
+  }, [open, clearTimer]);
+
+  /** Over a mark that has a card of its own (data-hover-stop) inside this
+   * anchor: that inner card shows, this one stays shut. */
+  const overInnerMark = (target: EventTarget | null) => {
+    const stop = (target as HTMLElement | null)?.closest?.("[data-hover-stop]");
+    const anchor = anchorRef.current;
+    return Boolean(stop && anchor && stop !== anchor && anchor.contains(stop));
+  };
+
   return (
     <div
-      className="hover-anchor"
+      className={`hover-anchor${anchorClass ? ` ${anchorClass}` : ""}`}
       ref={anchorRef}
       onMouseEnter={(event) => {
-        if ((event.target as HTMLElement).closest?.("[data-hover-stop]")) return;
+        if (overInnerMark(event.target)) return;
         clearTimer();
         timerRef.current = window.setTimeout(() => {
           timerRef.current = null;
@@ -237,7 +291,7 @@ export function HoverTip({
         }, HOVER_SHOW_DELAY_MS);
       }}
       onMouseOver={(event) => {
-        if (!(event.target as HTMLElement).closest?.("[data-hover-stop]")) return;
+        if (!overInnerMark(event.target)) return;
         clearTimer();
         setOpen(false);
       }}

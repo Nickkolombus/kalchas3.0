@@ -129,17 +129,184 @@ body {
   color: var(--muted);
 }
 
-.hero-watchlist {
-  margin-left: 0.35rem;
-  font-size: 0.78rem;
-  color: var(--text-2);
+/* Watchlist picks: hero button, board tag, overlay box (WatchlistPicks.tsx) */
+.wl-entry {
+  display: inline-grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  gap: 0 0.6rem;
+  padding: 0.35rem 0.75rem 0.35rem 0.55rem;
+  border-radius: 0.4rem;
+  border: 1px solid rgba(47, 211, 154, 0.38);
+  background: rgba(47, 211, 154, 0.07);
+  color: var(--text);
   text-decoration: none;
+}
+
+.wl-entry:hover {
+  border-color: rgba(47, 211, 154, 0.75);
+}
+
+.wl-entry-icon {
+  display: grid;
+  color: #2fd39a;
+}
+
+.wl-entry-text {
+  display: grid;
+  line-height: 1.25;
+}
+
+.wl-entry-text b {
+  font-size: 0.78rem;
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.hero-watchlist:hover {
+.wl-entry-text small {
+  font-size: 0.64rem;
+  color: var(--muted);
+}
+
+.wl-entry-next {
+  font-size: 0.7rem;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.wl-entry-next i {
+  font-style: normal;
+  font-weight: 600;
+  color: #2fd39a;
+}
+
+.wl-entry-arrow {
+  color: var(--text-2);
+}
+
+.pick-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.pick-mark .hover-anchor {
+  display: inline-flex;
+  width: auto;
+  margin: 0;
+}
+
+.pick-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+  font-family: var(--font-body);
+  font-size: 0.64rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: #2fd39a;
+  background: rgba(47, 211, 154, 0.12);
+  text-decoration: none;
+}
+
+.pick-tag:hover {
+  background: rgba(47, 211, 154, 0.2);
+}
+
+.pick-tag i {
+  font-style: normal;
+}
+
+.pick-tag.is-missed i {
+  color: #e0685f;
+}
+
+.hover-card.hover-card-pick {
+  min-width: 17rem;
+  max-width: 21rem;
+  text-align: left;
+  border-top: 2px solid #2fd39a;
+}
+
+.pick-tip p {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.pick-tip p b {
   color: var(--text);
-  text-decoration: underline;
+  font-weight: 600;
+}
+
+.pick-tip .pick-tip-k {
+  margin-bottom: 0.3rem;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.pick-tip .pick-tip-now {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+}
+
+.pick-tip .pick-tip-go {
+  margin-top: 0.45rem;
+  font-size: 0.7rem;
+  color: #2fd39a;
+}
+
+.pick-box {
+  margin: 0 1rem 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(47, 211, 154, 0.35);
+  background: rgba(47, 211, 154, 0.06);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.pick-box p {
+  margin: 0;
+}
+
+.pick-box b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.pick-box .pick-box-k {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.3rem;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #2fd39a;
+}
+
+.pick-box .pick-box-now {
+  margin-top: 0.4rem;
+  color: var(--text);
+}
+
+.pick-box a {
+  display: inline-block;
+  margin-top: 0.45rem;
+  color: #2fd39a;
+  font-weight: 600;
+  text-decoration: none;
 }
 
 .hero h1 {

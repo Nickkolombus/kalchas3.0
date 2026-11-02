@@ -177,3 +177,32 @@ def test_quiet_matches_do_not_count_in_the_tally() -> None:
     doc = assemble_day("2026-11-03", [quiet], built_at="x", timezone="+03:00")
     assert doc["matches"][0]["outcome"] is None
     assert day_summary(doc["matches"], doc["shortlist"])["top"] == {"landed": 0, "settled": 0}
+
+
+def test_new_patterns_settle() -> None:
+    result = match_result({**row("FT", 3, 1), "cards": 6, "red_card": False})
+    assert judge("over_3_5", result) == ("landed", "4 goals.")
+    assert judge("team_over_1_5_home", result) == ("landed", "Norwich scored 3.")
+    assert judge("team_over_1_5_away", result) == ("missed", "Hull scored 1.")
+    assert judge("cards_over_4_5", result) == ("landed", "6 cards.")
+    assert judge("red_card", result) == ("missed", "No red card.")
+    unknown = match_result(row("FT", 3, 1))
+    assert judge("cards_over_4_5", unknown) == (None, "")
+
+
+def test_list_row_shows_one_chip_per_label() -> None:
+    twin = {
+        "key": "blanks_home",
+        "tag": "Struggles to score",
+        "title": "T",
+        "detail": "D",
+        "brief": "B",
+        "score": 0.5,
+    }
+    other = {**twin, "key": "blanks_away"}
+    pg = {**page(), "patterns": [twin, other, {**twin, "key": "btts_no", "tag": "Both score: No"}]}
+    doc = assemble_day("2026-11-03", [pg], built_at="x", timezone="+03:00")
+    assert [t["label"] for t in doc["matches"][0]["tags"]] == [
+        "Struggles to score",
+        "Both score: No",
+    ]

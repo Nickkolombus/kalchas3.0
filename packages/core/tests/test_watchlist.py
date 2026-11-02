@@ -55,7 +55,7 @@ def fixture(
 
 
 def norms(**overrides: float) -> LeagueNorms:
-    return LeagueNorms(games=200, rates={**DEFAULT_NORMS, **overrides})
+    return LeagueNorms(games=200, rates={**DEFAULT_NORMS, **overrides}, card_games=200)
 
 
 def season(team: int, scores: list[tuple[int, int]], *, start: int = 0) -> list[dict[str, Any]]:
@@ -272,7 +272,7 @@ def test_research_page_and_list_row() -> None:
     assert row["headline"] == "Both teams to score looks likely."
     assert row["reason"].startswith("Both teams scored in all 10")
     assert row["odds"] == {"home": 1.95, "draw": 3.6, "away": 3.9}
-    assert {"label": "Both score", "outcome": None} in row["tags"]
+    assert {"label": "Both score: Yes", "outcome": None} in row["tags"]
     assert row["result"] is None and row["outcome"] is None and row["outcome_note"] == ""
 
 
@@ -312,3 +312,60 @@ def test_shortlist_skips_quiet_and_caps_each_league() -> None:
         {"match_id": "e", "score": 0.1, "watch": "quiet", "league_key": "L3"},
     ]
     assert shortlist(rows) == ["a", "b", "d"]
+
+
+# ------------------------------------------------------------ new patterns
+
+
+def with_cards(rows: list[dict[str, Any]], cards: int, red: bool = False) -> list[dict[str, Any]]:
+    return [{**r, "cards": cards, "red_card": red} for r in rows]
+
+
+def test_big_scoring_teams_bring_over_3_5_and_team_goals() -> None:
+    home = build_team_profile(
+        season(HOME, [(3, 2), (4, 1), (2, 2), (3, 1), (2, 3)] * 2), HOME, name="A"
+    )
+    away = build_team_profile(
+        season(AWAY, [(1, 3), (2, 2), (0, 4), (1, 3), (2, 3)] * 2, start=50), AWAY, name="B"
+    )
+    keys = {p.key for p in match_patterns(home, away, norms(), league="")}
+    assert {"over_2_5", "over_3_5", "team_over_1_5_home"} <= keys
+
+
+def test_card_patterns_need_card_data_and_settle_on_it() -> None:
+    rows_h = with_cards(season(HOME, [(1, 1)] * 10), 7, red=True)
+    rows_a = with_cards(season(AWAY, [(1, 1)] * 10, start=50), 6, red=True)
+    home = build_team_profile(rows_h, HOME, name="A")
+    away = build_team_profile(rows_a, AWAY, name="B")
+    found = {p.key: p for p in match_patterns(home, away, norms(), league="")}
+    assert {"cards_over_4_5", "red_card"} <= set(found)
+    assert found["cards_over_4_5"].tag == "Over 4.5 cards"
+
+    # Same teams without card data: nothing is said about cards.
+    bare_h = build_team_profile(season(HOME, [(1, 1)] * 10), HOME, name="A")
+    bare_a = build_team_profile(season(AWAY, [(1, 1)] * 10, start=50), AWAY, name="B")
+    keys = {p.key for p in match_patterns(bare_h, bare_a, norms(), league="")}
+    assert not keys & {"cards_over_4_5", "red_card"}
+
+
+def test_league_without_card_data_keeps_card_patterns_quiet() -> None:
+    home = build_team_profile(with_cards(season(HOME, [(1, 1)] * 10), 7, True), HOME, name="A")
+    away = build_team_profile(
+        with_cards(season(AWAY, [(1, 1)] * 10, start=50), 7, True), AWAY, name="B"
+    )
+    no_cards = LeagueNorms(games=200, rates=dict(DEFAULT_NORMS), card_games=3)
+    keys = {p.key for p in match_patterns(home, away, no_cards, league="L")}
+    assert not keys & {"cards_over_4_5", "red_card"}
+
+
+def test_new_wording() -> None:
+    home = build_team_profile(
+        season(HOME, [(1, 0), (0, 0), (0, 1), (1, 0), (0, 0)] * 2), HOME, name="A"
+    )
+    away = build_team_profile(
+        season(AWAY, [(0, 0), (1, 0), (0, 1), (0, 0), (1, 1)] * 2, start=50), AWAY, name="B"
+    )
+    found = {p.key: p for p in match_patterns(home, away, norms(), league="")}
+    assert found["btts_no"].tag == "Both score: No"
+    assert found["btts_no"].title == "Both teams to score looks unlikely."
+    assert found["under_2_5"].tag == "Under 2.5"

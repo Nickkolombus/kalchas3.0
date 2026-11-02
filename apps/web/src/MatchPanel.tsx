@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { PickBox } from "./WatchlistPicks";
 import {
   HoverLedger,
   HoverTip,
@@ -1671,6 +1672,7 @@ export function MatchOverlay({
             Close
           </button>
         </header>
+        <PickBox matchId={match.match_id} score={panel.score || match.score} minute={panel.minute ?? match.minute} />
         <nav className="overlay-tabs" aria-label="Match sections">
           {TABS.map((item) => (
             <button

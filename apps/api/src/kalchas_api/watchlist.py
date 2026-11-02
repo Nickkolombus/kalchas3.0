@@ -58,6 +58,7 @@ class WatchRow(BaseModel):
     odds: Odds1x2 | None = None
     watch: Watch
     score: float
+    lead_key: str = ""
     headline: str
     reason: str
     tags: list[Tag]
@@ -106,6 +107,29 @@ class WatchlistDay(BaseModel):
 class MonthDay(BaseModel):
     day: str
     summary: DaySummary
+
+
+class Pick(BaseModel):
+    """A strong watch, as the live board shows it."""
+
+    match_id: str
+    day: str
+    kickoff: str
+    home: TeamRef
+    away: TeamRef
+    lead_key: str = ""
+    tag: str = ""
+    headline: str
+    reason: str
+    result: RowResult | None = None
+    outcome: Outcome | None = None
+    outcome_note: str = ""
+
+
+class LivePicks(BaseModel):
+    today: str
+    next: Pick | None = None
+    picks: list[Pick] = []
 
 
 class WatchlistMonth(BaseModel):
@@ -249,6 +273,8 @@ class MatchResult(BaseModel):
     ht: list[int] | None = None
     pens: list[int] | None = None
     timed: bool = False
+    cards: int | None = None
+    red_card: bool | None = None
     goals: list[Goal] = []
 
 
@@ -363,6 +389,46 @@ def watchlist_month(month: str) -> WatchlistMonth:
     return WatchlistMonth.model_validate(
         {"month": month, "today": board_today().isoformat(), "first_day": first, "days": days}
     )
+
+
+def _pick(row: dict, day: str) -> Pick:
+    tags = row.get("tags") or []
+    return Pick.model_validate(
+        {**row, "day": day, "tag": (tags[0].get("label") if tags else "") or ""}
+    )
+
+
+@router.get("/picks", response_model=LivePicks)
+def watchlist_picks() -> LivePicks:
+    """For the live board: every strong watch of yesterday and today (late
+    games cross midnight), and the next one of today still to kick off."""
+    from kalchas_db.watchlist import load_watchlist_day
+
+    now = datetime.now(UTC)
+    today = board_today(now)
+    picks: list[Pick] = []
+    upcoming: list[Pick] = []
+    try:
+        dsn = _dsn()
+        for day in (today - timedelta(days=1), today):
+            doc = load_watchlist_day(dsn, day.isoformat()) or {}
+            for row in doc.get("matches") or []:
+                if row.get("watch") != "strong":
+                    continue
+                pick = _pick(row, day.isoformat())
+                picks.append(pick)
+                try:
+                    starts = datetime.fromisoformat(pick.kickoff)
+                except ValueError:
+                    continue
+                if day == today and starts > now:
+                    upcoming.append(pick)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _unavailable(exc) from exc
+    upcoming.sort(key=lambda p: (p.kickoff, p.match_id))
+    return LivePicks(today=today.isoformat(), next=upcoming[0] if upcoming else None, picks=picks)
 
 
 @router.get("/match/{match_id}", response_model=MatchResearch)

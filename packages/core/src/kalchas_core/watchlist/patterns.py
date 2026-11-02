@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-from kalchas_core.watchlist.profile import LeagueNorms, TeamProfile, game_flag
+from kalchas_core.watchlist.profile import MIN_LEAGUE_GAMES, LeagueNorms, TeamProfile, game_flag
 
 MIN_GAMES: Final = 5
 SHRINK_GAMES: Final = 4
@@ -129,6 +129,8 @@ def _pair(
             return profile.timed_games
         if games == "ht":
             return profile.ht_games
+        if games == "cards":
+            return profile.card_games
         return profile.games
 
     home_games, away_games = pool(home), pool(away)
@@ -163,7 +165,7 @@ def _btts(
         out.append(
             Pattern(
                 key="btts_yes",
-                tag="Both score",
+                tag="Both score: Yes",
                 title="Both teams to score looks likely.",
                 detail=detail,
                 brief=f"Both teams scored in {_of(hc, hn)} and {_of(ac, an)} of their last games.",
@@ -187,8 +189,8 @@ def _btts(
         out.append(
             Pattern(
                 key="btts_no",
-                tag="One side blanks",
-                title="One side could well fail to score.",
+                tag="Both score: No",
+                title="Both teams to score looks unlikely.",
                 detail=detail,
                 brief=f"Both teams scored in just {_of(hc + ac, hn + an)} of their last games.",
                 score=no_score,
@@ -223,13 +225,33 @@ def _goals_line(
         out.append(
             Pattern(
                 key="over_2_5",
-                tag="Goals",
+                tag="Over 2.5",
                 title="Expect goals.",
                 detail=detail,
                 brief=f"Over 2.5 goals in {_of(hc, hn)} and {_of(ac, an)} of their last games.",
                 score=over_score,
             )
         )
+
+    big = _pair(home, away, "over_3_5", norms.rate("over_3_5"))
+    if big is not None:
+        big_est, (bc, bn), (ac4, an4) = big
+        big_score = _lift(big_est, norms.rate("over_3_5"))
+        if big_score > 0:
+            out.append(
+                Pattern(
+                    key="over_3_5",
+                    tag="Over 3.5",
+                    title="Four or more goals is a real chance.",
+                    detail=(
+                        f"Four or more goals came in {_of(bc, bn)} of {_poss(home.name)} last games "
+                        f"and {_of(ac4, an4)} of {_poss(away.name)}, against "
+                        f"{_avg(league, norms.rate('over_3_5'))}."
+                    ),
+                    brief=f"Over 3.5 goals in {_of(bc, bn)} and {_of(ac4, an4)} of their last games.",
+                    score=big_score,
+                )
+            )
 
     under = _with_h2h(1 - estimate, meetings, invert=True)
     under_score = _lift(under, 1 - norm)
@@ -243,7 +265,7 @@ def _goals_line(
         out.append(
             Pattern(
                 key="under_2_5",
-                tag="Low scoring",
+                tag="Under 2.5",
                 title="Likely a tight, low-scoring game.",
                 detail=detail,
                 brief=f"Under 2.5 goals in {_of(hu, hn)} and {_of(au, an)} of their last games.",
@@ -319,7 +341,7 @@ def _runs(home: TeamProfile, away: TeamProfile) -> list[Pattern]:
         out.append(
             Pattern(
                 key=f"{where}_scoring_run",
-                tag="Scoring run",
+                tag="Scoring streak",
                 title=f"{team.name} keep scoring {place}.",
                 detail=f"They've scored in each of their last {run} {where} games.",
                 brief=f"{team.name} have scored in their last {run} {where} games.",
@@ -343,7 +365,7 @@ def _defence_and_attack(home: TeamProfile, away: TeamProfile, norms: LeagueNorms
             out.append(
                 Pattern(
                     key=f"leaky_{'home' if team is home else 'away'}",
-                    tag="Leaky defence",
+                    tag="No clean sheet",
                     title=f"{team.name} rarely keep a clean sheet.",
                     detail=(
                         f"{sheets} in their last {team.n}, conceding "
@@ -359,7 +381,7 @@ def _defence_and_attack(home: TeamProfile, away: TeamProfile, norms: LeagueNorms
             out.append(
                 Pattern(
                     key=f"blanks_{'home' if team is home else 'away'}",
-                    tag="Goal-shy",
+                    tag="Struggles to score",
                     title=f"{team.name} struggle to score.",
                     detail=(
                         f"They failed to score in {_of(blanks, team.n)} of their last games, "
@@ -399,6 +421,89 @@ def _favourite(
     return out
 
 
+def _team_goals(
+    home: TeamProfile, away: TeamProfile, norms: LeagueNorms, league: str
+) -> list[Pattern]:
+    """A team scoring twice or more: its own 2+ games and the opponent's
+    games conceding 2+, against the league's rate for one team."""
+    norm = norms.rate("scored_2plus")
+    out: list[Pattern] = []
+    for team, other, side in ((home, away, "home"), (away, home, "away")):
+        if team.n < MIN_GAMES or other.n < MIN_GAMES:
+            continue
+        scored = team.count("scored_2plus")
+        leaked = other.count("conceded_2plus")
+        estimate = (_shrunk(scored, team.n, norm) + _shrunk(leaked, other.n, norm)) / 2
+        score = _lift(estimate, norm)
+        if score <= 0:
+            continue
+        out.append(
+            Pattern(
+                key=f"team_over_1_5_{side}",
+                tag=f"{side.title()} over 1.5",
+                title=f"{team.name} to score twice or more.",
+                detail=(
+                    f"{team.name} scored 2 or more in {_of(scored, team.n)} of their last games and "
+                    f"{other.name} conceded 2 or more in {_of(leaked, other.n)}, against "
+                    f"{_avg(league, norm)} for one team."
+                ),
+                brief=f"{team.name} scored 2+ in {_of(scored, team.n)}; {other.name} let in 2+ in {_of(leaked, other.n)}.",
+                score=score,
+            )
+        )
+    return out
+
+
+def _cards(home: TeamProfile, away: TeamProfile, norms: LeagueNorms, league: str) -> list[Pattern]:
+    """Bookings and red cards, from the games the provider has card data for.
+    Quiet where the league has too little card data to know its norm."""
+    if norms.games and norms.card_games < MIN_LEAGUE_GAMES:
+        return []
+    out: list[Pattern] = []
+    many = _pair(home, away, "cards_5plus", norms.rate("cards_5plus"), games="cards")
+    if many is not None:
+        estimate, (hc, hn), (ac, an) = many
+        score = _lift(estimate, norms.rate("cards_5plus"))
+        if score > 0:
+            per_game = [
+                round(sum(g.cards or 0 for g in t.card_games) / len(t.card_games), 1)
+                for t in (home, away)
+            ]
+            out.append(
+                Pattern(
+                    key="cards_over_4_5",
+                    tag="Over 4.5 cards",
+                    title="Expect plenty of cards.",
+                    detail=(
+                        f"Five or more cards were shown in {_of(hc, hn)} of {_poss(home.name)} last games "
+                        f"and {_of(ac, an)} of {_poss(away.name)}, against {_avg(league, norms.rate('cards_5plus'))}. "
+                        f"They average {per_game[0]} and {per_game[1]} cards a game."
+                    ),
+                    brief=f"5+ cards in {_of(hc, hn)} and {_of(ac, an)} of their last games.",
+                    score=score,
+                )
+            )
+    red = _pair(home, away, "red_card", norms.rate("red_card"), games="cards")
+    if red is not None:
+        estimate, (hc, hn), (ac, an) = red
+        score = _lift(estimate, norms.rate("red_card"))
+        if score > 0:
+            out.append(
+                Pattern(
+                    key="red_card",
+                    tag="Red card risk",
+                    title="A red card is a real chance.",
+                    detail=(
+                        f"There was a red card in {_of(hc, hn)} of {_poss(home.name)} last games and "
+                        f"{_of(ac, an)} of {_poss(away.name)}, against {_avg(league, norms.rate('red_card'))}."
+                    ),
+                    brief=f"A red card in {_of(hc, hn)} and {_of(ac, an)} of their last games.",
+                    score=score,
+                )
+            )
+    return out
+
+
 def match_patterns(
     home: TeamProfile,
     away: TeamProfile,
@@ -418,6 +523,8 @@ def match_patterns(
         *_goals_line(home, away, norms, league, h2h),
         *_late(home, away, norms, league),
         *_early(home, away, norms, league),
+        *_team_goals(home, away, norms, league),
+        *_cards(home, away, norms, league),
         *_runs(home, away),
         *_defence_and_attack(home, away, norms),
         *_favourite(home, away, odds),
@@ -449,19 +556,28 @@ def watch_level(patterns: Sequence[Pattern]) -> str:
 PATTERN_ROWS: Final = (
     ("btts", "Both teams scored"),
     ("over_2_5", "Over 2.5 goals"),
+    ("over_3_5", "Over 3.5 goals"),
+    ("scored_2plus", "Scored 2 or more"),
     ("first_half_goal", "Goal before half-time"),
     ("late_goal", "Goal after 75'"),
     ("clean_sheet", "Kept a clean sheet"),
     ("failed_to_score", "Failed to score"),
+    ("cards_5plus", "5 or more cards"),
+    ("red_card", "A red card"),
 )
+CARD_ROWS: Final = frozenset({"cards_5plus", "red_card"})
 
 _ROW_HIGHLIGHT = {
     "btts": {"btts_yes", "btts_no"},
     "over_2_5": {"over_2_5", "under_2_5"},
+    "over_3_5": {"over_3_5"},
+    "scored_2plus": {"team_over_1_5_home", "team_over_1_5_away"},
     "first_half_goal": {"first_half_goal"},
     "late_goal": {"late_goal"},
     "clean_sheet": {"leaky_home", "leaky_away"},
     "failed_to_score": {"blanks_home", "blanks_away"},
+    "cards_5plus": {"cards_over_4_5"},
+    "red_card": {"red_card"},
 }
 
 
@@ -478,7 +594,17 @@ def pattern_table(
     flagged = {p.key for p in patterns if p.score >= FLAG_ROW}
     rows: list[dict[str, Any]] = []
     for key, label in PATTERN_ROWS:
-        pool = "timed" if key == "late_goal" else "ht" if key == "first_half_goal" else "all"
+        if key in CARD_ROWS and not (home.card_games and away.card_games):
+            continue  # no card data for these teams: leave the rows out
+        pool = (
+            "timed"
+            if key == "late_goal"
+            else "ht"
+            if key == "first_half_goal"
+            else "cards"
+            if key in CARD_ROWS
+            else "all"
+        )
 
         def side(profile: TeamProfile, key: str = key, pool: str = pool) -> dict[str, int]:
             games = (
@@ -486,6 +612,8 @@ def pattern_table(
                 if pool == "timed"
                 else profile.ht_games
                 if pool == "ht"
+                else profile.card_games
+                if pool == "cards"
                 else profile.games
             )
             return {"count": sum(1 for g in games if game_flag(g, key)), "n": len(games)}
