@@ -40,7 +40,7 @@ DAY = {
         }
     ],
     "shortlist": ["100"],
-    "overall_record": None,
+    "overall_record": {"confirmed": 500, "settled": 860},
 }
 
 
@@ -70,6 +70,13 @@ def test_day_list_is_served_from_the_cache(client: TestClient, monkeypatch) -> N
     assert seen == ["watchlist_day_2026-11-03"]
     assert body["status"] == "ready"
     assert body["matches"][0]["headline"].startswith("Both teams")
+
+
+def test_our_hit_rates_are_never_served(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr("kalchas_db.panel_cache.load_panel_cache", lambda *a, **k: DAY)
+    body = client.get("/api/watchlist/day/tomorrow").json()
+    assert "overall_record" not in body
+    assert "record" not in body["leagues"][0]
 
 
 def test_day_not_built_yet_says_preparing(client: TestClient, monkeypatch) -> None:

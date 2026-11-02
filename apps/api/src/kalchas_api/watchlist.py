@@ -2,6 +2,9 @@
 
 Read-only. The scanner's watchlist job builds both into ``panel_cache``; this
 router never calls the provider, so a busy page costs nothing on the budget.
+
+The cached pages also carry our live-alert hit rate per league. That stays
+internal: the models below leave it out, so it is never served publicly.
 """
 
 from __future__ import annotations
@@ -18,11 +21,6 @@ router = APIRouter(prefix="/api/watchlist", tags=["watchlist"])
 
 PAGE_TTL_HOURS = 48
 Watch = Literal["strong", "look", "quiet"]
-
-
-class Record(BaseModel):
-    confirmed: int
-    settled: int
 
 
 class TeamRef(BaseModel):
@@ -56,7 +54,6 @@ class LeagueGroup(BaseModel):
     name: str
     country: str
     logo: str | None = None
-    record: Record | None = None
     match_ids: list[str]
 
 
@@ -68,7 +65,6 @@ class WatchlistDay(BaseModel):
     matches: list[WatchRow] = []
     leagues: list[LeagueGroup] = []
     shortlist: list[str] = []
-    overall_record: Record | None = None
 
 
 class PatternOut(BaseModel):
@@ -187,11 +183,6 @@ class MatchOdds(Odds1x2):
     btts_no: float | None = None
 
 
-class RecordPair(BaseModel):
-    league: Record | None = None
-    overall: Record | None = None
-
-
 class MatchResearch(BaseModel):
     match_id: str
     day: str
@@ -210,7 +201,6 @@ class MatchResearch(BaseModel):
     timing: Timing
     h2h: H2HOut | None = None
     table: list[TableRow]
-    record: RecordPair
 
 
 def _dsn() -> str:

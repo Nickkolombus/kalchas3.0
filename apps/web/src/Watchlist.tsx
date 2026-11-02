@@ -3,7 +3,6 @@ import kalchasMark from "./assets/kalchas-mark.png";
 
 type Watch = "strong" | "look" | "quiet";
 type Day = "today" | "tomorrow";
-type Record = { confirmed: number; settled: number };
 type TeamRef = { name: string; badge?: string | null; position?: number | null };
 
 type WatchRow = {
@@ -25,7 +24,6 @@ type LeagueGroup = {
   name: string;
   country: string;
   logo?: string | null;
-  record?: Record | null;
   match_ids: string[];
 };
 
@@ -37,7 +35,6 @@ type WatchlistDay = {
   matches: WatchRow[];
   leagues: LeagueGroup[];
   shortlist: string[];
-  overall_record?: Record | null;
 };
 
 type PatternOut = { key: string; tag: string; title: string; detail: string; brief: string; score: number };
@@ -107,7 +104,6 @@ type MatchResearch = {
     meetings: { match_date: string; home_team: string; away_team: string; home_score: number; away_score: number }[];
   } | null;
   table: { position: number; team_id: number; team: string; played: number; goal_difference: number; points: number }[];
-  record: { league?: Record | null; overall?: Record | null };
 };
 
 const WATCH_LABEL: { [K in Watch]: string } = {
@@ -115,7 +111,6 @@ const WATCH_LABEL: { [K in Watch]: string } = {
   look: "Worth a look",
   quiet: "Quiet",
 };
-const MIN_RECORD = 10;
 
 type Route = { day: Day; matchId: string | null };
 
@@ -150,10 +145,6 @@ function shortDate(iso: string): string {
   const at = new Date(`${iso}T12:00:00`);
   if (Number.isNaN(at.getTime())) return iso;
   return at.toLocaleDateString([], { day: "numeric", month: "short", year: "2-digit" });
-}
-
-function pct(record: Record): number {
-  return Math.round((record.confirmed / record.settled) * 100);
 }
 
 function price(value?: number | null): string {
@@ -347,12 +338,6 @@ function DayView({ day, onOpen, onDay }: { day: Day; onOpen: (id: string) => voi
                       {league.logo ? <Crest src={league.logo} name={league.name} size={16} /> : null}
                       {league.country} · {league.name}
                     </b>
-                    {league.record && league.record.settled >= MIN_RECORD ? (
-                      <span>
-                        Our live alerts here: <em>{pct(league.record)}% landed</em> ({league.record.confirmed} of{" "}
-                        {league.record.settled})
-                      </span>
-                    ) : null}
                   </header>
                   {rows.map((m) => (
                     <a key={m.match_id} className="wl-row" href={`/${day}/${m.match_id}`} onClick={linkTo(() => onOpen(m.match_id))}>
@@ -501,21 +486,6 @@ function TimingChart({ research }: { research: MatchResearch }) {
   );
 }
 
-function RecordLine({ label, record, overall }: { label: string; record: Record; overall?: Record | null }) {
-  const share = pct(record);
-  return (
-    <div className="wl-rec">
-      <p>
-        {label}: <b>{record.confirmed} of {record.settled}</b> landed ({share}%).
-      </p>
-      <div className="wl-cmp">
-        <i style={{ width: `${share}%` }} />
-        {overall ? <u style={{ left: `${pct(overall)}%` }} title="Our overall average" /> : null}
-      </div>
-    </div>
-  );
-}
-
 function MatchView({ matchId, day, onBack }: { matchId: string; day: Day; onBack: () => void }) {
   const { data, error, loading } = useJson<MatchResearch>(`/api/watchlist/match/${matchId}`);
 
@@ -537,7 +507,7 @@ function MatchView({ matchId, day, onBack }: { matchId: string; day: Day; onBack
     );
   }
 
-  const { home, away, odds, form, h2h, table, record } = data;
+  const { home, away, odds, form, h2h, table } = data;
   const formSource = (f: TeamForm) =>
     f.source === "all" ? "all competitions" : data.league.name.split(" - ")[0];
 
@@ -779,17 +749,6 @@ function MatchView({ matchId, day, onBack }: { matchId: string; day: Day; onBack
                   })}
                 </tbody>
               </table>
-            </section>
-          ) : null}
-
-          {record.league && record.league.settled >= MIN_RECORD ? (
-            <section className="wl-sec">
-              <h3>Our live alerts in this league</h3>
-              <p className="wl-sub">
-                Last six months, settled alerts only.
-                {record.overall ? ` The line marks our overall average (${pct(record.overall)}%).` : ""}
-              </p>
-              <RecordLine label={data.league.name.split(" - ")[0]} record={record.league} overall={record.overall} />
             </section>
           ) : null}
 
