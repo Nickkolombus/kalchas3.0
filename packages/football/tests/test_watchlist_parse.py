@@ -5,6 +5,7 @@ from __future__ import annotations
 from kalchas_football.client import (
     FootballAPIClient,
     odds_markets_from_provider_rows,
+    parse_results,
     parse_standings_table,
     parse_team_fixtures,
     parse_upcoming_fixtures,
@@ -50,9 +51,9 @@ def test_parse_team_fixtures_keeps_goal_minutes_and_half_time() -> None:
     assert played["home_team"] == "Alpha" and played["league_id"] == 153
     assert (played["home_ht_score"], played["away_ht_score"]) == (1, 1)
     assert played["goal_events"] == [
-        {"minute": 7, "team": "home", "side": "home", "half": "1H"},
-        {"minute": 48, "team": "away", "side": "away", "half": "1H"},
-        {"minute": 94, "team": "home", "side": "home", "half": "2H"},
+        {"minute": 7, "team": "home", "side": "home", "half": "1H", "display": "7"},
+        {"minute": 48, "team": "away", "side": "away", "half": "1H", "display": "45+3"},
+        {"minute": 94, "team": "home", "side": "home", "half": "2H", "display": "90+4"},
     ]
     assert upcoming["home_ht_score"] is None and upcoming["goal_events"] == []
 
@@ -166,3 +167,59 @@ def test_missing_standings_read_as_an_empty_table(monkeypatch) -> None:
     client = FootballAPIClient(api_key="test-key")
     monkeypatch.setattr(client._client, "get", lambda *a, **k: Resp())
     assert client.get_standings_table(300) == []
+
+
+SHOOTOUT = {
+    "match_id": "7",
+    "match_status": "After Pen.",
+    "match_hometeam_score": "2",
+    "match_awayteam_score": "1",
+    "match_hometeam_halftime_score": "0",
+    "match_awayteam_halftime_score": "0",
+    "match_hometeam_extra_score": "0",
+    "match_awayteam_extra_score": "0",
+    "match_hometeam_penalty_score": "5",
+    "match_awayteam_penalty_score": "4",
+    "match_hometeam_ft_score": "1",
+    "match_awayteam_ft_score": "1",
+    "goalscorer": [
+        {"time": "63", "home_scorer": "", "away_scorer": "M", "score_info_time": "2nd Half"},
+        {"time": "90", "home_scorer": "K", "away_scorer": "", "score_info_time": "2nd Half"},
+        {"time": "1", "home_scorer": "", "away_scorer": "P", "score_info_time": "Penalty"},
+        {"time": "1", "home_scorer": "Q", "away_scorer": "", "score_info_time": "Penalty"},
+    ],
+}
+
+
+def test_results_judge_the_90_minutes_and_drop_shootout_kicks() -> None:
+    (row,) = parse_results([SHOOTOUT])
+    assert row["status_short"] == "PEN"
+    assert (row["home_90"], row["away_90"]) == (1, 1)
+    assert (row["home_final"], row["away_final"]) == (1, 1)
+    assert (row["home_pens"], row["away_pens"]) == (5, 4)
+    assert [g["display"] for g in row["goals"]] == ["63", "90"]
+
+
+def test_results_after_extra_time_keep_both_scores() -> None:
+    aet = {
+        **SHOOTOUT,
+        "match_status": "After ET",
+        "match_hometeam_score": "1",
+        "match_awayteam_score": "2",
+        "match_awayteam_extra_score": "1",
+        "goalscorer": [
+            {"time": "45+2", "home_scorer": "", "away_scorer": "H", "score_info_time": "1st Half"},
+            {"time": "67", "home_scorer": "Y", "away_scorer": "", "score_info_time": "2nd Half"},
+            {"time": "117", "home_scorer": "", "away_scorer": "M", "score_info_time": "Extra Time"},
+        ],
+    }
+    (row,) = parse_results([aet])
+    assert (row["home_90"], row["away_90"], row["home_final"], row["away_final"]) == (1, 1, 1, 2)
+    assert row["home_pens"] is None
+    assert [g["half"] for g in row["goals"]] == ["1H", "2H", "ET"]
+
+
+def test_shootouts_no_longer_inflate_form_scores() -> None:
+    (row,) = parse_team_fixtures([{**SHOOTOUT, "match_hometeam_id": "1", "match_awayteam_id": "2"}])
+    assert (row["home_score"], row["away_score"]) == (1, 1)
+    assert len(row["goal_events"]) == 2

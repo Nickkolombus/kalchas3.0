@@ -272,7 +272,8 @@ def test_research_page_and_list_row() -> None:
     assert row["headline"] == "Both teams to score looks likely."
     assert row["reason"].startswith("Both teams scored in all 10")
     assert row["odds"] == {"home": 1.95, "draw": 3.6, "away": 3.9}
-    assert "Both score" in row["tags"]
+    assert {"label": "Both score", "outcome": None} in row["tags"]
+    assert row["result"] is None and row["outcome"] is None and row["outcome_note"] == ""
 
 
 def test_cup_tie_from_all_competitions_uses_general_norms() -> None:

@@ -883,8 +883,8 @@ def parse_team_fixtures(data: Any) -> list[dict[str, Any]]:
                 "status_short": _parse_elapsed(row.get("match_status"))[1],
                 "home_team_id": home_id,
                 "away_team_id": away_id,
-                "home_score": _coerce_int(row.get("match_hometeam_score")),
-                "away_score": _coerce_int(row.get("match_awayteam_score")),
+                "home_score": _final_score(row, "home"),
+                "away_score": _final_score(row, "away"),
                 "home_team": str(row.get("match_hometeam_name") or ""),
                 "away_team": str(row.get("match_awayteam_name") or ""),
                 "home_ht_score": _optional_score(row.get("match_hometeam_halftime_score")),
@@ -896,6 +896,21 @@ def parse_team_fixtures(data: Any) -> list[dict[str, Any]]:
     return out
 
 
+def _final_score(row: dict[str, Any], side: str) -> int:
+    """Goals after 90 or 120 minutes. A shootout's ``match_*_score`` is not a
+    football score (5-4 on penalties after 1-1 can read 2-1), so those rows are
+    rebuilt from the 90-minute and extra-time scores."""
+    team = "hometeam" if side == "home" else "awayteam"
+    if str(row.get("match_status") or "").strip() == "After Pen.":
+        ft = _optional_score(row.get(f"match_{team}_ft_score"))
+        if ft is not None:
+            return ft + (_optional_score(row.get(f"match_{team}_extra_score")) or 0)
+    return _coerce_int(row.get(f"match_{team}_score"))
+
+
+_SCORE_INFO_HALF = {"1st Half": "1H", "2nd Half": "2H", "Extra Time": "ET"}
+
+
 def _h2h_goal_events(row: dict[str, Any]) -> list[dict[str, Any]]:
     raw = row.get("goalscorer") or row.get("goal_events") or []
     if not isinstance(raw, list):
@@ -904,15 +919,77 @@ def _h2h_goal_events(row: dict[str, Any]) -> list[dict[str, Any]]:
     for item in raw:
         if not isinstance(item, dict):
             continue
-        minute, half, _display = _parse_elapsed(item.get("time") or item.get("minute"))
+        period = str(item.get("score_info_time") or "").strip()
+        if period == "Penalty":
+            continue  # shootout kicks, timed "1".."5"
+        minute, half, display = _parse_elapsed(item.get("time") or item.get("minute"))
         if minute <= 0:
             continue
         home_scorer = str(item.get("home_scorer") or "").strip()
         away_scorer = str(item.get("away_scorer") or "").strip()
         side = "home" if home_scorer else "away" if away_scorer else str(item.get("team") or "")
         # `half` keeps 45+3 in the first half although its minute reads 48.
-        events.append({"minute": minute, "team": side, "side": side, "half": half})
+        events.append(
+            {
+                "minute": minute,
+                "team": side,
+                "side": side,
+                "half": _SCORE_INFO_HALF.get(period, half),
+                "display": display or str(minute),
+            }
+        )
     return events
+
+
+FINISHED_STATUS = frozenset({"FT", "AET", "PEN"})
+
+
+def parse_results(data: Any) -> list[dict[str, Any]]:
+    """``get_events`` for a day as results: the 90-minute score the
+    watchlist's patterns are judged on, the score after extra time, any
+    shootout, and the goal times. Rows of any status come back; the caller
+    decides what counts as finished."""
+    rows = data if isinstance(data, list) else []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        match_id = str(row.get("match_id") or "").strip()
+        if not match_id:
+            continue
+        status = _parse_elapsed(row.get("match_status"))[1]
+        final = {side: _final_score(row, side) for side in ("home", "away")}
+        regular = {
+            side: _optional_score(
+                row.get(f"match_{'hometeam' if side == 'home' else 'awayteam'}_ft_score")
+            )
+            for side in ("home", "away")
+        }
+        if status == "FT" or regular["home"] is None or regular["away"] is None:
+            regular = dict(final) if status == "FT" else {"home": None, "away": None}
+        pens = {
+            side: _optional_score(
+                row.get(f"match_{'hometeam' if side == 'home' else 'awayteam'}_penalty_score")
+            )
+            for side in ("home", "away")
+        }
+        out.append(
+            {
+                "match_id": match_id,
+                "status_short": status,
+                "match_status": str(row.get("match_status") or ""),
+                "home_90": regular["home"],
+                "away_90": regular["away"],
+                "home_final": final["home"],
+                "away_final": final["away"],
+                "home_ht": _optional_score(row.get("match_hometeam_halftime_score")),
+                "away_ht": _optional_score(row.get("match_awayteam_halftime_score")),
+                "home_pens": pens["home"] if status == "PEN" else None,
+                "away_pens": pens["away"] if status == "PEN" else None,
+                "goals": _h2h_goal_events(row),
+            }
+        )
+    return out
 
 
 class FootballAPIClient:
@@ -1174,6 +1251,11 @@ class FootballAPIClient:
         """Every fixture on one calendar day, times in ``timezone`` (``+03:00``)."""
         data = self._get("get_events", {"from": day, "to": day, "timezone": timezone})
         return parse_upcoming_fixtures(data)
+
+    def get_results_on(self, day: str, *, timezone: str) -> list[dict[str, Any]]:
+        """The same day's fixtures as results (``parse_results``), for settling."""
+        data = self._get("get_events", {"from": day, "to": day, "timezone": timezone})
+        return parse_results(data)
 
     def get_odds_markets_on(self, day: str) -> dict[str, dict[str, float]]:
         """One ``get_odds`` call for a day: 1X2, Over/Under 2.5 and BTTS prices."""

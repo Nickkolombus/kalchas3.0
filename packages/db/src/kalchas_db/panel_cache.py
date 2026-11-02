@@ -65,6 +65,31 @@ def save_panel_cache(dsn: str, cache_key: str, payload: dict[str, Any]) -> None:
         )
 
 
+FRESH_BY_PREFIX = text(
+    """
+    SELECT payload
+    FROM panel_cache
+    WHERE cache_key LIKE :pattern
+      AND cached_at > NOW() - make_interval(hours => :hours)
+    """
+)
+
+
+def load_panel_cache_prefix(dsn: str, prefix: str, *, hours: int) -> list[dict[str, Any]]:
+    """Every fresh payload whose key starts with `prefix`."""
+    eng = sync_engine(dsn)
+    with eng.connect() as conn:
+        rows = conn.execute(FRESH_BY_PREFIX, {"pattern": f"{prefix}%", "hours": int(hours)})
+        payloads = [r["payload"] for r in rows.mappings().all()]
+    out: list[dict[str, Any]] = []
+    for payload in payloads:
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        if isinstance(payload, dict):
+            out.append(dict(payload))
+    return out
+
+
 DELETE_OLDER = text(
     """
     DELETE FROM panel_cache

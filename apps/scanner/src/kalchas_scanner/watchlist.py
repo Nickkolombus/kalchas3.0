@@ -1,4 +1,4 @@
-"""Builds today's and tomorrow's pre-match watchlist into ``panel_cache``.
+"""Builds today's and tomorrow's pre-match watchlist, then settles it.
 
 Runs on its own thread with its own API client and hourly budget, so a slow
 build never holds up the live scan. Covers the matches bookmakers price (one
@@ -7,9 +7,14 @@ than per team, which is what keeps a busy Saturday inside the budget; teams
 with too few games in that competition (cup ties, European nights) fall back
 to their own fixtures across all competitions.
 
-Every provider read is cached, so a rebuild every few hours mostly reuses
-what the last one fetched and refreshes odds. The API only reads the rows
-this writes: ``watchlist_day_<date>`` and ``watchlist_match_<id>``.
+Every provider read is cached in ``panel_cache``, so a rebuild every few
+hours mostly reuses what the last one fetched and refreshes odds.
+
+Pages go to the permanent archive (``kalchas_db.watchlist``), which the API
+reads. A match's page is frozen at kick-off: later rebuilds leave it alone,
+so the list a visitor saw before the game is the one it is judged on. After
+full time one ``get_events`` call per day brings the scores, and each
+pattern is marked landed or missed (``kalchas_core.watchlist.results``).
 
 Dry run against the real provider, no database:
 ``uv run --env-file .env python -m kalchas_scanner.watchlist --day tomorrow``
@@ -30,23 +35,32 @@ from typing import Any, Protocol
 
 from kalchas_core.h2h import DEFAULT_LAST, build_h2h_payload, orient_h2h_payload
 from kalchas_core.watchlist import (
+    NO_RESULT,
     TeamProfile,
+    assemble_day,
     build_match_research,
     build_team_profile,
+    is_settled,
     league_norms,
-    list_row,
-    shortlist,
+    match_result,
+    settle_page,
 )
 from kalchas_football import FootballAPIClient, RateLimitBudgetExceeded
 
 logger = logging.getLogger("kalchas.scanner.watchlist")
 
 REBUILD_SEC = 3 * 3600
+SETTLE_SEC = 15 * 60
+SETTLE_AFTER = timedelta(minutes=110)
+"""Kick-off plus this and a match should be over; only then is it looked up."""
+SETTLE_DAYS = 3
+"""Days back still checked for results (late finishes, slow provider data)."""
+GIVE_UP_AFTER = timedelta(hours=48)
+"""Still no result this long after kick-off: the match is marked "No result"."""
 LEAGUE_HISTORY_HOURS = 12
 TEAM_HISTORY_HOURS = 12
 TABLE_HOURS = 6
 SHORT_H2H_HOURS = 24
-PAGE_TTL_HOURS = 48
 KEEP_HOURS = 72
 HISTORY_DAYS = 120
 RECORD_DAYS = 180
@@ -55,14 +69,8 @@ MIN_COMPETITION_GAMES = 6
 
 SKIP_STATUS = frozenset({"FT", "AET", "PEN", "PST", "CANC", "AWD"})
 DEFAULT_TIMEZONE = "+03:00"
-
-
-def day_cache_key(day: str) -> str:
-    return f"watchlist_day_{day}"
-
-
-def match_cache_key(match_id: str) -> str:
-    return f"watchlist_match_{match_id}"
+LEGACY_MATCH_PREFIX = "watchlist_match_"
+"""Pages from before the archive, held in ``panel_cache`` for 72 hours."""
 
 
 def tz_from_offset(offset: str) -> timezone:
@@ -79,6 +87,18 @@ def kickoff_iso(fixture: Mapping[str, Any], offset: str) -> str:
     if not re.fullmatch(r"\d{2}:\d{2}", clock):
         clock = "00:00"
     return f"{day}T{clock}:00{offset}"
+
+
+def kickoff_at(page: Mapping[str, Any]) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(page.get("kickoff") or ""))
+    except ValueError:
+        return None
+
+
+def has_started(page: Mapping[str, Any], now: datetime) -> bool:
+    at = kickoff_at(page)
+    return at is not None and at <= now
 
 
 class Cache(Protocol):
@@ -115,11 +135,69 @@ class MemoryCache:
         self.rows[key] = payload
 
 
+class Store(Protocol):
+    """Where match pages and day lists are kept for good."""
+
+    def pages_on(self, day: str) -> list[dict[str, Any]]: ...
+
+    def save_page(self, day: str, page: dict[str, Any]) -> None: ...
+
+    def drop_page(self, match_id: str) -> None: ...
+
+    def save_day(self, day: str, doc: dict[str, Any]) -> None: ...
+
+
+class ArchiveStore:
+    def __init__(self, dsn: str) -> None:
+        self.dsn = dsn
+
+    def pages_on(self, day: str) -> list[dict[str, Any]]:
+        from kalchas_db.watchlist import load_watchlist_matches_on
+
+        return load_watchlist_matches_on(self.dsn, day)
+
+    def save_page(self, day: str, page: dict[str, Any]) -> None:
+        from kalchas_db.watchlist import save_watchlist_match
+
+        save_watchlist_match(self.dsn, day, page, settled=is_settled(page))
+
+    def drop_page(self, match_id: str) -> None:
+        from kalchas_db.watchlist import delete_watchlist_match
+
+        delete_watchlist_match(self.dsn, match_id)
+
+    def save_day(self, day: str, doc: dict[str, Any]) -> None:
+        from kalchas_db.watchlist import save_watchlist_day
+
+        save_watchlist_day(self.dsn, day, doc)
+
+
+class MemoryStore:
+    """For dry runs and tests."""
+
+    def __init__(self) -> None:
+        self.pages: dict[str, tuple[str, dict[str, Any]]] = {}
+        self.days: dict[str, dict[str, Any]] = {}
+
+    def pages_on(self, day: str) -> list[dict[str, Any]]:
+        return [page for d, page in self.pages.values() if d == day]
+
+    def save_page(self, day: str, page: dict[str, Any]) -> None:
+        self.pages[str(page["match_id"])] = (day, page)
+
+    def drop_page(self, match_id: str) -> None:
+        self.pages.pop(match_id, None)
+
+    def save_day(self, day: str, doc: dict[str, Any]) -> None:
+        self.days[day] = doc
+
+
 Records = tuple[dict[tuple[str, str], dict[str, int]], dict[str, int] | None]
 
 
 def load_records(dsn: str, now: datetime | None = None) -> Records:
-    """Our settled alerts per (country, league) and overall, last `RECORD_DAYS`."""
+    """Our settled alerts per (country, league) and overall, last `RECORD_DAYS`.
+    Kept on each page for internal use; the public API leaves them out."""
     from kalchas_db.alerts import alert_record_by_league_sync
 
     since = (now or datetime.now(UTC)) - timedelta(days=RECORD_DAYS)
@@ -136,17 +214,23 @@ def load_records(dsn: str, now: datetime | None = None) -> Records:
     return by_league, overall
 
 
+def _latest_build(pages: list[dict[str, Any]]) -> str:
+    return max((str(p.get("built_at") or "") for p in pages), default="")
+
+
 class WatchlistBuilder:
     def __init__(
         self,
         client: FootballAPIClient,
         cache: Cache,
+        store: Store,
         *,
         offset: str = DEFAULT_TIMEZONE,
         records: Callable[[], Records] | None = None,
     ) -> None:
         self.client = client
         self.cache = cache
+        self.store = store
         self.offset = offset
         self.records = records
 
@@ -264,18 +348,38 @@ class WatchlistBuilder:
     # -------------------------------------------------------------- build
 
     def build_day(self, day: date, *, now: datetime | None = None) -> dict[str, Any] | None:
+        """(Re)build the pages of matches still to kick off, keep the ones
+        that have started exactly as they were, and write the day's list."""
         day_str = day.isoformat()
-        built_at = (now or datetime.now(UTC)).isoformat()
+        now = now or datetime.now(UTC)
+        built_at = now.isoformat()
         try:
             fixtures = self.client.get_fixtures_on(day_str, timezone=self.offset)
             odds_by_match = self.client.get_odds_markets_on(day_str)
         except RateLimitBudgetExceeded:
             logger.warning("watchlist %s: budget spent before fixtures", day_str)
             return None
-        fixtures = [
-            fx
+
+        stored = {str(p["match_id"]): p for p in self.store.pages_on(day_str)}
+        frozen = {mid for mid, page in stored.items() if has_started(page, now)}
+        priced = {
+            fx["match_id"]: fx
             for fx in fixtures
             if fx["match_id"] in odds_by_match and fx.get("status_short") not in SKIP_STATUS
+        }
+        for mid in set(stored) - frozen - set(priced):
+            # Lost its price, or moved to another day, before kick-off.
+            try:
+                self.store.drop_page(mid)
+            except Exception:
+                logger.exception("watchlist: could not drop %s", mid)
+            stored.pop(mid, None)
+        # Only matches still to kick off are (re)built: a pick made after
+        # kick-off is not a pick, and a frozen page is what gets judged.
+        upcoming = [
+            fx
+            for mid, fx in priced.items()
+            if mid not in frozen and not has_started({"kickoff": kickoff_iso(fx, self.offset)}, now)
         ]
 
         records: Records = ({}, None)
@@ -288,25 +392,20 @@ class WatchlistBuilder:
 
         histories: dict[int, list[dict[str, Any]] | None] = {}
         tables: dict[int, list[dict[str, Any]]] = {}
-        rows: list[dict[str, Any]] = []
-        leagues: dict[str, dict[str, Any]] = {}
         partial = False
 
-        for fx in sorted(fixtures, key=lambda f: (f["match_time"], f["match_id"])):
+        for fx in sorted(upcoming, key=lambda f: (f["match_time"], f["match_id"])):
             league_id = int(fx.get("league_id") or 0)
             if league_id not in histories:
                 histories[league_id] = self._league_history(league_id)
                 tables[league_id] = self._table(league_id)
             history = histories[league_id]
             if history is None:
-                partial = True
+                partial = True  # the last good page, if there is one, stays
                 continue
 
             home, home_source = self._profile(history, fx["home_team_id"], fx["home_team"])
             away, away_source = self._profile(history, fx["away_team_id"], fx["away_team"])
-            league_key = f"{league_id}:{fx['league_name']}"
-            record = by_league_record.get((fx["country_name"], fx["league_name"]))
-
             research = build_match_research(
                 fx,
                 kickoff=kickoff_iso(fx, self.offset),
@@ -318,68 +417,126 @@ class WatchlistBuilder:
                 odds=odds_by_match.get(fx["match_id"]),
                 h2h=self._h2h(fx),
                 table=tables[league_id],
-                league_record=record,
+                league_record=by_league_record.get((fx["country_name"], fx["league_name"])),
                 overall_record=overall,
             )
             research["day"] = day_str
             research["built_at"] = built_at
+            research["result"] = None
             try:
-                self.cache.save(match_cache_key(fx["match_id"]), research)
+                self.store.save_page(day_str, research)
             except Exception:
                 logger.exception("watchlist: could not store %s", fx["match_id"])
                 partial = True
                 continue
+            stored[fx["match_id"]] = research
 
-            rows.append(list_row(research, league_key))
-            league = leagues.setdefault(
-                league_key,
-                {
-                    "key": league_key,
-                    "name": fx["league_name"],
-                    "country": fx["country_name"],
-                    "logo": fx.get("league_logo") or None,
-                    "record": research["record"]["league"],
-                    "match_ids": [],
-                },
-            )
-            league["match_ids"].append(fx["match_id"])
-
-        rows.sort(key=lambda r: (r["kickoff"], r["match_id"]))
-        ordered = sorted(
-            leagues.values(),
-            key=lambda lg: (
-                -max((r["score"] for r in rows if r["league_key"] == lg["key"]), default=0)
-            ),
+        doc = assemble_day(
+            day_str, list(stored.values()), built_at=built_at, timezone=self.offset, partial=partial
         )
-        doc = {
-            "day": day_str,
-            "built_at": built_at,
-            "timezone": self.offset,
-            "partial": partial,
-            "matches": rows,
-            "leagues": ordered,
-            "shortlist": shortlist(rows),
-            "overall_record": overall,
-        }
-        self.cache.save(day_cache_key(day_str), doc)
+        self.store.save_day(day_str, doc)
         logger.info(
-            "watchlist %s: %s matches in %s leagues%s",
+            "watchlist %s: %s matches in %s leagues, %s already started%s",
             day_str,
-            len(rows),
-            len(ordered),
+            len(doc["matches"]),
+            len(doc["leagues"]),
+            len(frozen),
             " (partial)" if partial else "",
         )
         return doc
 
+    # ------------------------------------------------------------- settle
+
+    def settle_day(self, day: date, *, now: datetime | None = None) -> int:
+        """Give finished matches their score and each pattern its outcome.
+
+        One provider call, made only when a listed match should be over and
+        is not settled yet. Returns how many pages it settled."""
+        day_str = day.isoformat()
+        now = now or datetime.now(UTC)
+        pages = self.store.pages_on(day_str)
+        due = [
+            p
+            for p in pages
+            if not is_settled(p) and (at := kickoff_at(p)) is not None and at + SETTLE_AFTER <= now
+        ]
+        if not due:
+            return 0
+        try:
+            rows = self.client.get_results_on(day_str, timezone=self.offset)
+        except RateLimitBudgetExceeded:
+            logger.warning("watchlist %s: budget spent before results", day_str)
+            return 0
+        results = {str(r["match_id"]): r for r in rows}
+
+        by_id = {str(p["match_id"]): p for p in pages}
+        settled = 0
+        for page in due:
+            row = results.get(str(page["match_id"]))
+            result = match_result(row) if row else None
+            if result is None and (at := kickoff_at(page)) and at + GIVE_UP_AFTER <= now:
+                result = dict(NO_RESULT)
+            if result is None:
+                continue
+            done = settle_page(page, result)
+            try:
+                self.store.save_page(day_str, done)
+            except Exception:
+                logger.exception("watchlist: could not settle %s", page["match_id"])
+                continue
+            by_id[str(page["match_id"])] = done
+            settled += 1
+        if settled:
+            pages = list(by_id.values())
+            doc = assemble_day(day_str, pages, built_at=_latest_build(pages), timezone=self.offset)
+            self.store.save_day(day_str, doc)
+            logger.info("watchlist %s: settled %s matches", day_str, settled)
+        return settled
+
+    def adopt(self, pages: list[dict[str, Any]]) -> list[str]:
+        """Copy pages built before the archive into it, for days the archive
+        has nothing on yet. Returns the days it filled."""
+        by_day: dict[str, list[dict[str, Any]]] = {}
+        for page in pages:
+            if page.get("day") and page.get("match_id"):
+                by_day.setdefault(str(page["day"]), []).append({"result": None, **page})
+        filled: list[str] = []
+        for day_str, day_pages in sorted(by_day.items()):
+            if self.store.pages_on(day_str):
+                continue
+            for page in day_pages:
+                self.store.save_page(day_str, page)
+            doc = assemble_day(
+                day_str, day_pages, built_at=_latest_build(day_pages), timezone=self.offset
+            )
+            self.store.save_day(day_str, doc)
+            filled.append(day_str)
+        return filled
+
 
 class WatchlistJob:
     """Rebuilds today and tomorrow every `REBUILD_SEC`, and as soon as the
-    date rolls over in the board's time zone."""
+    date rolls over in the board's time zone. Settles results every
+    `SETTLE_SEC`."""
 
     def __init__(self, builder: WatchlistBuilder, *, dsn: str | None) -> None:
         self.builder = builder
         self.dsn = dsn
         self.zone = tz_from_offset(builder.offset)
+
+    def adopt_legacy(self) -> None:
+        """Days built before the archive existed keep their list."""
+        if not self.dsn:
+            return
+        try:
+            from kalchas_db.panel_cache import load_panel_cache_prefix
+
+            pages = load_panel_cache_prefix(self.dsn, LEGACY_MATCH_PREFIX, hours=KEEP_HOURS)
+            filled = self.builder.adopt(pages)
+            if filled:
+                logger.info("watchlist: archived earlier days %s", ", ".join(filled))
+        except Exception:
+            logger.exception("watchlist: adopting earlier pages failed")
 
     def run_once(self) -> None:
         today = datetime.now(self.zone).date()
@@ -397,14 +554,27 @@ class WatchlistJob:
             except Exception:
                 logger.exception("watchlist cleanup failed")
 
+    def settle_once(self) -> None:
+        today = datetime.now(self.zone).date()
+        for back in range(SETTLE_DAYS, -1, -1):
+            day = today - timedelta(days=back)
+            try:
+                self.builder.settle_day(day)
+            except Exception:
+                logger.exception("watchlist settle failed for %s", day)
+
     def run_forever(self) -> None:
+        self.adopt_legacy()
         last_day: date | None = None
-        last_run = 0.0
+        last_run = last_settle = float("-inf")
         while True:
             today = datetime.now(self.zone).date()
             if today != last_day or time.monotonic() - last_run >= REBUILD_SEC:
                 self.run_once()
                 last_day, last_run = today, time.monotonic()
+            if time.monotonic() - last_settle >= SETTLE_SEC:
+                self.settle_once()
+                last_settle = time.monotonic()
             time.sleep(60)
 
     def start(self) -> threading.Thread:
@@ -426,6 +596,7 @@ def start_watchlist_thread() -> threading.Thread | None:
     builder = WatchlistBuilder(
         client,
         PanelCache(dsn),
+        ArchiveStore(dsn),
         offset=os.environ.get("FOOTBALL_TIMEZONE", DEFAULT_TIMEZONE),
         records=lambda: load_records(dsn),
     )
@@ -449,15 +620,17 @@ def main() -> None:
         with open(args.cache_file, encoding="utf-8") as fh:
             stored = json.load(fh)
     cache = MemoryCache(stored)
+    store = MemoryStore()
     with FootballAPIClient() as client:
-        doc = WatchlistBuilder(client, cache, offset=offset).build_day(day)
+        doc = WatchlistBuilder(client, cache, store, offset=offset).build_day(day)
     if args.cache_file:
         with open(args.cache_file, "w", encoding="utf-8") as fh:
             json.dump(cache.rows, fh)
     if not doc:
         return
     if args.match:
-        print(json.dumps(cache.rows.get(match_cache_key(args.match)), indent=2))
+        page = store.pages.get(args.match)
+        print(json.dumps(page[1] if page else None, indent=2))
         return
     by_id = {r["match_id"]: r for r in doc["matches"]}
     print(f"\n{doc['day']}: {len(doc['matches'])} matches. Shortlist:")
@@ -471,9 +644,10 @@ def main() -> None:
     print("\nlevels:", levels)
     print("\nall, best first:")
     for row in sorted(doc["matches"], key=lambda r: -r["score"]):
+        tags = ", ".join(t["label"] for t in row["tags"])
         print(
             f"  {row['score']:.2f} {row['watch']:<6} {row['home']['name']} v "
-            f"{row['away']['name']} | {', '.join(row['tags'])}"
+            f"{row['away']['name']} | {tags}"
         )
 
 

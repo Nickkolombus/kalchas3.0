@@ -1,4 +1,5 @@
-"""Pre-match watchlist: team profiles, ranked patterns and page payloads."""
+"""Pre-match watchlist: team profiles, ranked patterns, page payloads and,
+after full time, how each pattern went."""
 
 from kalchas_core.watchlist.patterns import (
     PATTERN_ROWS,
@@ -21,15 +22,26 @@ from kalchas_core.watchlist.profile import (
     timing_bucket,
 )
 from kalchas_core.watchlist.research import (
+    assemble_day,
     build_match_research,
+    league_key,
     league_label,
     list_row,
     shortlist,
     table_slice,
     timing_note,
 )
+from kalchas_core.watchlist.results import (
+    NO_RESULT,
+    day_summary,
+    is_settled,
+    match_result,
+    settle,
+    settle_page,
+)
 
 __all__ = [
+    "NO_RESULT",
     "PATTERN_ROWS",
     "PROFILE_WINDOW",
     "TIMING_LABELS",
@@ -37,14 +49,21 @@ __all__ = [
     "Pattern",
     "PlayedGame",
     "TeamProfile",
+    "assemble_day",
     "build_match_research",
     "build_team_profile",
+    "day_summary",
     "is_played",
+    "is_settled",
+    "league_key",
     "league_label",
     "league_norms",
     "list_row",
     "match_patterns",
+    "match_result",
     "pattern_table",
+    "settle",
+    "settle_page",
     "shortlist",
     "table_slice",
     "team_games",

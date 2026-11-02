@@ -1,9 +1,19 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import kalchasMark from "./assets/kalchas-mark.png";
 
 type Watch = "strong" | "look" | "quiet";
-type Day = "today" | "tomorrow";
+type Outcome = "landed" | "missed";
+type DayKey = string; // "today" | "tomorrow" | "YYYY-MM-DD"
 type TeamRef = { name: string; badge?: string | null; position?: number | null };
+type Tally = { landed: number; settled: number };
+
+type RowResult = {
+  status: "finished" | "off";
+  label: string;
+  home?: number | null;
+  away?: number | null;
+  pens?: number[] | null;
+};
 
 type WatchRow = {
   match_id: string;
@@ -16,7 +26,10 @@ type WatchRow = {
   score: number;
   headline: string;
   reason: string;
-  tags: string[];
+  tags: { label: string; outcome?: Outcome | null }[];
+  result?: RowResult | null;
+  outcome?: Outcome | null;
+  outcome_note?: string;
 };
 
 type LeagueGroup = {
@@ -27,17 +40,47 @@ type LeagueGroup = {
   match_ids: string[];
 };
 
+type DaySummary = {
+  matches: number;
+  strong: number;
+  look: number;
+  finished: number;
+  called_off: number;
+  top: Tally;
+  strong_tally: Tally;
+  look_tally: Tally;
+};
+
 type WatchlistDay = {
-  status: "ready" | "preparing";
+  status: "ready" | "preparing" | "none";
   day: string;
+  today: string;
+  first_day?: string | null;
   built_at?: string | null;
   partial: boolean;
   matches: WatchRow[];
   leagues: LeagueGroup[];
   shortlist: string[];
+  summary?: DaySummary | null;
 };
 
-type PatternOut = { key: string; tag: string; title: string; detail: string; brief: string; score: number };
+type WatchlistMonth = {
+  month: string;
+  today: string;
+  first_day?: string | null;
+  days: { day: string; summary: DaySummary }[];
+};
+
+type PatternOut = {
+  key: string;
+  tag: string;
+  title: string;
+  detail: string;
+  brief: string;
+  score: number;
+  outcome?: Outcome | null;
+  outcome_note?: string;
+};
 type Count = { count: number; n: number };
 type PatternRow = {
   key: string;
@@ -69,6 +112,13 @@ type TeamForm = {
   results: FormGame[];
 };
 type TimingSide = { games: number; of: number; scored: number[]; conceded: number[] };
+type MatchResult = RowResult & {
+  home_90?: number | null;
+  away_90?: number | null;
+  ht?: number[] | null;
+  timed?: boolean;
+  goals?: { time: string; half: string; side: string }[];
+};
 type MatchResearch = {
   match_id: string;
   day: string;
@@ -104,6 +154,7 @@ type MatchResearch = {
     meetings: { match_date: string; home_team: string; away_team: string; home_score: number; away_score: number }[];
   } | null;
   table: { position: number; team_id: number; team: string; played: number; goal_difference: number; points: number }[];
+  result?: MatchResult | null;
 };
 
 const WATCH_LABEL: { [K in Watch]: string } = {
@@ -112,22 +163,53 @@ const WATCH_LABEL: { [K in Watch]: string } = {
   quiet: "Quiet",
 };
 
-type Route = { day: Day; matchId: string | null };
+/* ---------------------------------------------------------------- routes */
+
+type Route =
+  | { view: "day"; day: DayKey }
+  | { view: "match"; day: DayKey; matchId: string }
+  | { view: "calendar"; month: string | null };
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_MONTH = /^\d{4}-\d{2}$/;
 
 function parseRoute(pathname: string): Route {
   const parts = pathname.replace(/\/+$/, "").split("/").filter(Boolean);
-  const head = parts[0] === "today" ? "today" : "tomorrow";
-  const id = parts[1] && /^\d+$/.test(parts[1]) ? parts[1] : null;
-  return { day: head, matchId: id };
+  if (parts[0] === "calendar") {
+    return { view: "calendar", month: parts[1] && ISO_MONTH.test(parts[1]) ? parts[1] : null };
+  }
+  const day = parts[0] === "today" || parts[0] === "tomorrow" || ISO_DAY.test(parts[0] ?? "") ? parts[0] : "tomorrow";
+  if (parts[1] && /^\d+$/.test(parts[1])) return { view: "match", day, matchId: parts[1] };
+  return { view: "day", day };
 }
 
 function routePath(route: Route): string {
-  return route.matchId ? `/${route.day}/${route.matchId}` : `/${route.day}`;
+  if (route.view === "calendar") return route.month ? `/calendar/${route.month}` : "/calendar";
+  if (route.view === "match") return `/${route.day}/${route.matchId}`;
+  return `/${route.day}`;
 }
 
 export function isWatchlistPath(pathname: string): boolean {
-  return /^\/(today|tomorrow)(\/\d+)?\/?$/.test(pathname);
+  return (
+    /^\/(today|tomorrow|\d{4}-\d{2}-\d{2})(\/\d+)?\/?$/.test(pathname) ||
+    /^\/calendar(\/\d{4}-\d{2})?\/?$/.test(pathname)
+  );
 }
+
+function addDays(iso: string, days: number): string {
+  const at = new Date(`${iso}T12:00:00Z`);
+  at.setUTCDate(at.getUTCDate() + days);
+  return at.toISOString().slice(0, 10);
+}
+
+/** "today" / "tomorrow" for those two dates, so their links stay friendly. */
+function dayKey(iso: string, today: string): DayKey {
+  if (iso === today) return "today";
+  if (iso === addDays(today, 1)) return "tomorrow";
+  return iso;
+}
+
+/* -------------------------------------------------------------- helpers */
 
 function clock(iso: string): string {
   const at = new Date(iso);
@@ -141,10 +223,27 @@ function dayLabel(iso: string): string {
   return at.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
 }
 
+function longDay(iso: string): string {
+  const at = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(at.getTime())) return iso;
+  return at.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
+}
+
 function shortDate(iso: string): string {
   const at = new Date(`${iso}T12:00:00`);
   if (Number.isNaN(at.getTime())) return iso;
   return at.toLocaleDateString([], { day: "numeric", month: "short", year: "2-digit" });
+}
+
+function monthLabel(month: string): string {
+  const at = new Date(`${month}-15T12:00:00`);
+  return at.toLocaleDateString([], { month: "long", year: "numeric" });
+}
+
+function addMonths(month: string, n: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const at = new Date(Date.UTC(y, m - 1 + n, 15));
+  return at.toISOString().slice(0, 7);
 }
 
 function price(value?: number | null): string {
@@ -152,13 +251,106 @@ function price(value?: number | null): string {
 }
 
 function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
+  return `${n} ${word}${n === 1 ? "" : /(ch|sh|s|x)$/.test(word) ? "es" : "s"}`;
 }
 
 function ordinal(n: number): string {
   const tail = n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as { [k: number]: string })[n % 10] ?? "th";
   return `${n}${tail}`;
 }
+
+function addTally(a: Tally, b: Tally): Tally {
+  return { landed: a.landed + b.landed, settled: a.settled + b.settled };
+}
+
+function scoreText(r: RowResult): string {
+  return r.home != null && r.away != null ? `${r.home}–${r.away}` : "";
+}
+
+function resultLabel(r: RowResult): string {
+  if (r.status === "off") return r.label;
+  if (r.label === "Pens" && r.pens) return `Pens ${r.pens[0]}–${r.pens[1]}`;
+  return r.label;
+}
+
+function isTyping(event: KeyboardEvent): boolean {
+  const el = event.target as HTMLElement | null;
+  return Boolean(el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)));
+}
+
+/* ------------------------------------------------------------ data cache */
+
+/**
+ * Every response is kept for the visit, so going back, stepping days or
+ * flicking between matches shows the page at once. Anything older than a
+ * minute is shown as it is and quietly refreshed.
+ */
+type Entry = { at: number; data?: unknown; promise?: Promise<unknown> };
+const responses = new Map<string, Entry>();
+const FRESH_MS = 60_000;
+
+function load<T>(url: string): Promise<T> {
+  const hit = responses.get(url);
+  if (hit?.promise) return hit.promise as Promise<T>;
+  if (hit && hit.data !== undefined && Date.now() - hit.at < FRESH_MS) return Promise.resolve(hit.data as T);
+  const entry: Entry = { at: Date.now(), data: hit?.data };
+  entry.promise = fetch(url)
+    .then(async (res) => {
+      if (!res.ok) throw new Error(res.status === 404 ? "not_found" : `HTTP ${res.status}`);
+      return res.json();
+    })
+    .then((data) => {
+      entry.data = data;
+      entry.at = Date.now();
+      entry.promise = undefined;
+      return data;
+    })
+    .catch((err) => {
+      entry.promise = undefined;
+      if (entry.data === undefined) responses.delete(url);
+      throw err;
+    });
+  responses.set(url, entry);
+  return entry.promise as Promise<T>;
+}
+
+function prefetch(url: string): void {
+  load(url).catch(() => undefined);
+}
+
+function cached<T>(url: string | null): T | null {
+  const hit = url ? responses.get(url) : undefined;
+  return hit && hit.data !== undefined ? (hit.data as T) : null;
+}
+
+function useJson<T>(url: string | null): { data: T | null; error: string | null; loading: boolean } {
+  const [state, setState] = useState(() => {
+    const data = cached<T>(url);
+    return { url, data, error: null as string | null, loading: Boolean(url) && !data };
+  });
+  let view = state;
+  if (state.url !== url) {
+    const data = cached<T>(url);
+    view = { url, data, error: null, loading: Boolean(url) && !data };
+    setState(view);
+  }
+  useEffect(() => {
+    if (!url) return;
+    let alive = true;
+    load<T>(url)
+      .then((data) => alive && setState({ url, data, error: null, loading: false }))
+      .catch(
+        (err: Error) =>
+          alive && setState((prev) => ({ url, data: prev.url === url ? prev.data : null, error: err.message, loading: false })),
+      );
+    return () => {
+      alive = false;
+    };
+  }, [url]);
+  return { data: view.data, error: view.data ? null : view.error, loading: view.loading };
+}
+
+/* ---------------------------------------------------------- small parts */
 
 function Crest({ src, name, size = 18 }: { src?: string | null; name: string; size?: number }) {
   const [broken, setBroken] = useState(false);
@@ -170,15 +362,7 @@ function Crest({ src, name, size = 18 }: { src?: string | null; name: string; si
     );
   }
   return (
-    <img
-      className="wl-crest"
-      src={src}
-      alt=""
-      width={size}
-      height={size}
-      loading="lazy"
-      onError={() => setBroken(true)}
-    />
+    <img className="wl-crest" src={src} alt="" width={size} height={size} loading="lazy" onError={() => setBroken(true)} />
   );
 }
 
@@ -191,37 +375,200 @@ function WatchMark({ watch }: { watch: Watch }) {
   );
 }
 
-function useJson<T>(url: string | null): { data: T | null; error: string | null; loading: boolean } {
-  const [state, setState] = useState<{ data: T | null; error: string | null; loading: boolean }>({
-    data: null,
-    error: null,
-    loading: Boolean(url),
-  });
-  useEffect(() => {
-    if (!url) return;
-    let alive = true;
-    setState({ data: null, error: null, loading: true });
-    fetch(url)
-      .then(async (res) => {
-        if (!res.ok) throw new Error(res.status === 404 ? "not_found" : `HTTP ${res.status}`);
-        return (await res.json()) as T;
-      })
-      .then((data) => alive && setState({ data, error: null, loading: false }))
-      .catch((err: Error) => alive && setState({ data: null, error: err.message, loading: false }));
-    return () => {
-      alive = false;
-    };
-  }, [url]);
-  return state;
+function OutcomeMark({ outcome }: { outcome?: Outcome | null }) {
+  if (!outcome) return null;
+  return <span className={`wl-out is-${outcome}`}>{outcome === "landed" ? "Landed" : "Missed"}</span>;
+}
+
+function Tag({ label, outcome }: { label: string; outcome?: Outcome | null }) {
+  return (
+    <span className={`wl-tag${outcome ? ` is-${outcome}` : ""}`} title={outcome ? (outcome === "landed" ? "Landed" : "Missed") : undefined}>
+      {outcome ? <i aria-hidden>{outcome === "landed" ? "✓" : "✗"}</i> : null}
+      {label}
+    </span>
+  );
+}
+
+function TallyBar({ tally, label }: { tally: Tally; label: string }) {
+  const share = tally.settled ? Math.round((tally.landed / tally.settled) * 100) : 0;
+  return (
+    <div className="wl-stat">
+      <span>{label}</span>
+      <b>
+        {tally.landed} of {tally.settled}
+      </b>
+      <i className="wl-stat-bar" aria-hidden>
+        <i style={{ width: `${share}%` }} />
+      </i>
+    </div>
+  );
+}
+
+function linkTo(go: () => void) {
+  return (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+    event.preventDefault();
+    go();
+  };
+}
+
+function CalendarIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="2" y="3" width="12" height="11" rx="2" />
+      <path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" />
+    </svg>
+  );
+}
+
+/* --------------------------------------------------------------- the nav */
+
+type Nav = {
+  go: (route: Route, options?: { replace?: boolean }) => void;
+  back: (route: Route) => void;
+};
+
+function DayNav({ day, data, nav }: { day: DayKey; data: WatchlistDay | null; nav: Nav }) {
+  const iso = data?.day;
+  const today = data?.today;
+  const prev = iso && (!data?.first_day || iso > data.first_day) ? addDays(iso, -1) : null;
+  const next = iso && today && iso < addDays(today, 1) ? addDays(iso, 1) : null;
+  const toDay = (target: string) => nav.go({ view: "day", day: today ? dayKey(target, today) : target });
+  const past = day !== "today" && day !== "tomorrow";
+  return (
+    <nav className="wl-days" aria-label="Day">
+      <button type="button" className="wl-step" disabled={!prev} onClick={() => prev && toDay(prev)} aria-label="Previous day">
+        ‹
+      </button>
+      {past && iso ? (
+        <span className="wl-chip on" aria-current="page">
+          {dayLabel(iso)}
+        </span>
+      ) : null}
+      {(["today", "tomorrow"] as const).map((d) => (
+        <a
+          key={d}
+          href={`/${d}`}
+          className={`wl-chip${day === d ? " on" : ""}`}
+          aria-current={day === d ? "page" : undefined}
+          onClick={linkTo(() => nav.go({ view: "day", day: d }))}
+          onPointerEnter={() => prefetch(`/api/watchlist/day/${d}`)}
+        >
+          {d === "today" ? "Today" : "Tomorrow"}
+        </a>
+      ))}
+      <button type="button" className="wl-step" disabled={!next} onClick={() => next && toDay(next)} aria-label="Next day">
+        ›
+      </button>
+      <a
+        href={iso ? `/calendar/${iso.slice(0, 7)}` : "/calendar"}
+        className="wl-chip wl-chip-cal"
+        onClick={linkTo(() => nav.go({ view: "calendar", month: iso ? iso.slice(0, 7) : null }))}
+      >
+        <CalendarIcon />
+        Calendar
+      </a>
+    </nav>
+  );
 }
 
 /* ------------------------------------------------------------------ list */
 
 type Filter = "all" | "strong" | "look";
 
-function DayView({ day, onOpen, onDay }: { day: Day; onOpen: (id: string) => void; onDay: (d: Day) => void }) {
+function orderedRows(data: WatchlistDay, filter: Filter): WatchRow[] {
+  const byId = new Map(data.matches.map((m) => [m.match_id, m]));
+  const out: WatchRow[] = [];
+  for (const league of data.leagues) {
+    const rows = league.match_ids
+      .map((id) => byId.get(id))
+      .filter((m): m is WatchRow => Boolean(m) && (filter === "all" || (m as WatchRow).watch === filter))
+      .sort((a, b) => a.kickoff.localeCompare(b.kickoff));
+    out.push(...rows);
+  }
+  return out;
+}
+
+function dayTitle(day: DayKey, iso?: string): string {
+  if (day === "today") return "Today's watchlist";
+  if (day === "tomorrow") return "Tomorrow's watchlist";
+  return iso ? `Watchlist for ${longDay(iso)}` : "Watchlist";
+}
+
+function HowItWent({ data }: { data: WatchlistDay }) {
+  const s = data.summary;
+  if (!s || !(s.finished || s.called_off)) return null;
+  const toPlay = s.matches - s.finished - s.called_off;
+  const picks = addTally(s.strong_tally, s.look_tally);
+  return (
+    <section className="wl-went" aria-label="How it went">
+      <div className="wl-went-head">
+        <h2>How it went</h2>
+        <p>
+          A match counts as landed when its headline pattern happened in the 90 minutes.
+          {toPlay > 0 ? ` ${plural(toPlay, "match")} still to finish.` : ""}
+          {s.called_off ? ` ${s.called_off} called off.` : ""}
+        </p>
+      </div>
+      <div className="wl-stats">
+        {s.top.settled ? <TallyBar tally={s.top} label="Top five" /> : null}
+        {s.strong_tally.settled ? <TallyBar tally={s.strong_tally} label="Strong watch" /> : null}
+        {s.look_tally.settled ? <TallyBar tally={s.look_tally} label="Worth a look" /> : null}
+        {!picks.settled ? <p className="wl-sub">No strong or worth-a-look matches have finished yet.</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function RowScore({ result, kickoff }: { result?: RowResult | null; kickoff: string }) {
+  if (!result) return <span className="wl-time">{clock(kickoff)}</span>;
+  return (
+    <span className={`wl-time is-done${result.status === "off" ? " is-off" : ""}`} title={`Kick-off ${clock(kickoff)}`}>
+      {result.status === "off" ? "Off" : resultLabel(result)}
+    </span>
+  );
+}
+
+function DayView({
+  day,
+  filter,
+  setFilter,
+  recent,
+  nav,
+  onReady,
+}: {
+  day: DayKey;
+  filter: Filter;
+  setFilter: (f: Filter) => void;
+  recent: string | null;
+  nav: Nav;
+  onReady: () => void;
+}) {
   const { data, error, loading } = useJson<WatchlistDay>(`/api/watchlist/day/${day}`);
-  const [filter, setFilter] = useState<Filter>("all");
+
+  useEffect(() => {
+    if (data) onReady();
+  }, [data, onReady]);
+
+  // Neighbouring days load in the background, so stepping is instant.
+  useEffect(() => {
+    if (!data?.day || !data.today) return;
+    if (!data.first_day || data.day > data.first_day) prefetch(`/api/watchlist/day/${dayKey(addDays(data.day, -1), data.today)}`);
+    if (data.day < addDays(data.today, 1)) prefetch(`/api/watchlist/day/${dayKey(addDays(data.day, 1), data.today)}`);
+  }, [data?.day, data?.today, data?.first_day]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (isTyping(event) || !data?.day || !data.today || event.altKey || event.metaKey || event.ctrlKey) return;
+      if (event.key === "ArrowLeft" && (!data.first_day || data.day > data.first_day)) {
+        nav.go({ view: "day", day: dayKey(addDays(data.day, -1), data.today) });
+      } else if (event.key === "ArrowRight" && data.day < addDays(data.today, 1)) {
+        nav.go({ view: "day", day: dayKey(addDays(data.day, 1), data.today) });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [data?.day, data?.today, data?.first_day, nav]);
 
   const byId = useMemo(() => new Map((data?.matches ?? []).map((m) => [m.match_id, m])), [data]);
   const counts = useMemo(() => {
@@ -234,39 +581,29 @@ function DayView({ day, onOpen, onDay }: { day: Day; onOpen: (id: string) => voi
     return out;
   }, [data]);
 
+  const ready = data?.status === "ready";
   const shown = (m: WatchRow) => filter === "all" || m.watch === filter;
   const picks = (data?.shortlist ?? []).map((id) => byId.get(id)).filter((m): m is WatchRow => Boolean(m));
-  const title = day === "tomorrow" ? "Tomorrow's watchlist" : "Today's watchlist";
+  const open = (id: string) => nav.go({ view: "match", day, matchId: id });
+  const warm = (id: string) => prefetch(`/api/watchlist/match/${id}`);
+  const past = day !== "today" && day !== "tomorrow";
+  const played = Boolean(data?.summary && (data.summary.finished || data.summary.called_off));
 
   return (
     <>
       <div className="wl-intro">
-        <h1>{title}</h1>
+        <h1>{dayTitle(day, data?.day ?? (ISO_DAY.test(day) ? day : undefined))}</h1>
         <p>
-          Every match bookmakers price, checked for the same patterns: both teams scoring, goals, late goals,
-          first-half goals, clean sheets and scoring runs. Each team's last 10 games are compared with their
-          league's average, and the matches where something stands out come first.
+          {past
+            ? "The list as it stood before kick-off, with each match's score and whether its patterns landed."
+            : "Every match bookmakers price, checked for the same patterns: both teams scoring, goals, late goals, first-half goals, clean sheets and scoring runs. Each team's last 10 games are compared with their league's average, and the matches where something stands out come first."}
         </p>
       </div>
 
       <div className="wl-card">
         <div className="wl-bar">
-          <div className="wl-tabs" role="tablist" aria-label="Day">
-            {(["today", "tomorrow"] as const).map((d) => (
-              <button
-                key={d}
-                type="button"
-                role="tab"
-                aria-selected={day === d}
-                className={day === d ? "on" : ""}
-                onClick={() => onDay(d)}
-              >
-                {d === "today" ? "Today" : "Tomorrow"}
-                {data?.day && day === d ? <span> · {dayLabel(data.day)}</span> : null}
-              </button>
-            ))}
-          </div>
-          {data?.status === "ready" ? (
+          <DayNav day={day} data={data} nav={nav} />
+          {ready && data.matches.length ? (
             <div className="wl-filters" role="group" aria-label="Filter">
               {(
                 [
@@ -284,22 +621,42 @@ function DayView({ day, onOpen, onDay }: { day: Day; onOpen: (id: string) => voi
         </div>
 
         {loading ? <p className="wl-empty">Loading…</p> : null}
-        {error ? <p className="wl-empty">The watchlist is unavailable right now. Try again in a minute.</p> : null}
-        {data?.status === "preparing" ? (
+        {error ? (
           <p className="wl-empty">
-            {day === "tomorrow" ? "Tomorrow's" : "Today's"} list is still being put together. Check back in a few
-            minutes.
+            {error === "not_found" ? "There's no watchlist for that day." : "The watchlist is unavailable right now. Try again in a minute."}
           </p>
         ) : null}
-        {data?.status === "ready" && !data.matches.length ? (
-          <p className="wl-empty">No priced matches on this day.</p>
+        {data?.status === "preparing" ? (
+          <p className="wl-empty">
+            {day === "tomorrow" ? "Tomorrow's" : "Today's"} list is still being put together. Check back in a few minutes.
+          </p>
         ) : null}
+        {data?.status === "none" ? (
+          <p className="wl-empty">
+            No watchlist was made for {longDay(data.day)}.{" "}
+            <a href="/calendar" onClick={linkTo(() => nav.go({ view: "calendar", month: data.day.slice(0, 7) }))}>
+              Open the calendar
+            </a>
+            .
+          </p>
+        ) : null}
+        {ready && !data.matches.length ? <p className="wl-empty">No priced matches on this day.</p> : null}
 
-        {data?.status === "ready" && picks.length && filter === "all" ? (
+        {ready && played ? <HowItWent data={data} /> : null}
+
+        {ready && picks.length && filter === "all" ? (
           <section className="wl-picks" aria-label="Top picks">
-            <h2>{picks.length === 1 ? "One to have open" : `${picks.length} to have open`}</h2>
+            <h2>{played || past ? "Top picks" : picks.length === 1 ? "One to have open" : `${picks.length} to have open`}</h2>
             {picks.map((m, i) => (
-              <a key={m.match_id} className="wl-pick" href={`/${day}/${m.match_id}`} onClick={linkTo(() => onOpen(m.match_id))}>
+              <a
+                key={m.match_id}
+                className={`wl-pick${m.outcome ? ` is-${m.outcome}` : ""}${recent === m.match_id ? " is-recent" : ""}`}
+                href={`/${day}/${m.match_id}`}
+                data-match={m.match_id}
+                onClick={linkTo(() => open(m.match_id))}
+                onPointerEnter={() => warm(m.match_id)}
+                onFocus={() => warm(m.match_id)}
+              >
                 <span className="wl-pick-n">{i + 1}</span>
                 <div className="wl-pick-body">
                   <div className="wl-pick-teams">
@@ -310,21 +667,33 @@ function DayView({ day, onOpen, onDay }: { day: Day; onOpen: (id: string) => voi
                   <p>
                     <b>{m.headline}</b> {m.reason}
                   </p>
+                  {m.outcome ? (
+                    <p className="wl-verdict">
+                      <OutcomeMark outcome={m.outcome} /> {m.outcome_note}
+                    </p>
+                  ) : null}
                   <div className="wl-tags">
-                    {m.tags.map((t) => (
-                      <span key={t} className="wl-tag">
-                        {t}
-                      </span>
+                    {m.tags.map((t, k) => (
+                      <Tag key={`${t.label}-${k}`} label={t.label} outcome={t.outcome} />
                     ))}
                   </div>
                 </div>
-                <span className="wl-pick-time">{clock(m.kickoff)}</span>
+                <span className="wl-pick-time">
+                  {m.result ? (
+                    <>
+                      <b>{scoreText(m.result) || m.result.label}</b>
+                      {m.result.status === "finished" ? <small>{resultLabel(m.result)}</small> : null}
+                    </>
+                  ) : (
+                    clock(m.kickoff)
+                  )}
+                </span>
               </a>
             ))}
           </section>
         ) : null}
 
-        {data?.status === "ready"
+        {ready
           ? data.leagues.map((league) => {
               const rows = league.match_ids
                 .map((id) => byId.get(id))
@@ -340,16 +709,29 @@ function DayView({ day, onOpen, onDay }: { day: Day; onOpen: (id: string) => voi
                     </b>
                   </header>
                   {rows.map((m) => (
-                    <a key={m.match_id} className="wl-row" href={`/${day}/${m.match_id}`} onClick={linkTo(() => onOpen(m.match_id))}>
-                      <span className="wl-time">{clock(m.kickoff)}</span>
+                    <a
+                      key={m.match_id}
+                      className={`wl-row${recent === m.match_id ? " is-recent" : ""}`}
+                      href={`/${day}/${m.match_id}`}
+                      data-match={m.match_id}
+                      onClick={linkTo(() => open(m.match_id))}
+                      onPointerEnter={() => warm(m.match_id)}
+                      onFocus={() => warm(m.match_id)}
+                    >
+                      <RowScore result={m.result} kickoff={m.kickoff} />
                       <div className="wl-teams">
-                        {[m.home, m.away].map((t) => (
-                          <div key={t.name}>
-                            <Crest src={t.badge} name={t.name} />
-                            <span className="wl-name">{t.name}</span>
-                            {t.position ? <span className="wl-pos">{ordinal(t.position)}</span> : null}
-                          </div>
-                        ))}
+                        {(["home", "away"] as const).map((side) => {
+                          const t = m[side];
+                          const goals = m.result?.status === "finished" ? m.result[side] : null;
+                          return (
+                            <div key={side}>
+                              <Crest src={t.badge} name={t.name} />
+                              <span className="wl-name">{t.name}</span>
+                              {t.position ? <span className="wl-pos">{ordinal(t.position)}</span> : null}
+                              {goals != null ? <b className="wl-goals">{goals}</b> : null}
+                            </div>
+                          );
+                        })}
                       </div>
                       <div className="wl-odds" aria-label="Match odds">
                         {(["home", "draw", "away"] as const).map((k, idx) => (
@@ -359,7 +741,14 @@ function DayView({ day, onOpen, onDay }: { day: Day; onOpen: (id: string) => voi
                           </span>
                         ))}
                       </div>
-                      <div className="wl-why">{m.reason || "Nothing stands out against the league norm."}</div>
+                      <div className="wl-why">
+                        {m.reason || "Nothing stands out against the league norm."}
+                        {m.outcome ? (
+                          <span className="wl-why-out">
+                            <OutcomeMark outcome={m.outcome} /> {m.outcome_note}
+                          </span>
+                        ) : null}
+                      </div>
                       <div className="wl-end">
                         <WatchMark watch={m.watch} />
                       </div>
@@ -370,10 +759,14 @@ function DayView({ day, onOpen, onDay }: { day: Day; onOpen: (id: string) => voi
             })
           : null}
 
-        {data?.status === "ready" ? (
+        {ready ? (
           <p className="wl-foot">
-            {data.built_at ? `Updated ${clock(data.built_at)}. ` : ""}
-            Kick-off times in your time zone.
+            {past
+              ? "Lists are frozen at kick-off, so what you see is what was published before each game. "
+              : data.built_at
+                ? `Updated ${clock(data.built_at)}. `
+                : ""}
+            Kick-off times in your time zone. Use ← and → to move between days.
             {data.partial ? " Some leagues are still loading and will appear at the next update." : ""}
           </p>
         ) : null}
@@ -386,12 +779,176 @@ function leagueName(day: WatchlistDay, key: string): string {
   return day.leagues.find((l) => l.key === key)?.name ?? "";
 }
 
-function linkTo(go: () => void) {
-  return (event: MouseEvent<HTMLAnchorElement>) => {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
-    event.preventDefault();
-    go();
-  };
+/* -------------------------------------------------------------- calendar */
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function CalendarView({ month, nav, onReady }: { month: string | null; nav: Nav; onReady: () => void }) {
+  // Without a month in the address, the board's current month; the API says which.
+  const todayGuess = new Date().toISOString().slice(0, 7);
+  const shownMonth = month ?? todayGuess;
+  const { data, error, loading } = useJson<WatchlistMonth>(`/api/watchlist/month/${shownMonth}`);
+
+  useEffect(() => {
+    if (data) onReady();
+  }, [data, onReady]);
+
+  const today = data?.today ?? "";
+  const tomorrow = today ? addDays(today, 1) : "";
+  const firstMonth = data?.first_day ? data.first_day.slice(0, 7) : null;
+  const lastMonth = tomorrow ? tomorrow.slice(0, 7) : null;
+  const canPrev = Boolean(firstMonth && shownMonth > firstMonth);
+  const canNext = Boolean(lastMonth && shownMonth < lastMonth);
+  const step = (n: number) => nav.go({ view: "calendar", month: addMonths(shownMonth, n) });
+
+  useEffect(() => {
+    if (canPrev) prefetch(`/api/watchlist/month/${addMonths(shownMonth, -1)}`);
+    if (canNext) prefetch(`/api/watchlist/month/${addMonths(shownMonth, 1)}`);
+  }, [shownMonth, canPrev, canNext]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (isTyping(event) || event.altKey || event.metaKey || event.ctrlKey) return;
+      if (event.key === "ArrowLeft" && canPrev) step(-1);
+      if (event.key === "ArrowRight" && canNext) step(1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  const byDay = useMemo(() => new Map((data?.days ?? []).map((d) => [d.day, d.summary])), [data]);
+  const cells = useMemo(() => {
+    const [y, m] = shownMonth.split("-").map(Number);
+    const first = new Date(Date.UTC(y, m - 1, 1));
+    const lead = (first.getUTCDay() + 6) % 7; // Monday first
+    const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const out: (string | null)[] = Array.from({ length: lead }, () => null);
+    for (let d = 1; d <= days; d += 1) out.push(`${shownMonth}-${String(d).padStart(2, "0")}`);
+    while (out.length % 7) out.push(null);
+    return out;
+  }, [shownMonth]);
+
+  const totals = useMemo(() => {
+    let top = { landed: 0, settled: 0 };
+    let picks = { landed: 0, settled: 0 };
+    let lists = 0;
+    for (const d of data?.days ?? []) {
+      lists += 1;
+      top = addTally(top, d.summary.top);
+      picks = addTally(picks, addTally(d.summary.strong_tally, d.summary.look_tally));
+    }
+    return { top, picks, lists };
+  }, [data]);
+
+  return (
+    <>
+      <div className="wl-intro">
+        <h1>Watchlist calendar</h1>
+        <p>
+          Every day's list is kept with its results. Pick a day to see the matches as they were before kick-off, the
+          final scores and which patterns landed.
+        </p>
+      </div>
+      <div className="wl-card">
+        <div className="wl-bar">
+          <nav className="wl-days" aria-label="Month">
+            <button type="button" className="wl-step" disabled={!canPrev} onClick={() => step(-1)} aria-label="Previous month">
+              ‹
+            </button>
+            <span className="wl-month">{monthLabel(shownMonth)}</span>
+            <button type="button" className="wl-step" disabled={!canNext} onClick={() => step(1)} aria-label="Next month">
+              ›
+            </button>
+          </nav>
+          <nav className="wl-days" aria-label="Day">
+            {(["today", "tomorrow"] as const).map((d) => (
+              <a
+                key={d}
+                href={`/${d}`}
+                className="wl-chip"
+                onClick={linkTo(() => nav.go({ view: "day", day: d }))}
+                onPointerEnter={() => prefetch(`/api/watchlist/day/${d}`)}
+              >
+                {d === "today" ? "Today" : "Tomorrow"}
+              </a>
+            ))}
+          </nav>
+        </div>
+
+        {loading ? <p className="wl-empty">Loading…</p> : null}
+        {error ? <p className="wl-empty">The calendar is unavailable right now. Try again in a minute.</p> : null}
+
+        {data ? (
+          <>
+            {totals.picks.settled ? (
+              <div className="wl-stats wl-month-stats">
+                <TallyBar tally={totals.top} label="Top five this month" />
+                <TallyBar tally={totals.picks} label="Strong and worth a look" />
+              </div>
+            ) : null}
+            <div className="wl-cal">
+              {WEEKDAYS.map((w) => (
+                <div key={w} className="wl-cal-wd" aria-hidden>
+                  {w}
+                </div>
+              ))}
+              {cells.map((iso, i) => {
+                if (!iso) return <div key={`blank-${i}`} className="wl-cal-cell is-blank" />;
+                const summary = byDay.get(iso);
+                const n = Number(iso.slice(8));
+                const isToday = iso === today;
+                if (!summary) {
+                  return (
+                    <div key={iso} className={`wl-cal-cell is-empty${isToday ? " is-today" : ""}`}>
+                      <span className="wl-cal-n">{n}</span>
+                    </div>
+                  );
+                }
+                const picks = addTally(summary.strong_tally, summary.look_tally);
+                const share = picks.settled ? Math.round((picks.landed / picks.settled) * 100) : 0;
+                const key = today ? dayKey(iso, today) : iso;
+                const upcoming = iso >= today && !summary.finished;
+                return (
+                  <a
+                    key={iso}
+                    href={`/${key}`}
+                    className={`wl-cal-cell${isToday ? " is-today" : ""}${upcoming ? " is-upcoming" : ""}`}
+                    onClick={linkTo(() => nav.go({ view: "day", day: key }))}
+                    onPointerEnter={() => prefetch(`/api/watchlist/day/${key}`)}
+                    aria-label={`${longDay(iso)}: ${plural(summary.matches, "match")}${
+                      picks.settled ? `, ${picks.landed} of ${picks.settled} picks landed` : ""
+                    }`}
+                  >
+                    <span className="wl-cal-n">{n}</span>
+                    <span className="wl-cal-m">{summary.matches}</span>
+                    {picks.settled ? (
+                      <>
+                        <span className="wl-cal-t">
+                          {picks.landed}/{picks.settled}
+                        </span>
+                        <i className="wl-stat-bar" aria-hidden>
+                          <i style={{ width: `${share}%` }} />
+                        </i>
+                      </>
+                    ) : (
+                      <span className="wl-cal-t is-soft">
+                        {iso === tomorrow ? "Tomorrow" : isToday ? "Today" : upcoming ? "Upcoming" : `${summary.strong + summary.look} picks`}
+                      </span>
+                    )}
+                  </a>
+                );
+              })}
+            </div>
+            <p className="wl-foot">
+              Each day shows how many priced matches were listed and, once played, how many of its strong and
+              worth-a-look matches landed their headline pattern.
+              {totals.lists ? ` ${plural(totals.lists, "list")} this month.` : " No lists this month."}
+            </p>
+          </>
+        ) : null}
+      </div>
+    </>
+  );
 }
 
 /* ------------------------------------------------------------ match page */
@@ -486,8 +1043,106 @@ function TimingChart({ research }: { research: MatchResearch }) {
   );
 }
 
-function MatchView({ matchId, day, onBack }: { matchId: string; day: Day; onBack: () => void }) {
+function backLabel(day: DayKey, iso?: string): string {
+  if (day === "today") return "Today";
+  if (day === "tomorrow") return "Tomorrow";
+  return iso ? dayLabel(iso) : dayLabel(day);
+}
+
+function MatchCentre({ data }: { data: MatchResearch }) {
+  const r = data.result;
+  if (!r) {
+    return (
+      <div className="wl-ko">
+        <b>{clock(data.kickoff)}</b>
+        <span>{dayLabel(data.day)}</span>
+      </div>
+    );
+  }
+  if (r.status === "off") {
+    return (
+      <div className="wl-ko">
+        <b className="wl-ko-off">{r.label}</b>
+        <span>{dayLabel(data.day)}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="wl-ko is-done">
+      <b>{scoreText(r)}</b>
+      <span>
+        {resultLabel(r)}
+        {r.ht ? ` · HT ${r.ht[0]}–${r.ht[1]}` : ""}
+      </span>
+    </div>
+  );
+}
+
+function GoalLine({ data }: { data: MatchResearch }) {
+  const goals = data.result?.goals ?? [];
+  if (!goals.length) return null;
+  return (
+    <div className="wl-goal-line" aria-label="Goals">
+      {goals.map((g, i) => (
+        <span key={`${g.time}-${i}`} className={g.side === "home" ? "is-home" : "is-away"}>
+          <b>{g.time}'</b> {g.side === "home" ? data.home.name : data.away.name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function MatchView({
+  matchId,
+  day,
+  filter,
+  nav,
+  onReady,
+}: {
+  matchId: string;
+  day: DayKey;
+  filter: Filter;
+  nav: Nav;
+  onReady: () => void;
+}) {
   const { data, error, loading } = useJson<MatchResearch>(`/api/watchlist/match/${matchId}`);
+  const list = useJson<WatchlistDay>(`/api/watchlist/day/${day}`).data;
+
+  useEffect(() => {
+    if (data) onReady();
+  }, [data, onReady]);
+
+  const order = useMemo(() => (list?.status === "ready" ? orderedRows(list, filter) : []), [list, filter]);
+  const at = order.findIndex((m) => m.match_id === matchId);
+  const prev = at > 0 ? order[at - 1] : null;
+  const next = at >= 0 && at < order.length - 1 ? order[at + 1] : null;
+
+  useEffect(() => {
+    if (prev) prefetch(`/api/watchlist/match/${prev.match_id}`);
+    if (next) prefetch(`/api/watchlist/match/${next.match_id}`);
+  }, [prev, next]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (isTyping(event) || event.altKey || event.metaKey || event.ctrlKey) return;
+      if (event.key === "ArrowLeft" && prev) nav.go({ view: "match", day, matchId: prev.match_id }, { replace: true });
+      if (event.key === "ArrowRight" && next) nav.go({ view: "match", day, matchId: next.match_id }, { replace: true });
+      if (event.key === "Escape") nav.back({ view: "day", day });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [prev, next, day, nav]);
+
+  useEffect(() => {
+    if (data) document.title = `${data.home.name} v ${data.away.name} · Kalchas`;
+  }, [data]);
+
+  const backTo: Route = { view: "day", day };
+  const crumb = (
+    <a href={`/${day}`} className="wl-back" onClick={linkTo(() => nav.back(backTo))}>
+      ← {backLabel(day, list?.day)}
+    </a>
+  );
 
   if (loading) return <p className="wl-empty">Loading…</p>;
   if (error || !data) {
@@ -495,33 +1150,64 @@ function MatchView({ matchId, day, onBack }: { matchId: string; day: Day; onBack
       <div className="wl-card">
         <p className="wl-empty">
           {error === "not_found"
-            ? "This match isn't on the watchlist any more. Lists cover today and tomorrow."
+            ? "This match isn't on the watchlist."
             : "The match page is unavailable right now. Try again in a minute."}
         </p>
         <p className="wl-empty">
-          <a href={`/${day}`} onClick={linkTo(onBack)}>
-            Back to the list
+          {crumb}
+          {" · "}
+          <a href="/calendar" onClick={linkTo(() => nav.go({ view: "calendar", month: null }))}>
+            Calendar
           </a>
         </p>
       </div>
     );
   }
 
-  const { home, away, odds, form, h2h, table } = data;
-  const formSource = (f: TeamForm) =>
-    f.source === "all" ? "all competitions" : data.league.name.split(" - ")[0];
+  const { home, away, odds, form, h2h, table, result } = data;
+  const formSource = (f: TeamForm) => (f.source === "all" ? "all competitions" : data.league.name.split(" - ")[0]);
+  const stepper = (
+    <div className="wl-stepper">
+      {prev ? (
+        <a
+          href={`/${day}/${prev.match_id}`}
+          onClick={linkTo(() => nav.go({ view: "match", day, matchId: prev.match_id }, { replace: true }))}
+          title={`${prev.home.name} v ${prev.away.name}`}
+        >
+          ‹ Previous
+        </a>
+      ) : (
+        <span className="is-off">‹ Previous</span>
+      )}
+      {at >= 0 ? (
+        <span className="wl-stepper-n">
+          {at + 1} of {order.length}
+        </span>
+      ) : null}
+      {next ? (
+        <a
+          href={`/${day}/${next.match_id}`}
+          onClick={linkTo(() => nav.go({ view: "match", day, matchId: next.match_id }, { replace: true }))}
+          title={`${next.home.name} v ${next.away.name}`}
+        >
+          Next ›
+        </a>
+      ) : (
+        <span className="is-off">Next ›</span>
+      )}
+    </div>
+  );
 
   return (
     <div className="wl-card">
       <header className="wl-mhead">
         <div className="wl-crumb">
-          <a href={`/${day}`} onClick={linkTo(onBack)}>
-            ← {day === "tomorrow" ? "Tomorrow" : "Today"}
-          </a>
-          <span>
+          {crumb}
+          <span className="wl-crumb-league">
             {data.league.country} · {data.league.name}
             {data.league.round ? ` · Round ${data.league.round}` : ""}
           </span>
+          {stepper}
         </div>
         <div className="wl-vs">
           <div className="wl-side">
@@ -536,10 +1222,7 @@ function MatchView({ matchId, day, onBack }: { matchId: string; day: Day; onBack
               ) : null}
             </div>
           </div>
-          <div className="wl-ko">
-            <b>{clock(data.kickoff)}</b>
-            <span>{dayLabel(data.day)}</span>
-          </div>
+          <MatchCentre data={data} />
           <div className="wl-side is-away">
             <div>
               <b>{away.name}</b>
@@ -553,8 +1236,10 @@ function MatchView({ matchId, day, onBack }: { matchId: string; day: Day; onBack
             <Crest src={away.badge} name={away.name} size={44} />
           </div>
         </div>
+        <GoalLine data={data} />
         {odds ? (
           <div className="wl-mprices">
+            {result ? <span className="wl-mprices-lab">Prices before kick-off</span> : null}
             <span>
               {home.name} <b>{price(odds.home)}</b>
             </span>
@@ -585,28 +1270,37 @@ function MatchView({ matchId, day, onBack }: { matchId: string; day: Day; onBack
               <h3>What to watch</h3>
               <WatchMark watch={data.watch} />
             </div>
+            {result?.status === "finished" ? (
+              <p className="wl-sub">
+                Written before kick-off. Each point is marked with how it went
+                {result.label !== "FT" ? ", judged on the 90 minutes" : ""}.
+              </p>
+            ) : null}
             {data.points.length ? (
               <ol className="wl-points">
                 {data.points.map((p, i) => (
-                  <li key={p.key} data-n={i + 1}>
+                  <li key={p.key} data-n={i + 1} className={p.outcome ? `is-${p.outcome}` : ""}>
                     <div>
                       <b>{p.title}</b> <span>{p.detail}</span>
+                      {p.outcome ? (
+                        <p className="wl-verdict">
+                          <OutcomeMark outcome={p.outcome} /> {p.outcome_note}
+                        </p>
+                      ) : null}
                     </div>
                   </li>
                 ))}
               </ol>
             ) : (
-              <p className="wl-sub">
-                Nothing stands out: both teams' recent games look like a normal game in this league.
-              </p>
+              <p className="wl-sub">Nothing stands out: both teams' recent games look like a normal game in this league.</p>
             )}
           </section>
 
           <section className="wl-sec">
             <h3>Every pattern, side by side</h3>
             <p className="wl-sub">
-              How often each happened in the teams' last games, against the league average. Highlighted rows are
-              the ones above.
+              How often each happened in the teams' last games, against the league average. Highlighted rows are the
+              ones above.
             </p>
             <div className="wl-table-wrap">
               <table className="wl-ptable">
@@ -636,17 +1330,19 @@ function MatchView({ matchId, day, onBack }: { matchId: string; day: Day; onBack
 
           <section className="wl-sec">
             <h3>Recent form</h3>
-            <p className="wl-sub">Last 6 games, newest on the left. Hover a result for the opponent.</p>
+            <p className="wl-sub">
+              {result ? "Last 6 games before this one" : "Last 6 games"}, newest on the left. Hover a result for the
+              opponent.
+            </p>
             {(["home", "away"] as const).map((side) => {
               const team = side === "home" ? home : away;
-              const f = form[side];
               return (
                 <div key={side} className="wl-form-row">
                   <div className="wl-who">
                     <Crest src={team.badge} name={team.name} />
                     {team.name}
                   </div>
-                  <FormPills form={f} />
+                  <FormPills form={form[side]} />
                 </div>
               );
             })}
@@ -715,7 +1411,7 @@ function MatchView({ matchId, day, onBack }: { matchId: string; day: Day; onBack
 
           {table.length ? (
             <section className="wl-sec">
-              <h3>Table</h3>
+              <h3>{result ? "Table before kick-off" : "Table"}</h3>
               <table className="wl-ltable">
                 <thead>
                   <tr>
@@ -740,9 +1436,7 @@ function MatchView({ matchId, day, onBack }: { matchId: string; day: Day; onBack
                         <td>{row.position}</td>
                         <td>{row.team}</td>
                         <td className="wl-num">{row.played}</td>
-                        <td className="wl-num">
-                          {row.goal_difference > 0 ? `+${row.goal_difference}` : row.goal_difference}
-                        </td>
+                        <td className="wl-num">{row.goal_difference > 0 ? `+${row.goal_difference}` : row.goal_difference}</td>
                         <td className="wl-num">{row.points}</td>
                       </tr>,
                     ];
@@ -754,36 +1448,127 @@ function MatchView({ matchId, day, onBack }: { matchId: string; day: Day; onBack
 
           <section className="wl-sec">
             <p className="wl-sub">
-              Updated {clock(data.built_at)}. Patterns come from results only. Team news and line-ups are not
-              included yet, so check them before kick-off.
+              {result
+                ? `Written ${dayLabel(data.built_at.slice(0, 10))} at ${clock(data.built_at)}, before kick-off, and left unchanged since.`
+                : `Updated ${clock(data.built_at)}. Patterns come from results only. Team news and line-ups are not included yet, so check them before kick-off.`}{" "}
+              Use ← and → for the previous and next match.
             </p>
           </section>
         </div>
       </div>
+      <footer className="wl-mfoot">
+        {crumb}
+        {stepper}
+      </footer>
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ app */
 
+type HistoryState = { scroll?: number; from?: string } | null;
+
+function titleFor(route: Route): string {
+  if (route.view === "calendar") return "Watchlist calendar · Kalchas";
+  if (route.view === "match") return "Match research · Kalchas";
+  if (route.day === "today") return "Today's watchlist · Kalchas";
+  if (route.day === "tomorrow") return "Tomorrow's watchlist · Kalchas";
+  return `Watchlist · ${dayLabel(route.day)} · Kalchas`;
+}
+
 export function WatchlistApp() {
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname));
+  const [filter, setFilter] = useState<Filter>("all");
+  const [recent, setRecent] = useState<string | null>(null);
+  const pendingScroll = useRef<number | null>(null);
+  const current = useRef(route);
+  current.current = route;
 
   useEffect(() => {
-    const onPop = () => setRoute(parseRoute(window.location.pathname));
+    if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
+    const onPop = (event: PopStateEvent) => {
+      const state = event.state as HistoryState;
+      const left = current.current;
+      pendingScroll.current = state?.scroll ?? 0;
+      setRecent(left.view === "match" ? left.matchId : null);
+      setRoute(parseRoute(window.location.pathname));
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const go = useCallback((next: Route) => {
-    window.history.pushState(null, "", routePath(next));
-    setRoute(next);
-    window.scrollTo({ top: 0 });
-  }, []);
+  const go = useCallback(
+    (next: Route, options?: { replace?: boolean }) => {
+      const here = window.location.pathname;
+      const path = routePath(next);
+      if (path === here) return;
+      const leaving = route.view === "match" ? route.matchId : null;
+      if (options?.replace) {
+        // Stepping match to match: one history entry, so Back still means
+        // "the list I came from".
+        window.history.replaceState({ ...(window.history.state as object), scroll: 0 }, "", path);
+      } else {
+        // Remember where this page was scrolled, so coming back lands there.
+        window.history.replaceState({ ...(window.history.state as object), scroll: window.scrollY }, "");
+        window.history.pushState({ scroll: 0, from: here } satisfies HistoryState, "", path);
+      }
+      pendingScroll.current = null;
+      setRecent(next.view === "day" ? leaving : null);
+      setRoute(next);
+      window.scrollTo({ top: 0 });
+    },
+    [route],
+  );
+
+  const back = useCallback(
+    (target: Route) => {
+      // The list this page was opened from: go back in history, so it comes
+      // back scrolled where it was. Otherwise it's a fresh visit.
+      const state = window.history.state as HistoryState;
+      if (state?.from === routePath(target)) {
+        window.history.back();
+        return;
+      }
+      go(target);
+    },
+    [go],
+  );
+
+  const nav = useMemo<Nav>(() => ({ go, back }), [go, back]);
+
+  const onReady = useCallback(() => {
+    const y = pendingScroll.current;
+    if (y == null) {
+      // Arrived from a match without history: bring that match into view.
+      if (recent) {
+        const el = document.querySelector(`[data-match="${recent}"]`);
+        if (el && el.getBoundingClientRect().top > window.innerHeight) el.scrollIntoView({ block: "center" });
+      }
+      return;
+    }
+    pendingScroll.current = null;
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: y });
+      // Stepped on to other matches since: show the last one opened.
+      const el = recent ? document.querySelector(`[data-match="${recent}"]`) : null;
+      const box = el?.getBoundingClientRect();
+      if (el && box && (box.bottom < 0 || box.top > window.innerHeight)) el.scrollIntoView({ block: "center" });
+    });
+  }, [recent]);
 
   useEffect(() => {
-    document.title = route.matchId ? "Match research · Kalchas" : "Watchlist · Kalchas";
-  }, [route.matchId]);
+    // A match page names its teams once it has loaded (MatchView).
+    if (route.view !== "match") document.title = titleFor(route);
+  }, [route]);
+
+  let page: ReactNode;
+  if (route.view === "calendar") {
+    page = <CalendarView month={route.month} nav={nav} onReady={onReady} />;
+  } else if (route.view === "match") {
+    page = <MatchView key={route.matchId} matchId={route.matchId} day={route.day} filter={filter} nav={nav} onReady={onReady} />;
+  } else {
+    page = <DayView day={route.day} filter={filter} setFilter={setFilter} recent={recent} nav={nav} onReady={onReady} />;
+  }
 
   return (
     <div className="wl-shell">
@@ -792,19 +1577,20 @@ export function WatchlistApp() {
           <img src={kalchasMark} alt="" width={28} height={28} />
           Kalchas
         </a>
-        <a className="wl-live" href="/">
-          Live board →
-        </a>
+        <nav className="wl-topnav">
+          <a
+            href="/calendar"
+            className={route.view === "calendar" ? "on" : ""}
+            onClick={linkTo(() => nav.go({ view: "calendar", month: null }))}
+          >
+            Calendar
+          </a>
+          <a className="wl-live" href="/">
+            Live board →
+          </a>
+        </nav>
       </header>
-      {route.matchId ? (
-        <MatchView matchId={route.matchId} day={route.day} onBack={() => go({ day: route.day, matchId: null })} />
-      ) : (
-        <DayView
-          day={route.day}
-          onOpen={(id) => go({ day: route.day, matchId: id })}
-          onDay={(d) => go({ day: d, matchId: null })}
-        />
-      )}
+      {page}
     </div>
   );
 }

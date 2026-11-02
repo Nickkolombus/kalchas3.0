@@ -635,8 +635,8 @@ def test_parse_h2h_meetings_from_provider_shape() -> None:
     assert rows[0]["home_score"] == 2
     assert rows[0]["away_score"] == 1
     assert rows[0]["goal_events"] == [
-        {"minute": 12, "team": "home", "side": "home", "half": "1H"},
-        {"minute": 80, "team": "away", "side": "away", "half": "2H"},
+        {"minute": 12, "team": "home", "side": "home", "half": "1H", "display": "12"},
+        {"minute": 80, "team": "away", "side": "away", "half": "2H", "display": "80"},
     ]
 
 

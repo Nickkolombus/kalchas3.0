@@ -22,6 +22,7 @@ from kalchas_core.watchlist.profile import (
     TeamProfile,
     default_norms,
 )
+from kalchas_core.watchlist.results import day_summary
 
 FORM_SHOWN: Final = 6
 POINTS_SHOWN: Final = 3
@@ -248,11 +249,18 @@ def build_match_research(
     }
 
 
+def league_key(research: Mapping[str, Any]) -> str:
+    league = research.get("league") or {}
+    return f"{int(league.get('id') or 0)}:{league.get('name') or ''}"
+
+
 def list_row(research: Mapping[str, Any], league_key: str) -> dict[str, Any]:
-    """The compact row the day list shows for one match."""
+    """The compact row the day list shows for one match. Once it is played
+    the row carries the score and whether its lead pattern landed."""
     patterns = research.get("patterns") or []
     top = patterns[0] if patterns and research["watch"] != "quiet" else None
     odds = research.get("odds") or {}
+    result = research.get("result") or None
     return {
         "match_id": research["match_id"],
         "kickoff": research["kickoff"],
@@ -264,7 +272,60 @@ def list_row(research: Mapping[str, Any], league_key: str) -> dict[str, Any]:
         "score": research["score"],
         "headline": top["title"] if top else "",
         "reason": top["brief"] if top else "",
-        "tags": [p["tag"] for p in patterns[:TAGS_SHOWN] if p["score"] >= POINT_MIN],
+        "tags": [
+            {"label": p["tag"], "outcome": p.get("outcome")}
+            for p in patterns[:TAGS_SHOWN]
+            if p["score"] >= POINT_MIN
+        ],
+        "result": {k: result.get(k) for k in ("status", "label", "home", "away", "pens")}
+        if result
+        else None,
+        "outcome": top.get("outcome") if top else None,
+        "outcome_note": (top.get("outcome_note") or "") if top else "",
+    }
+
+
+def assemble_day(
+    day: str,
+    pages: Sequence[Mapping[str, Any]],
+    *,
+    built_at: str,
+    timezone: str,
+    partial: bool = False,
+) -> dict[str, Any]:
+    """A day's list from its match pages: rows by kick-off, leagues with the
+    standout matches first, the top five and the day's tally."""
+    rows: list[dict[str, Any]] = []
+    leagues: dict[str, dict[str, Any]] = {}
+    for page in sorted(pages, key=lambda p: (str(p.get("kickoff")), str(p.get("match_id")))):
+        key = league_key(page)
+        rows.append(list_row(page, key))
+        meta = page.get("league") or {}
+        league = leagues.setdefault(
+            key,
+            {
+                "key": key,
+                "name": str(meta.get("name") or ""),
+                "country": str(meta.get("country") or ""),
+                "logo": meta.get("logo") or None,
+                "match_ids": [],
+            },
+        )
+        league["match_ids"].append(str(page["match_id"]))
+    best = {
+        key: max((float(r["score"]) for r in rows if r["league_key"] == key), default=0.0)
+        for key in leagues
+    }
+    top = shortlist(rows)
+    return {
+        "day": day,
+        "built_at": built_at,
+        "timezone": timezone,
+        "partial": partial,
+        "matches": rows,
+        "leagues": sorted(leagues.values(), key=lambda lg: -best[lg["key"]]),
+        "shortlist": top,
+        "summary": day_summary(rows, top),
     }
 
 

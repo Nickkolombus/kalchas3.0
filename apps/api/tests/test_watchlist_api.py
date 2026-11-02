@@ -1,10 +1,11 @@
-"""Watchlist API: reads what the scanner built, never the provider."""
+"""Watchlist API: reads the archive the scanner writes, never the provider."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from kalchas_api import watchlist
 from kalchas_api.app import app
@@ -26,7 +27,10 @@ DAY = {
             "score": 0.6,
             "headline": "Both teams to score looks likely.",
             "reason": "Both teams scored in 8 of 10 and 7 of 10 of their last games.",
-            "tags": ["Both score"],
+            "tags": [{"label": "Both score", "outcome": "landed"}],
+            "result": {"status": "finished", "label": "FT", "home": 2, "away": 1, "pens": None},
+            "outcome": "landed",
+            "outcome_note": "Both teams scored.",
         }
     ],
     "leagues": [
@@ -41,12 +45,24 @@ DAY = {
     ],
     "shortlist": ["100"],
     "overall_record": {"confirmed": 500, "settled": 860},
+    "summary": {
+        "matches": 1,
+        "strong": 1,
+        "look": 0,
+        "finished": 1,
+        "called_off": 0,
+        "top": {"landed": 1, "settled": 1},
+        "strong_tally": {"landed": 1, "settled": 1},
+        "look_tally": {"landed": 0, "settled": 0},
+    },
 }
 
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    monkeypatch.setattr("kalchas_db.watchlist.first_watchlist_day", lambda dsn: "2026-11-02")
+    monkeypatch.setattr(watchlist, "board_today", lambda now=None: datetime(2026, 11, 3).date())
     return TestClient(app)
 
 
@@ -55,39 +71,58 @@ def test_resolve_day_uses_the_board_time_zone(monkeypatch: pytest.MonkeyPatch) -
     late = datetime(2026, 11, 2, 22, 30, tzinfo=UTC)  # already 3 Nov in +03:00
     assert watchlist.resolve_day("today", late) == "2026-11-03"
     assert watchlist.resolve_day("tomorrow", late) == "2026-11-04"
+    assert watchlist.resolve_day("2026-10-20", late) == "2026-10-20"
+    for bad in ("2026-11-05", "yesterday", "2026-13-01"):
+        with pytest.raises(HTTPException):
+            watchlist.resolve_day(bad, late)
 
 
-def test_day_list_is_served_from_the_cache(client: TestClient, monkeypatch) -> None:
+def test_day_list_is_served_from_the_archive(client: TestClient, monkeypatch) -> None:
     seen: list[str] = []
 
-    def load(dsn: str, key: str, **_: object) -> dict | None:
-        seen.append(key)
+    def load(dsn: str, day: str) -> dict | None:
+        seen.append(day)
         return DAY
 
-    monkeypatch.setattr("kalchas_db.panel_cache.load_panel_cache", load)
-    monkeypatch.setattr(watchlist, "resolve_day", lambda day: "2026-11-03")
-    body = client.get("/api/watchlist/day/tomorrow").json()
-    assert seen == ["watchlist_day_2026-11-03"]
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_day", load)
+    body = client.get("/api/watchlist/day/2026-11-03").json()
+    assert seen == ["2026-11-03"]
     assert body["status"] == "ready"
-    assert body["matches"][0]["headline"].startswith("Both teams")
+    assert body["today"] == "2026-11-03" and body["first_day"] == "2026-11-02"
+    row = body["matches"][0]
+    assert row["result"]["home"] == 2 and row["outcome"] == "landed"
+    assert body["summary"]["top"] == {"landed": 1, "settled": 1}
 
 
 def test_our_hit_rates_are_never_served(client: TestClient, monkeypatch) -> None:
-    monkeypatch.setattr("kalchas_db.panel_cache.load_panel_cache", lambda *a, **k: DAY)
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_day", lambda *a: DAY)
     body = client.get("/api/watchlist/day/tomorrow").json()
     assert "overall_record" not in body
     assert "record" not in body["leagues"][0]
 
 
-def test_day_not_built_yet_says_preparing(client: TestClient, monkeypatch) -> None:
-    monkeypatch.setattr("kalchas_db.panel_cache.load_panel_cache", lambda *a, **k: None)
-    body = client.get("/api/watchlist/day/today").json()
-    assert body["status"] == "preparing"
-    assert body["matches"] == []
+def test_missing_days_say_preparing_or_none(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_day", lambda *a: None)
+    assert client.get("/api/watchlist/day/today").json()["status"] == "preparing"
+    assert client.get("/api/watchlist/day/2026-10-01").json()["status"] == "none"
+
+
+def test_month_lists_each_day_with_its_tally(client: TestClient, monkeypatch) -> None:
+    captured: list[tuple] = []
+
+    def month(dsn: str, start, end) -> list[dict]:
+        captured.append((start.isoformat(), end.isoformat()))
+        return [{"day": "2026-11-03", "summary": DAY["summary"]}]
+
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_month", month)
+    body = client.get("/api/watchlist/month/2026-12").json()
+    assert captured == [("2026-12-01", "2027-01-01")]
+    assert body["days"][0]["summary"]["strong"] == 1
+    assert client.get("/api/watchlist/month/2026-13").status_code == 404
 
 
 def test_unknown_day_and_match(client: TestClient, monkeypatch) -> None:
-    monkeypatch.setattr("kalchas_db.panel_cache.load_panel_cache", lambda *a, **k: None)
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_match", lambda *a: None)
     assert client.get("/api/watchlist/day/yesterday").status_code == 404
     assert client.get("/api/watchlist/match/100").status_code == 404
     assert client.get("/api/watchlist/match/abc").status_code == 404
