@@ -150,3 +150,41 @@ def test_picks_lists_strong_watches_and_the_next_to_kick_off(
     assert body["next"]["match_id"] == "102"
     assert body["picks"][0]["tag"] == "Both score"
     assert body["picks"][0]["outcome"] == "landed"
+
+
+def test_live_scores_for_unsettled_matches_under_way(client: TestClient, monkeypatch) -> None:
+    under_way = {
+        **DAY["matches"][0],
+        "match_id": "200",
+        "kickoff": "2020-01-01T20:00:00+03:00",
+        "result": None,
+    }
+    later = {**under_way, "match_id": "201", "kickoff": "2099-01-01T20:00:00+03:00"}
+    day = {**DAY, "matches": [DAY["matches"][0], under_way, later]}
+    asked: list[list[str]] = []
+
+    def matches(dsn: str, ids: list[str]) -> dict:
+        asked.append(ids)
+        return {
+            "200": {
+                "status_short": "2H",
+                "home_score": 1,
+                "away_score": 0,
+                "minute": 63,
+                "minute_display": "63",
+            }
+        }
+
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_day", lambda dsn, d: day)
+    monkeypatch.setattr("kalchas_db.matches.get_matches_sync", matches)
+    watchlist._live_scores.clear()
+    body = client.get("/api/watchlist/live/2026-11-02").json()
+    assert asked == [["200"]]  # settled and not-yet-started matches aren't looked up
+    assert body["200"] == {
+        "home": 1,
+        "away": 0,
+        "minute": 63,
+        "display": "63",
+        "status": "2H",
+        "finished": False,
+    }

@@ -1401,3 +1401,51 @@ a.wl-cal-cell:hover {
     grid-column: 1 / -1;
   }
 }
+
+/* ---------- live (between kick-off and the result) ---------- */
+
+@keyframes wl-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.wl-live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 0.35rem;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 1px;
+  animation: wl-pulse 1.6s ease-in-out infinite;
+}
+
+.wl-time.is-live,
+.wl-goals.is-live,
+.wl-pick-time .is-live {
+  color: var(--accent);
+}
+
+.wl-time.is-live {
+  font-size: 0.82rem;
+}
+
+.wl-why-out.is-live,
+.wl-verdict.is-live {
+  color: var(--text-2);
+}
+
+.wl-ko.is-live b {
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-live-dot {
+    animation: none;
+  }
+}

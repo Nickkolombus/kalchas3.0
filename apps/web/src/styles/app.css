@@ -245,8 +245,27 @@ body {
   font-style: normal;
 }
 
+/* Fulfilled (live or at full time): a filled chip with a tick. */
+.pick-tag.is-landed {
+  color: #071018;
+  background: var(--accent);
+}
+
+.pick-tag.is-landed:hover {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
+.pick-tag.is-missed {
+  color: var(--muted);
+  background: rgba(242, 235, 224, 0.06);
+  text-decoration: line-through;
+  text-decoration-color: rgba(224, 104, 95, 0.6);
+}
+
 .pick-tag.is-missed i {
   color: #e0685f;
+  text-decoration: none;
 }
 
 .hover-card.hover-card-pick {

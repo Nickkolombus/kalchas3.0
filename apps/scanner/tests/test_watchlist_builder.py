@@ -313,3 +313,15 @@ def test_meetings_are_fetched_once_for_standing_out_matches() -> None:
     assert "penalty_h2h" in keys
     b.build_day(DAY, now=BEFORE)
     assert len(fetched) == first  # cached for good
+
+
+def test_a_match_the_live_board_saw_end_settles_straight_away() -> None:
+    client = FakeClient()
+    b = builder(client)
+    b.build_day(DAY, now=BEFORE)
+    client.results = [result("100", "FT", 2, 1)]
+    # 15 minutes after kick-off: far too early for the timed round...
+    assert b.settle_day(DAY, now=DURING) == 0
+    # ...but the live board says it's over, so it settles now.
+    assert b.settle_day(DAY, now=DURING, finished={"100"}) == 1
+    assert page(b, "100")["result"]["label"] == "FT"

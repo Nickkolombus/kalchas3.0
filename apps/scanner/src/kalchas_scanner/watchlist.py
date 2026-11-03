@@ -56,6 +56,9 @@ REBUILD_SEC = 3 * 3600
 SETTLE_SEC = 15 * 60
 SETTLE_AFTER = timedelta(minutes=110)
 """Kick-off plus this and a match should be over; only then is it looked up."""
+FAST_RETRY_SEC = 120
+BOARD_ENDED = frozenset({"FT", "AET", "PEN", "PST", "CANC", "AWD"})
+"""Statuses the live scanner writes when a match is over or called off."""
 SETTLE_DAYS = 3
 """Days back still checked for results (late finishes, slow provider data)."""
 GIVE_UP_AFTER = timedelta(hours=48)
@@ -509,7 +512,13 @@ class WatchlistBuilder:
 
     # ------------------------------------------------------------- settle
 
-    def settle_day(self, day: date, *, now: datetime | None = None) -> int:
+    def settle_day(
+        self,
+        day: date,
+        *,
+        now: datetime | None = None,
+        finished: set[str] | frozenset[str] = frozenset(),
+    ) -> int:
         """Give finished matches their score and each pattern its outcome.
 
         One provider call, made only when a listed match should be over and
@@ -520,7 +529,11 @@ class WatchlistBuilder:
         due = [
             p
             for p in pages
-            if not is_settled(p) and (at := kickoff_at(p)) is not None and at + SETTLE_AFTER <= now
+            if not is_settled(p)
+            and (
+                str(p["match_id"]) in finished
+                or ((at := kickoff_at(p)) is not None and at + SETTLE_AFTER <= now)
+            )
         ]
         if not due:
             return 0
@@ -585,6 +598,7 @@ class WatchlistJob:
         self.builder = builder
         self.dsn = dsn
         self.zone = tz_from_offset(builder.offset)
+        self._fast_tried: dict[date, float] = {}
 
     def adopt_legacy(self) -> None:
         """Days built before the archive existed keep their list."""
@@ -617,6 +631,45 @@ class WatchlistJob:
             except Exception:
                 logger.exception("watchlist cleanup failed")
 
+    def ended_on_the_board(self, day: date) -> set[str]:
+        """Listed, unsettled matches the live scanner has seen end: their
+        results can be fetched now instead of at the next settle round."""
+        if not self.dsn:
+            return set()
+        now = datetime.now(UTC)
+        pages = self.builder.store.pages_on(day.isoformat())
+        ids = [
+            str(p["match_id"])
+            for p in pages
+            if not is_settled(p) and (at := kickoff_at(p)) is not None and at <= now
+        ]
+        if not ids:
+            return set()
+        from kalchas_db.matches import get_matches_sync
+
+        rows = get_matches_sync(self.dsn, ids)
+        return {
+            mid
+            for mid, row in rows.items()
+            if str(row.get("status_short") or "").upper() in BOARD_ENDED
+        }
+
+    def settle_ended(self) -> None:
+        """Settle right after full time. Retries a day at most every
+        `FAST_RETRY_SEC`, as the provider's results can lag the live feed."""
+        today = datetime.now(self.zone).date()
+        for day in (today - timedelta(days=1), today):
+            try:
+                ended = self.ended_on_the_board(day)
+                if not ended:
+                    continue
+                if time.monotonic() - self._fast_tried.get(day, float("-inf")) < FAST_RETRY_SEC:
+                    continue
+                self._fast_tried[day] = time.monotonic()
+                self.builder.settle_day(day, finished=ended)
+            except Exception:
+                logger.exception("watchlist quick settle failed for %s", day)
+
     def settle_once(self) -> None:
         today = datetime.now(self.zone).date()
         for back in range(SETTLE_DAYS, -1, -1):
@@ -638,6 +691,7 @@ class WatchlistJob:
             if time.monotonic() - last_settle >= SETTLE_SEC:
                 self.settle_once()
                 last_settle = time.monotonic()
+            self.settle_ended()
             time.sleep(60)
 
     def start(self) -> threading.Thread:

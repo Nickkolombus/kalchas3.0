@@ -176,13 +176,70 @@ export function liveNote(key: string, score: string, home: string, away: string,
   }
 }
 
+/** Already decided while the match is still on: goals can't be taken back,
+ * so "3 goals in" has landed an over 2.5 for good. `null` while it's open. */
+export function liveVerdict(key: string, score: string): Outcome | null {
+  const m = /^(\d+)\s*[-–]\s*(\d+)/.exec(score || "");
+  if (!m) return null;
+  const hs = Number(m[1]);
+  const as = Number(m[2]);
+  const total = hs + as;
+  switch (key) {
+    case "btts_yes":
+      return hs && as ? "landed" : null;
+    case "btts_no":
+      return hs && as ? "missed" : null;
+    case "over_2_5":
+      return total >= 3 ? "landed" : null;
+    case "over_3_5":
+      return total >= 4 ? "landed" : null;
+    case "under_2_5":
+      return total >= 3 ? "missed" : null;
+    case "team_over_1_5_home":
+      return hs >= 2 ? "landed" : null;
+    case "team_over_1_5_away":
+      return as >= 2 ? "landed" : null;
+    case "home_scoring_run":
+      return hs ? "landed" : null;
+    case "away_scoring_run":
+      return as ? "landed" : null;
+    case "leaky_home":
+      return as ? "landed" : null;
+    case "leaky_away":
+      return hs ? "landed" : null;
+    case "blanks_home":
+      return hs ? "missed" : null;
+    case "blanks_away":
+      return as ? "missed" : null;
+    default:
+      return null;
+  }
+}
+
+/** The team a pattern is about: "away over 1.5" belongs next to the away side. */
+export function pickSide(key: string): "home" | "away" {
+  return key.endsWith("_away") || key.startsWith("away_") ? "away" : "home";
+}
+
 /* ------------------------------------------------------------ board mark */
 
-/** The strong-watch tag after the home team's name (desktop board). */
-export function PickTag({ matchId, score, minute }: { matchId: string; score: string; minute: number }) {
+/** The strong-watch tag on the desktop board, next to the team its pattern
+ * is about (match-wide patterns sit with the home side). */
+export function PickTag({
+  matchId,
+  score,
+  minute,
+  side,
+}: {
+  matchId: string;
+  score: string;
+  minute: number;
+  side: "home" | "away";
+}) {
   const { today } = useContext(PicksContext);
   const pick = usePick(matchId);
-  if (!pick) return null;
+  if (!pick || pickSide(pick.lead_key) !== side) return null;
+  const decided = pick.outcome ?? liveVerdict(pick.lead_key, score);
   const note = pick.outcome ? pick.outcome_note : liveNote(pick.lead_key, score, pick.home.name, pick.away.name, minute);
   const stop = (event: MouseEvent) => event.stopPropagation();
   return (
@@ -206,9 +263,13 @@ export function PickTag({ matchId, score, minute }: { matchId: string; score: st
           </div>
         }
       >
-        <a className={`pick-tag${pick.outcome ? ` is-${pick.outcome}` : ""}`} href={pickHref(pick, today)}>
+        <a
+          className={`pick-tag${decided ? ` is-${decided}` : ""}`}
+          href={pickHref(pick, today)}
+          title={decided === "landed" ? "Landed" : decided === "missed" ? "Missed" : undefined}
+        >
           <SpyglassIcon size={12} />
-          {pick.outcome ? <i aria-hidden>{pick.outcome === "landed" ? "✓" : "✗"}</i> : null}
+          {decided ? <i aria-hidden>{decided === "landed" ? "✓" : "✗"}</i> : null}
           {pick.tag}
         </a>
       </HoverTip>

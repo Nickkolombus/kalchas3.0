@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import kalchasMark from "./assets/kalchas-mark.png";
+import { liveNote, liveVerdict } from "./WatchlistPicks";
 
 type Watch = "strong" | "look" | "quiet";
 type Outcome = "landed" | "missed";
@@ -24,6 +25,7 @@ type WatchRow = {
   odds?: { home?: number | null; draw?: number | null; away?: number | null } | null;
   watch: Watch;
   score: number;
+  lead_key?: string;
   headline: string;
   reason: string;
   tags: { label: string; outcome?: Outcome | null }[];
@@ -289,10 +291,10 @@ type Entry = { at: number; data?: unknown; promise?: Promise<unknown> };
 const responses = new Map<string, Entry>();
 const FRESH_MS = 60_000;
 
-function load<T>(url: string): Promise<T> {
+function load<T>(url: string, force = false): Promise<T> {
   const hit = responses.get(url);
   if (hit?.promise) return hit.promise as Promise<T>;
-  if (hit && hit.data !== undefined && Date.now() - hit.at < FRESH_MS) return Promise.resolve(hit.data as T);
+  if (!force && hit && hit.data !== undefined && Date.now() - hit.at < FRESH_MS) return Promise.resolve(hit.data as T);
   const entry: Entry = { at: Date.now(), data: hit?.data };
   entry.promise = fetch(url)
     .then(async (res) => {
@@ -323,7 +325,11 @@ function cached<T>(url: string | null): T | null {
   return hit && hit.data !== undefined ? (hit.data as T) : null;
 }
 
-function useJson<T>(url: string | null): { data: T | null; error: string | null; loading: boolean } {
+/** `refreshMs` > 0 re-fetches on that interval (while matches are being played). */
+function useJson<T>(
+  url: string | null,
+  refreshMs = 0,
+): { data: T | null; error: string | null; loading: boolean } {
   const [state, setState] = useState(() => {
     const data = cached<T>(url);
     return { url, data, error: null as string | null, loading: Boolean(url) && !data };
@@ -347,7 +353,68 @@ function useJson<T>(url: string | null): { data: T | null; error: string | null;
       alive = false;
     };
   }, [url]);
+  useEffect(() => {
+    if (!url || !refreshMs) return;
+    let alive = true;
+    const timer = window.setInterval(() => {
+      load<T>(url, true)
+        .then((data) => alive && setState({ url, data, error: null, loading: false }))
+        .catch(() => undefined);
+    }, refreshMs);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [url, refreshMs]);
   return { data: view.data, error: view.data ? null : view.error, loading: view.loading };
+}
+
+/* ------------------------------------------------------------ live scores */
+
+type Live = { home: number; away: number; minute: number; display: string; status: string; finished: boolean };
+const LIVE_POLL_MS = 30_000;
+
+/** Scores of the day's listed matches while they're played, from the live
+ * board, until the scanner settles each one. */
+function useLive(day: DayKey, enabled: boolean): Record<string, Live> {
+  const [live, setLive] = useState<Record<string, Live>>({});
+  useEffect(() => {
+    if (!enabled) {
+      setLive({});
+      return;
+    }
+    let alive = true;
+    const pull = () =>
+      fetch(`/api/watchlist/live/${day}`)
+        .then((res) => (res.ok ? (res.json() as Promise<Record<string, Live>>) : null))
+        .then((body) => {
+          if (alive && body) setLive(body);
+        })
+        .catch(() => undefined);
+    void pull();
+    const timer = window.setInterval(pull, LIVE_POLL_MS);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [day, enabled]);
+  return live;
+}
+
+function liveClock(live: Live): string {
+  if (live.finished) return "FT";
+  if (live.status === "HT") return "HT";
+  return `${live.display || live.minute}'`;
+}
+
+/** The live note without its "…: landed." ending, for when a mark says it. */
+function noteBeside(note: string): string {
+  return note.replace(/: (landed|missed)\.$/, ".");
+}
+
+function started(iso: string): boolean {
+  const at = Date.parse(iso);
+  return !Number.isNaN(at) && at <= Date.now();
 }
 
 /* ---------------------------------------------------------- small parts */
@@ -520,11 +587,32 @@ function HowItWent({ data }: { data: WatchlistDay }) {
   );
 }
 
-function RowScore({ result, kickoff }: { result?: RowResult | null; kickoff: string }) {
+function RowScore({ result, kickoff, live }: { result?: RowResult | null; kickoff: string; live?: Live }) {
+  if (!result && live) {
+    return (
+      <span className="wl-time is-live" title={`Kick-off ${clock(kickoff)}`}>
+        {liveClock(live)}
+      </span>
+    );
+  }
   if (!result) return <span className="wl-time">{clock(kickoff)}</span>;
   return (
     <span className={`wl-time is-done${result.status === "off" ? " is-off" : ""}`} title={`Kick-off ${clock(kickoff)}`}>
       {result.status === "off" ? "Off" : resultLabel(result)}
+    </span>
+  );
+}
+
+function LiveLine({ m, live }: { m: WatchRow; live: Live }) {
+  if (live.finished) return <span className="wl-why-out is-live">Full time. Marking how it went…</span>;
+  const score = `${live.home}-${live.away}`;
+  const verdict = m.lead_key ? liveVerdict(m.lead_key, score) : null;
+  const note = m.lead_key ? liveNote(m.lead_key, score, m.home.name, m.away.name, live.minute) : "";
+  if (!note && !verdict) return null;
+  return (
+    <span className="wl-why-out is-live">
+      {verdict ? <OutcomeMark outcome={verdict} /> : <i className="wl-live-dot" aria-hidden />}{" "}
+      {verdict ? noteBeside(note) : note}
     </span>
   );
 }
@@ -544,7 +632,15 @@ function DayView({
   nav: Nav;
   onReady: () => void;
 }) {
-  const { data, error, loading } = useJson<WatchlistDay>(`/api/watchlist/day/${day}`);
+  const [refreshMs, setRefreshMs] = useState(0);
+  const { data, error, loading } = useJson<WatchlistDay>(`/api/watchlist/day/${day}`, refreshMs);
+  const underway = Boolean(data?.status === "ready" && data.matches.some((m) => !m.result && started(m.kickoff)));
+  const live = useLive(day, underway);
+  const ending = Object.values(live).some((l) => l.finished);
+  useEffect(() => {
+    // Re-read the list soon after a match ends, so its marks show up.
+    setRefreshMs(ending ? 45_000 : underway ? 180_000 : 0);
+  }, [ending, underway]);
 
   useEffect(() => {
     if (data) onReady();
@@ -671,6 +767,10 @@ function DayView({
                     <p className="wl-verdict">
                       <OutcomeMark outcome={m.outcome} /> {m.outcome_note}
                     </p>
+                  ) : live[m.match_id] ? (
+                    <p className="wl-verdict">
+                      <LiveLine m={m} live={live[m.match_id]} />
+                    </p>
                   ) : null}
                   <div className="wl-tags">
                     {m.tags.map((t, k) => (
@@ -683,6 +783,13 @@ function DayView({
                     <>
                       <b>{scoreText(m.result) || m.result.label}</b>
                       {m.result.status === "finished" ? <small>{resultLabel(m.result)}</small> : null}
+                    </>
+                  ) : live[m.match_id] ? (
+                    <>
+                      <b className="is-live">
+                        {live[m.match_id].home}–{live[m.match_id].away}
+                      </b>
+                      <small className="is-live">{liveClock(live[m.match_id])}</small>
                     </>
                   ) : (
                     clock(m.kickoff)
@@ -718,17 +825,18 @@ function DayView({
                       onPointerEnter={() => warm(m.match_id)}
                       onFocus={() => warm(m.match_id)}
                     >
-                      <RowScore result={m.result} kickoff={m.kickoff} />
+                      <RowScore result={m.result} kickoff={m.kickoff} live={live[m.match_id]} />
                       <div className="wl-teams">
                         {(["home", "away"] as const).map((side) => {
                           const t = m[side];
-                          const goals = m.result?.status === "finished" ? m.result[side] : null;
+                          const lv = m.result ? undefined : live[m.match_id];
+                          const goals = m.result?.status === "finished" ? m.result[side] : lv ? lv[side] : null;
                           return (
                             <div key={side}>
                               <Crest src={t.badge} name={t.name} />
                               <span className="wl-name">{t.name}</span>
                               {t.position ? <span className="wl-pos">{ordinal(t.position)}</span> : null}
-                              {goals != null ? <b className="wl-goals">{goals}</b> : null}
+                              {goals != null ? <b className={`wl-goals${lv ? " is-live" : ""}`}>{goals}</b> : null}
                             </div>
                           );
                         })}
@@ -747,6 +855,8 @@ function DayView({
                           <span className="wl-why-out">
                             <OutcomeMark outcome={m.outcome} /> {m.outcome_note}
                           </span>
+                        ) : !m.result && live[m.match_id] ? (
+                          <LiveLine m={m} live={live[m.match_id]} />
                         ) : null}
                       </div>
                       <div className="wl-end">
@@ -1049,8 +1159,21 @@ function backLabel(day: DayKey, iso?: string): string {
   return iso ? dayLabel(iso) : dayLabel(day);
 }
 
-function MatchCentre({ data }: { data: MatchResearch }) {
+function MatchCentre({ data, live }: { data: MatchResearch; live?: Live }) {
   const r = data.result;
+  if (!r && live) {
+    return (
+      <div className="wl-ko is-done is-live">
+        <b>
+          {live.home}–{live.away}
+        </b>
+        <span>
+          <i className="wl-live-dot" aria-hidden />
+          {live.finished ? "Full time · marking how it went" : `Live · ${liveClock(live)}`}
+        </span>
+      </div>
+    );
+  }
   if (!r) {
     return (
       <div className="wl-ko">
@@ -1105,8 +1228,15 @@ function MatchView({
   nav: Nav;
   onReady: () => void;
 }) {
-  const { data, error, loading } = useJson<MatchResearch>(`/api/watchlist/match/${matchId}`);
+  const [refreshMs, setRefreshMs] = useState(0);
+  const { data, error, loading } = useJson<MatchResearch>(`/api/watchlist/match/${matchId}`, refreshMs);
   const list = useJson<WatchlistDay>(`/api/watchlist/day/${day}`).data;
+  const lives = useLive(day, Boolean(data && !data.result && started(data.kickoff)));
+  const live = data && !data.result ? lives[matchId] : undefined;
+  useEffect(() => {
+    // Full time on the board: re-read until the marks are in.
+    setRefreshMs(live?.finished ? 30_000 : 0);
+  }, [live?.finished]);
 
   useEffect(() => {
     if (data) onReady();
@@ -1222,7 +1352,7 @@ function MatchView({
               ) : null}
             </div>
           </div>
-          <MatchCentre data={data} />
+          <MatchCentre data={data} live={live} />
           <div className="wl-side is-away">
             <div>
               <b>{away.name}</b>
@@ -1275,6 +1405,11 @@ function MatchView({
                 Written before kick-off. Each point is marked with how it went
                 {result.label !== "FT" ? ", judged on the 90 minutes" : ""}.
               </p>
+            ) : live ? (
+              <p className="wl-sub">
+                Written before kick-off. While it's played, each point shows where it stands; a tick means it can't
+                be undone.
+              </p>
             ) : null}
             {data.points.length ? (
               <ol className="wl-points">
@@ -1285,6 +1420,16 @@ function MatchView({
                       {p.outcome ? (
                         <p className="wl-verdict">
                           <OutcomeMark outcome={p.outcome} /> {p.outcome_note}
+                        </p>
+                      ) : live && !live.finished ? (
+                        <p className="wl-verdict is-live">
+                          {liveVerdict(p.key, `${live.home}-${live.away}`) ? (
+                            <OutcomeMark outcome={liveVerdict(p.key, `${live.home}-${live.away}`)} />
+                          ) : (
+                            <i className="wl-live-dot" aria-hidden />
+                          )}{" "}
+                          {noteBeside(liveNote(p.key, `${live.home}-${live.away}`, home.name, away.name, live.minute)) ||
+                            "Can't tell from the score yet."}
                         </p>
                       ) : null}
                     </div>
@@ -1448,7 +1593,7 @@ function MatchView({
 
           <section className="wl-sec">
             <p className="wl-sub">
-              {result
+              {result || live
                 ? `Written ${dayLabel(data.built_at.slice(0, 10))} at ${clock(data.built_at)}, before kick-off, and left unchanged since.`
                 : `Updated ${clock(data.built_at)}. Patterns come from results only. Team news and line-ups are not included yet, so check them before kick-off.`}{" "}
               Use ← and → for the previous and next match.

@@ -1050,7 +1050,7 @@ function TeamStack({
             </span>
           ) : null}
           {run?.side === "home" ? <UnderdogMark run={run} /> : null}
-          <PickTag matchId={match.match_id} score={match.score} minute={match.minute} />
+          <PickTag matchId={match.match_id} score={match.score} minute={match.minute} side="home" />
         </div>
         <div className="team-line">
           <TeamBadge name={match.away_team} src={awayLogo} />
@@ -1065,6 +1065,7 @@ function TeamStack({
             </span>
           ) : null}
           {run?.side === "away" ? <UnderdogMark run={run} /> : null}
+          <PickTag matchId={match.match_id} score={match.score} minute={match.minute} side="away" />
         </div>
       </div>
     </HoverTip>

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import os
 import re
+import threading
+import time
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Literal
 
@@ -430,6 +432,79 @@ def watchlist_picks() -> LivePicks:
         raise _unavailable(exc) from exc
     upcoming.sort(key=lambda p: (p.kickoff, p.match_id))
     return LivePicks(today=today.isoformat(), next=upcoming[0] if upcoming else None, picks=picks)
+
+
+class LiveScore(BaseModel):
+    home: int
+    away: int
+    minute: int = 0
+    display: str = ""
+    status: str = ""
+    finished: bool = False
+
+
+ENDED = frozenset({"FT", "AET", "PEN"})
+CALLED_OFF = frozenset({"PST", "CANC", "AWD"})
+LIVE_TTL_SEC = 15.0
+_live_scores: dict[str, tuple[float, dict[str, LiveScore]]] = {}
+_live_lock = threading.Lock()
+
+
+def _live_for(dsn: str, date_str: str) -> dict[str, LiveScore]:
+    """Live score for each match on that day's list that is under way or just
+    finished and not yet settled, from the rows the live scanner keeps."""
+    from kalchas_db.matches import get_matches_sync
+    from kalchas_db.watchlist import load_watchlist_day
+
+    doc = load_watchlist_day(dsn, date_str) or {}
+    now = datetime.now(UTC)
+    ids = []
+    for row in doc.get("matches") or []:
+        if row.get("result"):
+            continue
+        try:
+            started = datetime.fromisoformat(str(row.get("kickoff"))) <= now
+        except ValueError:
+            started = False
+        if started:
+            ids.append(str(row["match_id"]))
+    out: dict[str, LiveScore] = {}
+    for match_id, row in get_matches_sync(dsn, ids).items():
+        status = str(row.get("status_short") or "").upper()
+        if status in CALLED_OFF or row.get("home_score") is None:
+            continue
+        out[match_id] = LiveScore(
+            home=int(row["home_score"]),
+            away=int(row["away_score"]),
+            minute=int(row.get("minute") or 0),
+            display=str(row.get("minute_display") or ""),
+            status=status,
+            finished=status in ENDED,
+        )
+    return out
+
+
+@router.get("/live/{day}", response_model=dict[str, LiveScore])
+def watchlist_live(day: str) -> dict[str, LiveScore]:
+    """Scores of the day's listed matches while they're played, until each is
+    settled. Shared for 15 seconds, so many open pages cost one lookup."""
+    date_str = resolve_day(day)
+    now = time.monotonic()
+    hit = _live_scores.get(date_str)
+    if hit and now - hit[0] < LIVE_TTL_SEC:
+        return hit[1]
+    with _live_lock:
+        hit = _live_scores.get(date_str)
+        if hit and time.monotonic() - hit[0] < LIVE_TTL_SEC:
+            return hit[1]
+        try:
+            scores = _live_for(_dsn(), date_str)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise _unavailable(exc) from exc
+        _live_scores[date_str] = (time.monotonic(), scores)
+        return scores
 
 
 @router.get("/match/{match_id}", response_model=MatchResearch)

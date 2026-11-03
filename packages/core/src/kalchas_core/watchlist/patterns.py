@@ -10,7 +10,7 @@ more ranks first.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Final
 
 from kalchas_core.watchlist.profile import (
@@ -621,6 +621,23 @@ def _fixture_history(
     return out
 
 
+MEETING_ALONE_MAX: Final = 0.3
+"""Meeting patterns with nothing else behind them stay under "worth a look"."""
+
+
+def _is_meeting(key: str) -> bool:
+    return key == "penalty_h2h" or key.startswith("corners_over_")
+
+
+def _behind_the_match(found: Sequence[Pattern]) -> list[Pattern]:
+    """Penalty and corner history back a match up; they never lead it. Each
+    is held just under the match's best other pattern, or under
+    `MEETING_ALONE_MAX` when there is none."""
+    best = max((p.score for p in found if not _is_meeting(p.key)), default=0.0)
+    cap = best * FOLLOW_ON if best else MEETING_ALONE_MAX
+    return [replace(p, score=min(p.score, cap)) if _is_meeting(p.key) else p for p in found]
+
+
 def match_patterns(
     home: TeamProfile,
     away: TeamProfile,
@@ -648,6 +665,7 @@ def match_patterns(
         *_favourite(home, away, odds),
         *_fixture_history(home, away, meetings, norms),
     ]
+    found = _behind_the_match(found)
     found = [p for p in found if p.score >= 0.05]
     found.sort(key=lambda p: p.score, reverse=True)
     return found

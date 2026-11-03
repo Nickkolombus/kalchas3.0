@@ -473,3 +473,22 @@ def test_cap_keeps_started_matches_and_demotes_the_rest_by_score() -> None:
     assert "late" not in changed and "0" not in changed
     assert all(k not in changed for k in ("2", "8"))
     assert changed["9"] == "look" and changed["13"] == "look"
+
+
+def test_meeting_patterns_never_lead_or_make_a_match_alone() -> None:
+    home, away = quiet_teams()
+    habit = [meeting(penalty=True)] * 6 + [meeting()] * 4
+    found = match_patterns(home, away, norms(), league="", meetings=habit)
+    pen = next(p for p in found if p.key == "penalty_h2h")
+    others = [p for p in found if p.key != "penalty_h2h"]
+    assert found[0].key != "penalty_h2h"
+    if others:
+        assert pen.score < others[0].score
+    alone = match_patterns(
+        build_team_profile(season(HOME, [(1, 1)] * 3), HOME),
+        build_team_profile(season(AWAY, [(1, 1)] * 3, start=50), AWAY),
+        norms(),
+        league="",
+        meetings=habit,
+    )
+    assert watch_level(alone) == "quiet"
