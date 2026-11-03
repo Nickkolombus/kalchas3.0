@@ -62,12 +62,14 @@ def match_result(row: Mapping[str, Any]) -> dict[str, Any] | None:
         "timed": timed,
         "cards": None if row.get("cards") is None else int(row["cards"]),
         "red_card": None if row.get("cards") is None else bool(row.get("red_card")),
+        "corners": None if row.get("corners") is None else int(row["corners"]),
         "goals": [
             {
                 "time": str(g.get("display") or g.get("minute") or ""),
                 "minute": int(g.get("minute") or 0),
                 "half": str(g.get("half") or ""),
                 "side": str(g.get("side") or ""),
+                "penalty": bool(g.get("penalty")),
             }
             for g in events
         ]
@@ -119,6 +121,25 @@ def settle(
         return outcome(total <= 2, _goals(total))
     if key == "over_3_5":
         return outcome(total >= 4, _goals(total))
+    if key == "penalty_h2h":
+        if total == 0:
+            return outcome(False, "No goals.")
+        if not result.get("timed"):
+            return None, ""
+        pens = [
+            g
+            for g in result.get("goals") or []
+            if g.get("penalty") and g.get("half") in {"1H", "2H"}
+        ]
+        return outcome(
+            bool(pens), f"Penalty scored at {_times(pens)}." if pens else "No penalty scored."
+        )
+    if key.startswith("corners_over_"):
+        corners = result.get("corners")
+        if corners is None:
+            return None, ""  # no statistics for this match
+        line = float(key.removeprefix("corners_over_").replace("_", "."))
+        return outcome(corners > line, f"{corners} corners.")
     if key in {"cards_over_4_5", "red_card"}:
         cards = result.get("cards")
         if cards is None:

@@ -51,9 +51,30 @@ def test_parse_team_fixtures_keeps_goal_minutes_and_half_time() -> None:
     assert played["home_team"] == "Alpha" and played["league_id"] == 153
     assert (played["home_ht_score"], played["away_ht_score"]) == (1, 1)
     assert played["goal_events"] == [
-        {"minute": 7, "team": "home", "side": "home", "half": "1H", "display": "7"},
-        {"minute": 48, "team": "away", "side": "away", "half": "1H", "display": "45+3"},
-        {"minute": 94, "team": "home", "side": "home", "half": "2H", "display": "90+4"},
+        {
+            "minute": 7,
+            "team": "home",
+            "side": "home",
+            "half": "1H",
+            "display": "7",
+            "penalty": False,
+        },
+        {
+            "minute": 48,
+            "team": "away",
+            "side": "away",
+            "half": "1H",
+            "display": "45+3",
+            "penalty": False,
+        },
+        {
+            "minute": 94,
+            "team": "home",
+            "side": "home",
+            "half": "2H",
+            "display": "90+4",
+            "penalty": False,
+        },
     ]
     assert upcoming["home_ht_score"] is None and upcoming["goal_events"] == []
 

@@ -275,6 +275,7 @@ class MatchResult(BaseModel):
     timed: bool = False
     cards: int | None = None
     red_card: bool | None = None
+    corners: int | None = None
     goals: list[Goal] = []
 
 

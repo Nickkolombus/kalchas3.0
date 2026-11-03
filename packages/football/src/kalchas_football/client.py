@@ -891,10 +891,22 @@ def parse_team_fixtures(data: Any) -> list[dict[str, Any]]:
                 "away_ht_score": _optional_score(row.get("match_awayteam_halftime_score")),
                 "league_id": _coerce_int(row.get("league_id")),
                 "goal_events": _h2h_goal_events(row),
+                "corners": _corners(row),
                 **_regular_cards(row),
             }
         )
     return out
+
+
+def _corners(row: dict[str, Any]) -> int | None:
+    """Total corners from the match statistics, or `None` without them."""
+    for stat in row.get("statistics") or []:
+        if isinstance(stat, dict) and stat.get("type") == "Corners":
+            home = _optional_score(stat.get("home"))
+            away = _optional_score(stat.get("away"))
+            if home is not None and away is not None:
+                return home + away
+    return None
 
 
 def _regular_cards(row: dict[str, Any]) -> dict[str, Any]:
@@ -957,6 +969,7 @@ def _h2h_goal_events(row: dict[str, Any]) -> list[dict[str, Any]]:
                 "side": side,
                 "half": _SCORE_INFO_HALF.get(period, half),
                 "display": display or str(minute),
+                "penalty": str(item.get("info") or "").strip() == "Penalty",
             }
         )
     return events
@@ -1008,6 +1021,7 @@ def parse_results(data: Any) -> list[dict[str, Any]]:
                 "home_pens": pens["home"] if status == "PEN" else None,
                 "away_pens": pens["away"] if status == "PEN" else None,
                 "goals": _h2h_goal_events(row),
+                "corners": _corners(row),
                 **_regular_cards(row),
             }
         )
@@ -1273,6 +1287,12 @@ class FootballAPIClient:
         """Every fixture on one calendar day, times in ``timezone`` (``+03:00``)."""
         data = self._get("get_events", {"from": day, "to": day, "timezone": timezone})
         return parse_upcoming_fixtures(data)
+
+    def get_match(self, match_id: str) -> dict[str, Any] | None:
+        """One finished or scheduled match with its details (goal times,
+        cards, statistics), as a ``parse_team_fixtures`` row."""
+        rows = parse_team_fixtures(self._get("get_events", {"match_id": match_id}))
+        return rows[0] if rows else None
 
     def get_results_on(self, day: str, *, timezone: str) -> list[dict[str, Any]]:
         """The same day's fixtures as results (``parse_results``), for settling."""

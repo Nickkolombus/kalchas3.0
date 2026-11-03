@@ -36,13 +36,16 @@ from typing import Any, Protocol
 from kalchas_core.h2h import DEFAULT_LAST, build_h2h_payload, orient_h2h_payload
 from kalchas_core.watchlist import (
     NO_RESULT,
+    PlayedGame,
     TeamProfile,
     assemble_day,
     build_match_research,
     build_team_profile,
+    cap_levels,
     is_settled,
     league_norms,
     match_result,
+    played_game,
     settle_page,
 )
 from kalchas_football import FootballAPIClient, RateLimitBudgetExceeded
@@ -64,6 +67,12 @@ SHORT_H2H_HOURS = 24
 KEEP_HOURS = 72
 HISTORY_DAYS = 120
 RECORD_DAYS = 180
+MEETINGS_LOOKED_AT = 10
+MEETING_CALLS_PER_BUILD = 100
+"""Past meetings fetched one by one for their penalties and corners. Each is
+kept for good (a played match doesn't change), so a pair costs its calls
+once; this caps a heavy first build and the rest come at the next one."""
+MEETING_HOURS = 365 * 24
 MIN_COMPETITION_GAMES = 6
 """Fewer league/cup games than this and a team's profile uses all competitions."""
 
@@ -233,6 +242,7 @@ class WatchlistBuilder:
         self.store = store
         self.offset = offset
         self.records = records
+        self._meeting_calls = MEETING_CALLS_PER_BUILD
 
     # -------------------------------------------------------------- reads
 
@@ -332,6 +342,42 @@ class WatchlistBuilder:
             cached, home_team_id=home_id, away_team_id=away_id, home_team=home, away_team=away
         )
 
+    def _meetings(self, h2h: Mapping[str, Any] | None, home_id: int) -> list[PlayedGame]:
+        """The last meetings with their detail (goal times, corners), from
+        the home side's point of view. Only for matches already standing
+        out: these back a match up, they don't make one."""
+        out: list[PlayedGame] = []
+        for meeting in ((h2h or {}).get("fixtures") or [])[:MEETINGS_LOOKED_AT]:
+            match_id = str(meeting.get("match_id") or "")
+            if not match_id:
+                continue
+            key = f"meeting_{match_id}"  # outside the 72-hour "wl_" cleanup
+            try:
+                block = self.cache.load(key, ttl_hours=MEETING_HOURS)
+            except Exception:  # noqa: BLE001
+                block = None
+            if block is None:
+                if self._meeting_calls <= 0:
+                    continue
+                self._meeting_calls -= 1
+                try:
+                    block = {"row": self.client.get_match(match_id)}
+                except RateLimitBudgetExceeded:
+                    self._meeting_calls = 0
+                    continue
+                except Exception:
+                    logger.exception("watchlist: meeting %s unavailable", match_id)
+                    continue
+                try:
+                    self.cache.save(key, block)
+                except Exception:
+                    logger.exception("watchlist cache write failed for %s", key)
+            row = block.get("row")
+            game = played_game(row, home_id) if row else None
+            if game is not None:
+                out.append(game)
+        return out
+
     def _profile(
         self, history: list[dict[str, Any]], team_id: int, name: str
     ) -> tuple[TeamProfile, str]:
@@ -393,6 +439,7 @@ class WatchlistBuilder:
         histories: dict[int, list[dict[str, Any]] | None] = {}
         tables: dict[int, list[dict[str, Any]]] = {}
         partial = False
+        self._meeting_calls = MEETING_CALLS_PER_BUILD
 
         for fx in sorted(upcoming, key=lambda f: (f["match_time"], f["match_id"])):
             league_id = int(fx.get("league_id") or 0)
@@ -406,20 +453,25 @@ class WatchlistBuilder:
 
             home, home_source = self._profile(history, fx["home_team_id"], fx["home_team"])
             away, away_source = self._profile(history, fx["away_team_id"], fx["away_team"])
-            research = build_match_research(
-                fx,
-                kickoff=kickoff_iso(fx, self.offset),
-                home=home,
-                away=away,
-                home_source=home_source,
-                away_source=away_source,
-                norms=league_norms(history),
-                odds=odds_by_match.get(fx["match_id"]),
-                h2h=self._h2h(fx),
-                table=tables[league_id],
-                league_record=by_league_record.get((fx["country_name"], fx["league_name"])),
-                overall_record=overall,
-            )
+            h2h = self._h2h(fx)
+            inputs: dict[str, Any] = {
+                "kickoff": kickoff_iso(fx, self.offset),
+                "home": home,
+                "away": away,
+                "home_source": home_source,
+                "away_source": away_source,
+                "norms": league_norms(history),
+                "odds": odds_by_match.get(fx["match_id"]),
+                "h2h": h2h,
+                "table": tables[league_id],
+                "league_record": by_league_record.get((fx["country_name"], fx["league_name"])),
+                "overall_record": overall,
+            }
+            research = build_match_research(fx, **inputs)
+            if research["watch"] != "quiet":
+                meetings = self._meetings(h2h, int(fx["home_team_id"]))
+                if meetings:
+                    research = build_match_research(fx, **inputs, meetings=meetings)
             research["day"] = day_str
             research["built_at"] = built_at
             research["result"] = None
@@ -430,6 +482,16 @@ class WatchlistBuilder:
                 partial = True
                 continue
             stored[fx["match_id"]] = research
+
+        # A short list on purpose: at most `day_cap` strong watches (and as
+        # many worth a look); matches already under way keep their rating.
+        for page in cap_levels(list(stored.values()), day=day_str, keep=frozen):
+            try:
+                self.store.save_page(day_str, page)
+            except Exception:
+                logger.exception("watchlist: could not store %s", page["match_id"])
+                continue
+            stored[str(page["match_id"])] = page
 
         doc = assemble_day(
             day_str, list(stored.values()), built_at=built_at, timezone=self.offset, partial=partial
@@ -551,6 +613,7 @@ class WatchlistJob:
 
                 for prefix in ("watchlist_", "wl_"):
                     delete_panel_cache_older(self.dsn, prefix, hours=KEEP_HOURS)
+                delete_panel_cache_older(self.dsn, "meeting_", hours=MEETING_HOURS)
             except Exception:
                 logger.exception("watchlist cleanup failed")
 

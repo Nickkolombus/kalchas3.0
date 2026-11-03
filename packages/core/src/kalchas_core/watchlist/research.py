@@ -7,9 +7,12 @@ Plain dicts in the shape the API serves, so the builder can store them in
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from datetime import date
 from typing import Any, Final
 
 from kalchas_core.watchlist.patterns import (
+    NOTABLE,
+    STRONG,
     Pattern,
     match_patterns,
     pattern_table,
@@ -19,6 +22,7 @@ from kalchas_core.watchlist.patterns import (
 from kalchas_core.watchlist.profile import (
     TIMING_LABELS,
     LeagueNorms,
+    PlayedGame,
     TeamProfile,
     default_norms,
 )
@@ -192,6 +196,7 @@ def build_match_research(
     table: Sequence[Mapping[str, Any]],
     league_record: Mapping[str, Any] | None,
     overall_record: Mapping[str, Any] | None,
+    meetings: Sequence[PlayedGame] = (),
 ) -> dict[str, Any]:
     """The research page for one match. ``h2h`` is an oriented H2H payload
     (``kalchas_core.h2h.orient_h2h_payload``)."""
@@ -201,7 +206,9 @@ def build_match_research(
     if norms.games == 0:
         league = ""
     h2h_patterns = (h2h or {}).get("patterns") if h2h else None
-    patterns = match_patterns(home, away, norms, league=league, h2h=h2h_patterns, odds=odds)
+    patterns = match_patterns(
+        home, away, norms, league=league, h2h=h2h_patterns, odds=odds, meetings=meetings
+    )
     timing_home, timing_away = _timing_side(home), _timing_side(away)
     positions = {int(r["team_id"]): r for r in table}
 
@@ -337,6 +344,50 @@ def assemble_day(
         "shortlist": top,
         "summary": day_summary(rows, top),
     }
+
+
+WEEKEND: Final = frozenset({4, 5, 6})
+"""Friday, Saturday and Sunday (``date.weekday()``)."""
+DAY_CAP: Final = {"weekday": 10, "weekend": 20}
+"""At most this many strong watches, and this many worth a look, on a day.
+Few on purpose: the point is a short list to follow closely."""
+
+
+def day_cap(day: str) -> int:
+    return DAY_CAP["weekend" if date.fromisoformat(day).weekday() in WEEKEND else "weekday"]
+
+
+def natural_level(score: float) -> str:
+    return "strong" if score >= STRONG else "look" if score >= NOTABLE else "quiet"
+
+
+def cap_levels(
+    pages: Sequence[Mapping[str, Any]], *, day: str, keep: frozenset[str] | set[str] = frozenset()
+) -> list[dict[str, Any]]:
+    """The day's pages with ratings capped at `day_cap`. Pages in `keep`
+    (already kicked off) hold their rating and count toward the cap; the rest
+    take the places left, best score first. A strong watch past the cap reads
+    worth a look; past that cap too, quiet. Returns only the pages that
+    changed."""
+    cap = day_cap(day)
+    kept = [p for p in pages if str(p["match_id"]) in keep]
+    slots = {
+        "strong": cap - sum(1 for p in kept if p.get("watch") == "strong"),
+        "look": cap - sum(1 for p in kept if p.get("watch") == "look"),
+    }
+    changed: list[dict[str, Any]] = []
+    rest = [p for p in pages if str(p["match_id"]) not in keep]
+    for page in sorted(rest, key=lambda p: (-float(p.get("score") or 0), str(p["match_id"]))):
+        level = natural_level(float(page.get("score") or 0))
+        if level == "strong" and slots["strong"] <= 0:
+            level = "look"
+        if level == "look" and slots["look"] <= 0:
+            level = "quiet"
+        if level != "quiet":
+            slots[level] -= 1
+        if level != page.get("watch"):
+            changed.append({**page, "watch": level})
+    return changed
 
 
 def shortlist(rows: Sequence[Mapping[str, Any]]) -> list[str]:

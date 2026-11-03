@@ -13,7 +13,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-from kalchas_core.watchlist.profile import MIN_LEAGUE_GAMES, LeagueNorms, TeamProfile, game_flag
+from kalchas_core.watchlist.profile import (
+    MIN_LEAGUE_GAMES,
+    LeagueNorms,
+    PlayedGame,
+    TeamProfile,
+    game_flag,
+)
 
 MIN_GAMES: Final = 5
 SHRINK_GAMES: Final = 4
@@ -58,6 +64,7 @@ FAMILY: Final = {
     "blanks_away": "tight",
     "cards_over_4_5": "cards",
     "red_card": "cards",
+    "penalty_h2h": "penalty",
 }
 """Patterns that tell the same story. A second one from the same family adds
 nothing to a match's watch score."""
@@ -530,6 +537,90 @@ def _cards(home: TeamProfile, away: TeamProfile, norms: LeagueNorms, league: str
     return out
 
 
+MEETINGS_MIN: Final = 5
+"""Meetings with the detail known before their penalties or corners say anything."""
+
+PENALTY_SHARE: Final = 0.4
+PENALTY_MIN: Final = 3
+"""A penalty scored in at least this share (and count) of the meetings: a
+fixture with history, "4 of their last 10"."""
+
+CORNER_SHARE: Final = 0.6
+CORNER_LINES: Final = (13.5, 12.5, 11.5, 10.5, 9.5)
+CORNER_NORM: Final = 0.35
+"""Share of games over a high corner line, where the league's own is unknown."""
+
+MEETINGS_WEIGHT: Final = 0.6
+"""These come from a handful of meetings, often seasons apart, so they back up
+a match rather than make it."""
+
+
+def corner_key(line: float) -> str:
+    return "corners_over_" + str(line).replace(".", "_")
+
+
+def _fixture_history(
+    home: TeamProfile, away: TeamProfile, meetings: Sequence[PlayedGame], norms: LeagueNorms
+) -> list[Pattern]:
+    """Penalties and corners in the two teams' past meetings. Only said when
+    the meetings show a clear habit; otherwise silent."""
+    out: list[Pattern] = []
+    pens = [g for g in meetings if g.penalty_goal is not None]
+    hits = sum(1 for g in pens if g.penalty_goal)
+    if len(pens) >= MEETINGS_MIN and hits >= max(PENALTY_MIN, PENALTY_SHARE * len(pens)):
+        norm = norms.rate("penalty_goal")
+        score = MEETINGS_WEIGHT * _lift(_shrunk(hits, len(pens), norm), norm)
+        if score > 0:
+            out.append(
+                Pattern(
+                    key="penalty_h2h",
+                    tag="Penalty history",
+                    title="Penalties keep coming when these two meet.",
+                    detail=(
+                        f"A penalty was scored in {_of(hits, len(pens))} of their last meetings, "
+                        f"against {_pct(norm)} of games in general."
+                    ),
+                    brief=f"A penalty scored in {_of(hits, len(pens))} of their last meetings.",
+                    score=score,
+                )
+            )
+
+    corners = [g.corners for g in meetings if g.corners is not None]
+    if len(corners) >= MEETINGS_MIN:
+        ordered = sorted(corners)
+        median = ordered[len(ordered) // 2]
+        for line in CORNER_LINES:
+            over = sum(1 for c in corners if c > line)
+            if over < CORNER_SHARE * len(corners):
+                continue
+            league = norms.corners_over(line)
+            norm = max(0.05, league) if league is not None else CORNER_NORM
+            if league is None and line < 10.5:
+                break  # an ordinary line, and nothing to say it's unusual here
+            score = MEETINGS_WEIGHT * _lift(_shrunk(over, len(corners), norm), norm)
+            if score > 0:
+                out.append(
+                    Pattern(
+                        key=corner_key(line),
+                        tag=f"Over {line} corners",
+                        title="Corners pile up when these two meet.",
+                        detail=(
+                            f"Over {line} corners in {_of(over, len(corners))} of their last meetings "
+                            f"(a typical meeting had {median}), against "
+                            + (
+                                f"{_pct(league)} of games in this league."
+                                if league is not None
+                                else "few games in general."
+                            )
+                        ),
+                        brief=f"Over {line} corners in {_of(over, len(corners))} of their last meetings.",
+                        score=score,
+                    )
+                )
+            break
+    return out
+
+
 def match_patterns(
     home: TeamProfile,
     away: TeamProfile,
@@ -538,6 +629,7 @@ def match_patterns(
     league: str,
     h2h: Mapping[str, Any] | None = None,
     odds: Mapping[str, Any] | None = None,
+    meetings: Sequence[PlayedGame] = (),
 ) -> list[Pattern]:
     """All patterns that sit above their league norm, strongest first.
 
@@ -554,6 +646,7 @@ def match_patterns(
         *_runs(home, away),
         *_defence_and_attack(home, away, norms),
         *_favourite(home, away, odds),
+        *_fixture_history(home, away, meetings, norms),
     ]
     found = [p for p in found if p.score >= 0.05]
     found.sort(key=lambda p: p.score, reverse=True)

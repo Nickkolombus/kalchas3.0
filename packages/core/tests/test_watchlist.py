@@ -396,3 +396,80 @@ def test_watch_score_ignores_a_second_pattern_from_the_same_family() -> None:
 
     assert watch_score([p("over_2_5", 0.5), p("over_3_5", 0.45)]) == 0.5
     assert watch_score([p("over_2_5", 0.5), p("over_3_5", 0.45), p("late_goal", 0.2)]) == 0.56
+
+
+# ------------------------------------------------------- meetings and caps
+
+from kalchas_core.watchlist import cap_levels, day_cap  # noqa: E402
+from kalchas_core.watchlist.profile import PlayedGame  # noqa: E402
+
+
+def meeting(*, corners: int | None = None, penalty: bool | None = False) -> PlayedGame:
+    return PlayedGame(
+        match_id="m",
+        match_date="2026-01-01",
+        opponent="B",
+        venue="H",
+        goals_for=1,
+        goals_against=1,
+        first_half_goal=True,
+        timed=True,
+        for_by_bucket=(0,) * 6,
+        against_by_bucket=(0,) * 6,
+        corners=corners,
+        penalty_goal=penalty,
+    )
+
+
+def quiet_teams() -> tuple[Any, Any]:
+    return (
+        build_team_profile(
+            season(HOME, [(1, 1), (1, 0), (0, 1), (2, 1), (1, 1)] * 2), HOME, name="A"
+        ),
+        build_team_profile(
+            season(AWAY, [(1, 1), (0, 1), (1, 0), (1, 2), (1, 1)] * 2, start=50), AWAY, name="B"
+        ),
+    )
+
+
+def test_penalties_need_a_habit_across_the_meetings() -> None:
+    home, away = quiet_teams()
+    habit = [meeting(penalty=True)] * 4 + [meeting()] * 6
+    found = {p.key: p for p in match_patterns(home, away, norms(), league="", meetings=habit)}
+    assert "penalty_h2h" in found
+    assert "4 of 10" in found["penalty_h2h"].detail
+    rare = [meeting(penalty=True)] * 2 + [meeting()] * 8
+    assert "penalty_h2h" not in {
+        p.key for p in match_patterns(home, away, norms(), league="", meetings=rare)
+    }
+
+
+def test_corners_take_the_highest_line_most_meetings_cleared() -> None:
+    home, away = quiet_teams()
+    meets = [meeting(corners=c) for c in (14, 13, 15, 13, 9, 13, 8, 16, 13, 10)]
+    league = LeagueNorms(
+        games=200, rates=dict(DEFAULT_NORMS), card_games=200, corner_totals=(9,) * 70 + (13,) * 30
+    )
+    keys = {p.key for p in match_patterns(home, away, league, league="L", meetings=meets)}
+    assert "corners_over_12_5" in keys
+    ordinary = [meeting(corners=c) for c in (8, 9, 10, 7, 9, 8)]
+    keys = {p.key for p in match_patterns(home, away, league, league="L", meetings=ordinary)}
+    assert not any(k.startswith("corners_over") for k in keys)
+
+
+def test_day_cap_is_bigger_at_the_weekend() -> None:
+    assert day_cap("2026-11-06") == 20  # Friday
+    assert day_cap("2026-11-08") == 20  # Sunday
+    assert day_cap("2026-11-03") == 10  # Tuesday
+
+
+def test_cap_keeps_started_matches_and_demotes_the_rest_by_score() -> None:
+    pages = [{"match_id": str(i), "score": 0.9 - i * 0.01, "watch": "strong"} for i in range(14)]
+    pages.append({"match_id": "late", "score": 0.95, "watch": "strong"})
+    changed = {
+        p["match_id"]: p["watch"] for p in cap_levels(pages, day="2026-11-03", keep={"0", "1"})
+    }
+    # 0 and 1 kept and counted; "late" (best score) and 2-9 take the other 8 places.
+    assert "late" not in changed and "0" not in changed
+    assert all(k not in changed for k in ("2", "8"))
+    assert changed["9"] == "look" and changed["13"] == "look"

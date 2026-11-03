@@ -283,3 +283,33 @@ def test_a_match_with_no_result_two_days_on_is_marked_so() -> None:
     assert b.settle_day(DAY, now=datetime(2026, 11, 6, tzinfo=UTC)) == 2
     assert page(b, "100")["result"] == {"status": "off", "label": "No result"}
     assert page(b, "100")["points"][0]["outcome"] is None
+
+
+def test_meetings_are_fetched_once_for_standing_out_matches() -> None:
+    client = FakeClient()
+    fetched: list[str] = []
+
+    def get_head_to_head(a: int, b: int, *, last: int) -> list[dict[str, Any]]:
+        return [played(f"h{i}", a, b, 1, 1, 10 + i) for i in range(6)]
+
+    def get_match(match_id: str) -> dict[str, Any]:
+        fetched.append(match_id)
+        return {
+            **played(match_id, 1, 2, 1, 1, 1),
+            "corners": 14,
+            "goal_events": [
+                {"minute": 30, "side": "home", "half": "1H", "penalty": True},
+                {"minute": 60, "side": "away", "half": "2H", "penalty": False},
+            ],
+        }
+
+    client.get_head_to_head = get_head_to_head  # type: ignore[method-assign]
+    client.get_match = get_match  # type: ignore[attr-defined]
+    b = builder(client)
+    b.build_day(DAY, now=BEFORE)
+    first = len(fetched)
+    assert first >= 6
+    keys = {p["key"] for p in page(b, "100")["patterns"]}
+    assert "penalty_h2h" in keys
+    b.build_day(DAY, now=BEFORE)
+    assert len(fetched) == first  # cached for good

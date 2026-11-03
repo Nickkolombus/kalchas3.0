@@ -40,6 +40,7 @@ DEFAULT_NORMS: Final = {
     "scored_2plus": 0.38,
     "cards_5plus": 0.39,
     "red_card": 0.28,
+    "penalty_goal": 0.11,
 }
 """Rates across a typical slate of league football, used where a league has
 too few games of its own. Clean sheets and blanks are per team per game, and
@@ -66,6 +67,10 @@ class PlayedGame:
     cards: int | None = None
     """Cards in the 90 minutes; `None` when the provider has no card data."""
     red_card: bool | None = None
+    corners: int | None = None
+    """Corners in the match (both teams); `None` without statistics."""
+    penalty_goal: bool | None = None
+    """A penalty scored in the 90 minutes; `None` when goals are untimed."""
 
     @property
     def result(self) -> str:
@@ -239,6 +244,12 @@ def played_game(row: dict[str, Any], team_id: int) -> PlayedGame | None:
         against_by_bucket=tuple(against_buckets),
         cards=None if row.get("cards") is None else int(row["cards"]),
         red_card=None if row.get("cards") is None else bool(row.get("red_card")),
+        corners=None if row.get("corners") is None else int(row["corners"]),
+        penalty_goal=(
+            any(ev.get("penalty") and ev.get("half") in {"1H", "2H"} for ev in events)
+            if timed
+            else None
+        ),
     )
 
 
@@ -292,6 +303,14 @@ class LeagueNorms:
     rates: dict[str, float]
     card_games: int = 0
     """League games with card data. Too few and card patterns stay quiet."""
+    corner_totals: tuple[int, ...] = ()
+    """Corners per game, for the league games that have them."""
+
+    def corners_over(self, line: float) -> float | None:
+        """Share of league games over `line` corners; `None` with too few."""
+        if len(self.corner_totals) < MIN_LEAGUE_GAMES:
+            return None
+        return sum(1 for c in self.corner_totals if c > line) / len(self.corner_totals)
 
     def rate(self, key: str) -> float:
         return self.rates.get(key, DEFAULT_NORMS[key])
@@ -343,8 +362,15 @@ def league_norms(rows: Sequence[dict[str, Any]]) -> LeagueNorms:
         "scored_2plus": (sum((g.goals_for >= 2) + (g.goals_against >= 2) for g in games), sides),
         "cards_5plus": (sum(1 for g in carded if (g.cards or 0) >= 5), len(carded)),
         "red_card": (sum(1 for g in carded if g.red_card), len(carded)),
+        "penalty_goal": (
+            sum(1 for g in games if g.penalty_goal),
+            sum(1 for g in games if g.penalty_goal is not None),
+        ),
     }
+    corners = tuple(g.corners for g in games if g.corners is not None)
     if n < MIN_LEAGUE_GAMES:
-        return LeagueNorms(games=n, rates=dict(DEFAULT_NORMS), card_games=len(carded))
+        return LeagueNorms(
+            games=n, rates=dict(DEFAULT_NORMS), card_games=len(carded), corner_totals=corners
+        )
     rates = {key: _blend(c, total, DEFAULT_NORMS[key]) for key, (c, total) in counts.items()}
-    return LeagueNorms(games=n, rates=rates, card_games=len(carded))
+    return LeagueNorms(games=n, rates=rates, card_games=len(carded), corner_totals=corners)

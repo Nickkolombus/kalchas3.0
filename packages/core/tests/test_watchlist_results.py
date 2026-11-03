@@ -206,3 +206,28 @@ def test_list_row_shows_one_chip_per_label() -> None:
         "Struggles to score",
         "Both score: No",
     ]
+
+
+def test_penalty_and_corner_patterns_settle() -> None:
+    result = match_result(
+        {
+            **row(
+                "FT",
+                2,
+                1,
+                goals=[
+                    ("12", 12, "1H", "home"),
+                    ("55", 55, "2H", "away"),
+                    ("80", 80, "2H", "home"),
+                ],
+            ),
+            "corners": 13,
+        }
+    )
+    assert result is not None
+    result["goals"][1]["penalty"] = True
+    assert judge("penalty_h2h", result) == ("landed", "Penalty scored at 55'.")
+    assert judge("corners_over_12_5", result) == ("landed", "13 corners.")
+    assert judge("corners_over_13_5", result) == ("missed", "13 corners.")
+    no_stats = match_result(row("FT", 2, 1))
+    assert judge("corners_over_12_5", no_stats) == (None, "")
