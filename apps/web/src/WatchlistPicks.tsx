@@ -4,6 +4,7 @@
  */
 import { createContext, useContext, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { HoverTip } from "./HoverTip";
+import { logVisitEvent } from "./visit";
 
 type Outcome = "landed" | "missed";
 
@@ -115,7 +116,7 @@ export function SpyglassIcon({ size = 18 }: { size?: number }) {
 export function WatchlistButton() {
   const { next } = useContext(PicksContext);
   return (
-    <a className="wl-entry" href="/today">
+    <a className="wl-entry" href="/today" onClick={() => logVisitEvent("wl_hero")}>
       <span className="wl-entry-icon">
         <SpyglassIcon size={28} />
       </span>
@@ -273,6 +274,7 @@ export function PickTag({
         <a
           className={`pick-tag${decided ? ` is-${decided}` : ""}`}
           href={pickHref(pick, today)}
+          onClick={() => logVisitEvent("wl_board")}
           title={decided === "landed" ? "Landed" : decided === "missed" ? "Missed" : undefined}
         >
           <SpyglassIcon size={12} />
@@ -307,7 +309,9 @@ export function PickBox({ matchId, score, minute }: { matchId: string; score: st
           {note}
         </p>
       ) : null}
-      <a href={pickHref(pick, today)}>Open the research page →</a>
+      <a href={pickHref(pick, today)} onClick={() => logVisitEvent("wl_panel")}>
+        Open the research page →
+      </a>
     </section>
   );
 }

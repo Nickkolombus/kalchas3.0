@@ -459,13 +459,21 @@ def visit_stats(items: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     for item in items:
         p = people.setdefault(
             visitor_key(item),
-            {"returning": False, "engaged": False, "match": False, "tg": False, "paid": False},
+            {
+                "returning": False,
+                "engaged": False,
+                "match": False,
+                "tg": False,
+                "paid": False,
+                "wl": False,
+            },
         )
         p["returning"] |= bool(item.get("returning"))
         p["engaged"] |= int(item.get("duration_seconds") or 0) >= ENGAGED_SECONDS
         p["match"] |= bool(item.get("matches"))
         p["tg"] |= bool(item.get("telegram_free") or item.get("telegram_paid"))
         p["paid"] |= bool(item.get("telegram_paid"))
+        p["wl"] |= _opened_watchlist(item)
     n = len(people)
     visits = len(items)
 
@@ -484,6 +492,72 @@ def visit_stats(items: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "telegram_visitors": count("tg"),
         "paid_visitors": count("paid"),
         "telegram_rate": count("tg") / n if n else None,
+        "watchlist_visitors": count("wl"),
+        "watchlist_rate": count("wl") / n if n else None,
+    }
+
+
+def _opened_watchlist(item: Mapping[str, Any]) -> bool:
+    return any(str(e).startswith("in:") for e in item.get("watchlist") or [])
+
+
+WATCHLIST_WAYS_IN = (
+    ("in:hero", "Hero button"),
+    ("in:board", "Tag on a board row"),
+    ("in:panel", "Box in a match panel"),
+    ("in:tab", "Mobile Picks tab"),
+    ("in:link", "Direct link"),
+)
+WATCHLIST_INSIDE = (
+    ("match", "Opened a match page"),
+    ("tomorrow", "Looked at tomorrow"),
+    ("past", "Looked at a past day"),
+    ("calendar", "Opened the calendar"),
+)
+
+
+def watchlist_usage(
+    items: Sequence[Mapping[str, Any]],
+    chart_items: Sequence[Mapping[str, Any]],
+    chart: Window,
+) -> dict[str, Any]:
+    """Who opened the watchlist, how they got there, and what they did inside,
+    all as unique visitors in `items`. "Inside" shares are of the visitors who
+    opened it. `daily` covers the wider `chart` window, for context."""
+    events: dict[str, set[str]] = defaultdict(set)
+    everyone: set[str] = set()
+    for item in items:
+        key = visitor_key(item)
+        everyone.add(key)
+        for event in item.get("watchlist") or []:
+            events[str(event)].add(key)
+    opened: set[str] = set().union(*(ids for e, ids in events.items() if e.startswith("in:")))
+    days: dict[date, dict[str, set[str]]] = {
+        day: {"visitors": set(), "opened": set()} for day in chart.each_day()
+    }
+    for item in chart_items:
+        at = _started(item, chart.tz)
+        if at is None or at.date() not in days:
+            continue
+        key = visitor_key(item)
+        days[at.date()]["visitors"].add(key)
+        if _opened_watchlist(item):
+            days[at.date()]["opened"].add(key)
+    return {
+        "visitors": len(everyone),
+        "opened": len(opened),
+        "ways_in": [
+            {"label": label, "visitors": len(events.get(event, ()))}
+            for event, label in WATCHLIST_WAYS_IN
+        ],
+        "inside": [
+            {"label": label, "visitors": len(events.get(event, set()) & opened)}
+            for event, label in WATCHLIST_INSIDE
+        ],
+        "daily": [
+            {"date": day.isoformat(), "visitors": len(d["visitors"]), "opened": len(d["opened"])}
+            for day, d in days.items()
+        ],
     }
 
 
@@ -641,6 +715,7 @@ def visitors_insights(
         "browsers": _unique_by(cur, lambda item: str(item.get("browser") or "Other"), 5),
         "os": _unique_by(cur, lambda item: str(item.get("os") or "Other"), 5),
         "matches": top_matches(cur),
+        "watchlist": watchlist_usage(cur, within(chart), chart),
         "filtered": sum(
             1
             for item in items

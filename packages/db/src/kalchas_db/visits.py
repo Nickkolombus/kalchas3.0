@@ -5,7 +5,7 @@ Two writers feed it:
 * every HTML page load (server side, no JS needed) -- recorded as an
   anonymous row keyed by masked IP + user agent, ``visitor_id`` NULL;
 * every board poll that carries a visitor id (the JS heartbeat the live
-  count already uses).
+  count already uses), and the watchlist pages' own ping.
 
 When a heartbeat arrives, any anonymous page-load rows from the same masked
 IP and user agent inside the visit gap are folded into that visitor's visit,
@@ -139,6 +139,23 @@ MARK_TELEGRAM = {
     ),
 }
 
+MAX_WATCHLIST_EVENTS = 20
+
+MARK_WATCHLIST = text(
+    """
+    UPDATE visitor_sessions SET
+        watchlist = CASE
+            WHEN CAST(:event AS TEXT) = ANY(watchlist) OR cardinality(watchlist) >= :max_events
+            THEN watchlist
+            ELSE array_append(watchlist, CAST(:event AS TEXT))
+        END
+    WHERE id = (
+        SELECT id FROM visitor_sessions WHERE visitor_id = :visitor_id
+        ORDER BY last_seen DESC LIMIT 1
+    )
+    """
+)
+
 PRUNE_OLD = text(
     """
     DELETE FROM visitor_sessions
@@ -150,7 +167,7 @@ SELECT_VISITS = text(
     """
     SELECT s.id, s.visitor_id, s.ip_masked, s.country, s.user_agent, s.referrer,
            s.landing_path, s.first_seen, s.last_seen, s.page_loads, s.heartbeats,
-           s.matches_viewed, s.telegram_free, s.telegram_paid,
+           s.matches_viewed, s.telegram_free, s.telegram_paid, s.watchlist,
            v.first_ever, v.visit_count
     FROM visitor_sessions s
     LEFT JOIN LATERAL (
@@ -263,6 +280,19 @@ def record_telegram_click(dsn: str, visitor_id: str, kind: str) -> None:
     eng = sync_engine(dsn)
     with eng.begin() as conn:
         conn.execute(query, {"visitor_id": visitor_id})
+
+
+def record_watchlist_event(dsn: str, visitor_id: str, event: str) -> None:
+    """Add one watchlist event (how they got in, or what they opened inside)
+    to the visitor's latest visit; repeats are kept once."""
+    if not visitor_id or not event:
+        return
+    eng = sync_engine(dsn)
+    with eng.begin() as conn:
+        conn.execute(
+            MARK_WATCHLIST,
+            {"visitor_id": visitor_id, "event": event, "max_events": MAX_WATCHLIST_EVENTS},
+        )
 
 
 def list_visits(

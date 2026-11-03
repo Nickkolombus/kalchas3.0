@@ -53,6 +53,27 @@ class VisitEventIn(BaseModel):
     kind: str
 
 
+class VisitPingIn(BaseModel):
+    vid: str
+    ref: str | None = None
+
+
+# Watchlist events as the page sends them -> as stored on the visit. "in:*"
+# is the way in from the live board; the rest is what they opened inside.
+WATCHLIST_EVENTS = {
+    "wl_hero": "in:hero",
+    "wl_board": "in:board",
+    "wl_panel": "in:panel",
+    "wl_tab": "in:tab",
+    "wl_match": "match",
+    "wl_calendar": "calendar",
+    "wl_tomorrow": "tomorrow",
+    "wl_past": "past",
+}
+
+_WATCHLIST_PATH = re.compile(r"^/(?:today|tomorrow|calendar|\d{4}-\d{2}-\d{2})(?:/|$)")
+
+
 def _dsn() -> str | None:
     return os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
 
@@ -155,17 +176,31 @@ def record_heartbeat(
         log.debug("visit heartbeat log failed", exc_info=True)
 
 
+@public_router.post("/ping")
+def visit_ping(body: VisitPingIn, request: Request) -> dict[str, bool]:
+    """The watchlist pages' heartbeat: they don't poll the board, so without
+    this a visit spent there would look like a client that never ran JS."""
+    if not body.vid:
+        return {"ok": False}
+    record_heartbeat(request, body.vid, None, body.ref)
+    return {"ok": True}
+
+
 @public_router.post("/event")
 def visit_event(body: VisitEventIn) -> dict[str, bool]:
-    """Join-button clicks, sent as a beacon. Unknown kinds are ignored."""
+    """Join-button and watchlist clicks, sent as a beacon. Unknown kinds are ignored."""
     dsn = _dsn()
-    kind = {"tg_free": "telegram_free", "tg_paid": "telegram_paid"}.get(body.kind)
-    if not dsn or not kind or not body.vid:
+    telegram = {"tg_free": "telegram_free", "tg_paid": "telegram_paid"}.get(body.kind)
+    watchlist = WATCHLIST_EVENTS.get(body.kind)
+    if not dsn or not (telegram or watchlist) or not body.vid:
         return {"ok": False}
     try:
-        from kalchas_db.visits import record_telegram_click
+        from kalchas_db.visits import record_telegram_click, record_watchlist_event
 
-        record_telegram_click(dsn, body.vid[:MAX_ID], kind)
+        if telegram:
+            record_telegram_click(dsn, body.vid[:MAX_ID], telegram)
+        else:
+            record_watchlist_event(dsn, body.vid[:MAX_ID], watchlist or "")
     except Exception:
         log.debug("visit event log failed", exc_info=True)
         return {"ok": False}
@@ -239,6 +274,16 @@ def summarize_user_agent(user_agent: str | None) -> dict[str, str]:
     return {"browser": browser, "os": os_name, "device": device}
 
 
+def watchlist_events(row: dict[str, Any]) -> list[str]:
+    """What the visit did with the watchlist. A visit that landed straight on
+    a watchlist page (a shared link, a bookmark) gets "in:link"."""
+    events = [str(e) for e in row.get("watchlist") or []]
+    landed = str(row.get("landing_path") or "")
+    if _WATCHLIST_PATH.match(landed) and not any(e.startswith("in:") for e in events):
+        events.insert(0, "in:link")
+    return events
+
+
 def _iso(value: Any) -> str | None:
     return value.isoformat() if hasattr(value, "isoformat") else (str(value) if value else None)
 
@@ -263,6 +308,7 @@ def visit_item(row: dict[str, Any]) -> dict[str, Any]:
         "matches": list(row.get("matches_viewed") or []),
         "telegram_free": bool(row.get("telegram_free")),
         "telegram_paid": bool(row.get("telegram_paid")),
+        "watchlist": watchlist_events(row),
         "visit_count": int(row.get("visit_count") or 1),
         "returning": bool(first_ever is not None and first_ever < first),
         "user_agent": row.get("user_agent") or "",

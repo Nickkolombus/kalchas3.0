@@ -69,6 +69,7 @@ def visit(
     tg: bool = False,
     human: bool = True,
     hour: int = 20,
+    watchlist: tuple[str, ...] = (),
 ) -> dict:
     start = datetime(day.year, day.month, day.day, hour, tzinfo=ATHENS)
     return {
@@ -82,6 +83,7 @@ def visit(
         "referrer": referrer,
         "telegram_free": tg,
         "telegram_paid": False,
+        "watchlist": list(watchlist),
         "matches": [{"match_id": "m1", "home_team": "PAOK", "away_team": "Aris"}]
         if seconds > 60
         else [],
@@ -227,6 +229,44 @@ def test_visit_stats_funnel_and_rates() -> None:
     assert stats["match_viewers"] == 2
     assert stats["telegram_visitors"] == 1
     assert abs(stats["returning_share"] - 2 / 3) < 1e-9
+
+
+def test_watchlist_usage_counts_ways_in_and_what_they_did() -> None:
+    yesterday = TODAY - timedelta(days=1)
+    items = [
+        visit(TODAY, "a", watchlist=("in:hero", "match")),
+        visit(TODAY, "a", watchlist=("in:board",)),
+        visit(TODAY, "b", watchlist=("in:link", "calendar", "past")),
+        visit(TODAY, "c"),
+        # Opened a match page without ever coming in: not counted inside.
+        visit(TODAY, "d", watchlist=("match",)),
+        visit(yesterday, "e", watchlist=("in:tab",)),
+    ]
+    window = Window(yesterday, TODAY, ATHENS)
+    usage = insights.watchlist_usage(items, items, window)
+    assert usage["visitors"] == 5 and usage["opened"] == 3
+    ways = {row["label"]: row["visitors"] for row in usage["ways_in"]}
+    assert ways == {
+        "Hero button": 1,
+        "Tag on a board row": 1,
+        "Box in a match panel": 0,
+        "Mobile Picks tab": 1,
+        "Direct link": 1,
+    }
+    inside = {row["label"]: row["visitors"] for row in usage["inside"]}
+    assert inside == {
+        "Opened a match page": 1,
+        "Looked at tomorrow": 0,
+        "Looked at a past day": 1,
+        "Opened the calendar": 1,
+    }
+    assert usage["daily"] == [
+        {"date": yesterday.isoformat(), "visitors": 1, "opened": 1},
+        {"date": TODAY.isoformat(), "visitors": 4, "opened": 2},
+    ]
+    stats = visit_stats(items)
+    assert stats["watchlist_visitors"] == 3
+    assert stats["watchlist_rate"] == 3 / 5
 
 
 def test_daily_visitors_splits_new_and_returning() -> None:

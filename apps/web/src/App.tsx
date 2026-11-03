@@ -18,6 +18,7 @@ import {
   type WindowBlock,
 } from "./HoverTip";
 import { PickBox, PickTag, SpyglassIcon, WatchlistButton, usePick } from "./WatchlistPicks";
+import { logVisitEvent, visitorId } from "./visit";
 import { MatchOverlay } from "./MatchPanel";
 import kalchasMark from "./assets/kalchas-mark.png";
 
@@ -165,7 +166,6 @@ type SortDir = "asc" | "desc";
 
 const POLL_MS = 15_000;
 const FAV_KEY = "kalchas.favorites.v1";
-const VISITOR_ID_STORAGE_SLOT = "kalchas.visitor.v1";
 const SHORT_KO = 1.68;
 const DEFAULT_SWEET_SPOT: SweetSpot = {
   ht1_start: 28,
@@ -485,21 +485,6 @@ function saveFavorites(ids: Set<string>) {
   localStorage.setItem(FAV_KEY, JSON.stringify([...ids]));
 }
 
-function visitorId(): string {
-  try {
-    const existing = localStorage.getItem(VISITOR_ID_STORAGE_SLOT);
-    if (existing) return existing;
-    const next =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `v${Date.now()}${Math.random().toString(16).slice(2)}`;
-    localStorage.setItem(VISITOR_ID_STORAGE_SLOT, next);
-    return next;
-  } catch {
-    return "";
-  }
-}
-
 function liveUrl(visitor: string, matchId: string | null, referrer: string): string {
   if (!visitor) return "/api/live";
   const params = new URLSearchParams({ vid: visitor });
@@ -509,21 +494,7 @@ function liveUrl(visitor: string, matchId: string | null, referrer: string): str
 }
 
 function logJoinClick(visitor: string, kind: "tg_free" | "tg_paid") {
-  if (!visitor) return;
-  const body = JSON.stringify({ vid: visitor, kind });
-  try {
-    // A beacon is fire-and-forget, so the click is logged even if the tab closes.
-    if (navigator.sendBeacon?.("/api/visit/event", new Blob([body], { type: "application/json" })))
-      return;
-  } catch {
-    // Fall through to fetch.
-  }
-  void fetch("/api/visit/event", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-    keepalive: true,
-  }).catch(() => undefined);
+  logVisitEvent(kind, visitor);
 }
 
 export function countryFlag(code: string): string {
@@ -2714,7 +2685,7 @@ function MobileBoard({
             </span>
           </button>
         ))}
-        <a className="m-nav-link is-picks" href="/today">
+        <a className="m-nav-link is-picks" href="/today" onClick={() => logVisitEvent("wl_tab")}>
           <SpyglassIcon size={20} />
           <span>Picks</span>
         </a>

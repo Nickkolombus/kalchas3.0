@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import kalchasMark from "./assets/kalchas-mark.png";
 import { liveNote, liveVerdict } from "./WatchlistPicks";
+import { logVisitEvent, pingVisit, visitorId, type VisitEvent } from "./visit";
 
 type Watch = "strong" | "look" | "quiet";
 type Outcome = "landed" | "missed";
@@ -189,6 +190,15 @@ function routePath(route: Route): string {
   if (route.view === "calendar") return route.month ? `/calendar/${route.month}` : "/calendar";
   if (route.view === "match") return `/${route.day}/${route.matchId}`;
   return `/${route.day}`;
+}
+
+const VISIT_PING_MS = 30_000;
+
+function visitEventFor(route: Route): VisitEvent | null {
+  if (route.view === "match") return "wl_match";
+  if (route.view === "calendar") return "wl_calendar";
+  if (route.day === "tomorrow") return "wl_tomorrow";
+  return route.day === "today" ? null : "wl_past";
 }
 
 export function isWatchlistPath(pathname: string): boolean {
@@ -1700,6 +1710,22 @@ export function WatchlistApp() {
       if (el && box && (box.bottom < 0 || box.top > window.innerHeight)) el.scrollIntoView({ block: "center" });
     });
   }, [recent]);
+
+  // The visit log: these pages don't poll the live board, so they keep the
+  // visit going themselves, and note what was opened (once per visit).
+  const visitor = useMemo(visitorId, []);
+  const pinged = useRef<Promise<void> | null>(null);
+  useEffect(() => {
+    pinged.current = pingVisit(visitor, document.referrer);
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void pingVisit(visitor);
+    }, VISIT_PING_MS);
+    return () => window.clearInterval(timer);
+  }, [visitor]);
+  useEffect(() => {
+    const event = visitEventFor(route);
+    if (event) void pinged.current?.then(() => logVisitEvent(event, visitor));
+  }, [route, visitor]);
 
   useEffect(() => {
     // A match page names its teams once it has loaded (MatchView).

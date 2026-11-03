@@ -1315,6 +1315,15 @@
   min-width: 640px;
 }
 
+.vis-wl .kit-bar-name small {
+  margin-left: 4px;
+}
+
+.vis-wl-note {
+  margin: 14px 0 0;
+  font-size: 0.75rem;
+}
+
 .vis-week-cell {
   height: 22px;
 }

@@ -229,6 +229,64 @@ def test_visit_event_ignores_unknown_kinds(monkeypatch) -> None:
     assert calls == [("v-1", "telegram_paid")]
 
 
+def test_visit_event_records_watchlist_clicks(monkeypatch) -> None:
+    import kalchas_db.visits
+
+    calls: list[tuple] = []
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
+    monkeypatch.setattr(
+        kalchas_db.visits,
+        "record_watchlist_event",
+        lambda dsn, vid, event: calls.append((vid, event)),
+    )
+    client = TestClient(app)
+    for kind in ("wl_hero", "wl_board", "wl_match", "wl_calendar"):
+        assert client.post("/api/visit/event", json={"vid": "v-1", "kind": kind}).json() == {
+            "ok": True
+        }
+    assert client.post("/api/visit/event", json={"vid": "v-1", "kind": "wl_x"}).json() == {
+        "ok": False
+    }
+    assert calls == [
+        ("v-1", "in:hero"),
+        ("v-1", "in:board"),
+        ("v-1", "match"),
+        ("v-1", "calendar"),
+    ]
+
+
+def test_visit_ping_extends_the_visit(monkeypatch) -> None:
+    import kalchas_db.visits
+
+    calls: list[tuple] = []
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
+    monkeypatch.setattr(
+        kalchas_db.visits,
+        "record_heartbeat",
+        lambda dsn, vid, **kwargs: calls.append((vid, kwargs["match_id"], kwargs["referrer"])),
+    )
+    client = TestClient(app)
+    body = {"vid": "v-1", "ref": "https://t.me/Kalchas_Tips_Free"}
+    assert client.post("/api/visit/ping", json=body).json() == {"ok": True}
+    assert client.post("/api/visit/ping", json={"vid": ""}).json() == {"ok": False}
+    assert calls == [("v-1", None, "t.me")]
+
+
+def test_watchlist_events_mark_straight_landings() -> None:
+    assert visit_item(_row())["watchlist"] == []
+    assert visit_item(_row(watchlist=["in:hero", "match"]))["watchlist"] == ["in:hero", "match"]
+    assert visit_item(_row(landing_path="/today/848558", watchlist=["match"]))["watchlist"] == [
+        "in:link",
+        "match",
+    ]
+    # Landed on a watchlist page but also clicked in from the board later.
+    assert visit_item(_row(landing_path="/calendar", watchlist=["in:tab"]))["watchlist"] == [
+        "in:tab"
+    ]
+    assert visit_item(_row(landing_path="/2026-11-02"))["watchlist"] == ["in:link"]
+    assert visit_item(_row(landing_path="/todayish"))["watchlist"] == []
+
+
 def test_admin_visitors_requires_session(monkeypatch) -> None:
     monkeypatch.setenv("ADMIN_PASSWORD", "s3cret")
     assert TestClient(app).get("/api/admin/visitors").status_code == 401

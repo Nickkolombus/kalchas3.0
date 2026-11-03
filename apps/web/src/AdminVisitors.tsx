@@ -40,6 +40,7 @@ type Visit = {
   matches: MatchRef[];
   telegram_free: boolean;
   telegram_paid: boolean;
+  watchlist: string[];
   visit_count: number;
   returning: boolean;
   user_agent: string;
@@ -61,6 +62,18 @@ export type VisitStats = {
   telegram_visitors: number;
   paid_visitors: number;
   telegram_rate: number | null;
+  watchlist_visitors: number;
+  watchlist_rate: number | null;
+};
+
+type Count = { label: string; visitors: number };
+
+type WatchlistUsage = {
+  visitors: number;
+  opened: number;
+  ways_in: Count[];
+  inside: Count[];
+  daily: { date: string; visitors: number; opened: number }[];
 };
 
 type Win = { first: string; last: string; days: number };
@@ -89,8 +102,22 @@ type VisitorsInsights = {
   browsers: Share[];
   os: Share[];
   matches: (MatchRef & { viewers: number })[];
+  watchlist: WatchlistUsage;
   filtered: number;
   log: Visit[];
+};
+
+/** Short names for the raw log's Watchlist column. */
+const WATCHLIST_SHORT: Record<string, string> = {
+  "in:hero": "hero",
+  "in:board": "board tag",
+  "in:panel": "panel",
+  "in:tab": "mobile tab",
+  "in:link": "link",
+  match: "match page",
+  tomorrow: "tomorrow",
+  past: "past day",
+  calendar: "calendar",
 };
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -167,6 +194,7 @@ export function AdminVisitors({ api, range, zone }: { api: Api; range: Range; zo
     ["Clicked Telegram", S.telegram_visitors],
     ["Clicked paid", S.paid_visitors],
   ];
+  const W = body.watchlist;
   const durMax = Math.max(1, ...body.durations.map((d) => d.visits));
   const srcMax = Math.max(1, ...body.sources.map((s) => s.visitors));
   const heatMax = Math.max(1, ...body.heatmap.flat());
@@ -343,6 +371,86 @@ export function AdminVisitors({ api, range, zone }: { api: Api; range: Range; zo
           </div>
         </Card>
       </div>
+
+      <Card
+        title="Watchlist"
+        sub={
+          <>
+            Opened by <b className="kit-num">{fmtInt(W.opened)}</b> of {fmtInt(W.visitors)} visitors (
+            {pct1(S.watchlist_rate)})
+            {P ? (
+              <>
+                {" · "}
+                <Delta cur={S.watchlist_rate} prev={P.watchlist_rate} pts label={label} />
+              </>
+            ) : null}
+          </>
+        }
+        right={
+          <Legend
+            items={[
+              { label: "Opened the watchlist", color: "var(--s1)" },
+              { label: "Didn't", color: "var(--border-2)" },
+            ]}
+          />
+        }
+      >
+        <StackedBars
+          ariaLabel="Visitors who opened the watchlist, per day"
+          height={180}
+          topColor="var(--border-2)"
+          columns={W.daily.map((d, i) => ({
+            label: fmtShort(d.date),
+            title: `${fmtDay(d.date)}${i === W.daily.length - 1 ? " (so far)" : ""}`,
+            a: d.opened,
+            b: d.visitors - d.opened,
+            dim: i === W.daily.length - 1,
+            rows: [
+              ["Visitors", fmtInt(d.visitors)],
+              ["Opened the watchlist", fmtInt(d.opened)],
+              ["Share", pct1(d.visitors ? d.opened / d.visitors : null)],
+            ],
+          }))}
+        />
+        <div className="kit-grid-2 kit-grid-even vis-wl">
+          <div>
+            <div className="vis-sub">How they got in · share of those who opened it</div>
+            <BarList
+              total={W.opened}
+              rows={W.ways_in.map((r) => ({
+                key: r.label,
+                label: (
+                  <>
+                    {r.label} <small className="kit-muted kit-num">{fmtInt(r.visitors)}</small>
+                  </>
+                ),
+                value: r.visitors,
+                tipRows: [["Visitors", fmtInt(r.visitors)]],
+              }))}
+            />
+          </div>
+          <div>
+            <div className="vis-sub">What they did inside · share of those who opened it</div>
+            <BarList
+              total={W.opened}
+              rows={W.inside.map((r) => ({
+                key: r.label,
+                label: (
+                  <>
+                    {r.label} <small className="kit-muted kit-num">{fmtInt(r.visitors)}</small>
+                  </>
+                ),
+                value: r.visitors,
+                tipRows: [["Visitors", fmtInt(r.visitors)]],
+              }))}
+            />
+          </div>
+        </div>
+        <p className="kit-muted vis-wl-note">
+          Counted from 3 Nov 2026. "Direct link" is someone who landed straight on a watchlist page (a shared link or a
+          bookmark). One person can come in more than one way, so the ways in can add up to more than 100%.
+        </p>
+      </Card>
 
       <Card title="Where visitors come from" sub="Referrer of the first page load. Telegram click rate is per visitor.">
         <div className="kit-table-wrap">
@@ -534,6 +642,7 @@ export function AdminVisitors({ api, range, zone }: { api: Api; range: Range; zo
                   <th className="r">Length</th>
                   <th>Matches</th>
                   <th>Telegram</th>
+                  <th>Watchlist</th>
                 </tr>
               </thead>
               <tbody>
@@ -578,6 +687,22 @@ export function AdminVisitors({ api, range, zone }: { api: Api; range: Range; zo
                         <span className="kit-pill is-ok">
                           <i>✓</i>free
                         </span>
+                      ) : null}
+                    </td>
+                    <td>
+                      {v.watchlist.some((e) => e.startsWith("in:")) ? (
+                        <span className="kit-pill is-ok">
+                          <i>✓</i>
+                          {WATCHLIST_SHORT[v.watchlist.find((e) => e.startsWith("in:")) ?? ""]}
+                        </span>
+                      ) : null}
+                      {v.watchlist.some((e) => !e.startsWith("in:")) ? (
+                        <small>
+                          {v.watchlist
+                            .filter((e) => !e.startsWith("in:"))
+                            .map((e) => WATCHLIST_SHORT[e] ?? e)
+                            .join(", ")}
+                        </small>
                       ) : null}
                     </td>
                   </tr>

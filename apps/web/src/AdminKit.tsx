@@ -496,17 +496,19 @@ function roundTop(x: number, y: number, w: number, h: number, r: number): string
   return `M${x},${y + h}V${y + rr}Q${x},${y} ${x + rr},${y}H${x + w - rr}Q${x + w},${y} ${x + w},${y + rr}V${y + h}Z`;
 }
 
-// Two-series stacked bars: `a` (blue) at the base, `b` (orange) on top.
+// Two-series stacked bars: `a` (blue) at the base, `b` (orange, or `topColor`) on top.
 export function StackedBars({
   columns,
   height = 240,
   labelEvery,
   ariaLabel,
+  topColor = "var(--s2)",
 }: {
   columns: BarColumn[];
   height?: number;
   labelEvery?: number;
   ariaLabel: string;
+  topColor?: string;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const iw = width - M.l - M.r;
@@ -544,7 +546,7 @@ export function StackedBars({
                   fill="var(--s1)"
                 />
               ) : null}
-              {c.b ? <path d={roundTop(x, base - ha - hb - (c.a ? 2 : 0), barW, hb, 4)} fill="var(--s2)" /> : null}
+              {c.b ? <path d={roundTop(x, base - ha - hb - (c.a ? 2 : 0), barW, hb, 4)} fill={topColor} /> : null}
               {showLabel(i, columns.length, every) ? (
                 <text x={x + barW / 2} y={height - 6} textAnchor="middle">
                   {c.label}
