@@ -2297,7 +2297,7 @@ function MobileCard({
         </div>
         <PickBox matchId={match.match_id} score={match.score} minute={match.minute} />
         <button type="button" className="m-card-open" onClick={onOpenFull}>
-          Open full match · timeline · H2H ›
+          Open the full match ›
         </button>
       </div>
     </article>

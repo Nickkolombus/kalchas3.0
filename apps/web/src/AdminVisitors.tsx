@@ -111,7 +111,7 @@ type VisitorsInsights = {
 const WATCHLIST_SHORT: Record<string, string> = {
   "in:hero": "hero",
   "in:board": "board tag",
-  "in:panel": "panel",
+  "in:panel": "pop-up",
   "in:tab": "mobile tab",
   "in:link": "link",
   match: "match page",

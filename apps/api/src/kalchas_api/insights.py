@@ -504,7 +504,7 @@ def _opened_watchlist(item: Mapping[str, Any]) -> bool:
 WATCHLIST_WAYS_IN = (
     ("in:hero", "Hero button"),
     ("in:board", "Tag on a board row"),
-    ("in:panel", "Box in a match panel"),
+    ("in:panel", "Match pop-up"),
     ("in:tab", "Mobile Picks tab"),
     ("in:link", "Direct link"),
 )

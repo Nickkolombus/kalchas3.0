@@ -122,7 +122,7 @@ type MatchResult = RowResult & {
   timed?: boolean;
   goals?: { time: string; half: string; side: string }[];
 };
-type MatchResearch = {
+export type MatchResearch = {
   match_id: string;
   day: string;
   built_at: string;
@@ -381,7 +381,7 @@ function useJson<T>(
 
 /* ------------------------------------------------------------ live scores */
 
-type Live = { home: number; away: number; minute: number; display: string; status: string; finished: boolean };
+export type Live = { home: number; away: number; minute: number; display: string; status: string; finished: boolean };
 const LIVE_POLL_MS = 30_000;
 
 /** Scores of the day's listed matches while they're played, from the live
@@ -1225,6 +1225,217 @@ function GoalLine({ data }: { data: MatchResearch }) {
   );
 }
 
+/** The research under a match page's header: what to watch, the patterns,
+ * form, goal timing, head-to-head and table. Also shown in the live board's
+ * match pop-up. `footer` closes the right-hand column. */
+export function ResearchBody({ data, live, footer }: { data: MatchResearch; live?: Live; footer?: ReactNode }) {
+  const { home, away, form, h2h, table, result } = data;
+  const formSource = (f: TeamForm) => (f.source === "all" ? "all competitions" : data.league.name.split(" - ")[0]);
+  return (
+    <div className="wl-mbody">
+      <div className="wl-col">
+        <section className="wl-sec">
+          <div className="wl-sec-head">
+            <h3>What to watch</h3>
+            <WatchMark watch={data.watch} />
+          </div>
+          {result?.status === "finished" ? (
+            <p className="wl-sub">
+              Written before kick-off. Each point is marked with how it went
+              {result.label !== "FT" ? ", judged on the 90 minutes" : ""}.
+            </p>
+          ) : live ? (
+            <p className="wl-sub">
+              Written before kick-off. While it's played, each point shows where it stands; a tick means it can't
+              be undone.
+            </p>
+          ) : null}
+          {data.points.length ? (
+            <ol className="wl-points">
+              {data.points.map((p, i) => (
+                <li key={p.key} data-n={i + 1} className={p.outcome ? `is-${p.outcome}` : ""}>
+                  <div>
+                    <b>{p.title}</b> <span>{p.detail}</span>
+                    {p.outcome ? (
+                      <p className="wl-verdict">
+                        <OutcomeMark outcome={p.outcome} /> {p.outcome_note}
+                      </p>
+                    ) : live && !live.finished ? (
+                      <p className="wl-verdict is-live">
+                        {liveVerdict(p.key, `${live.home}-${live.away}`) ? (
+                          <OutcomeMark outcome={liveVerdict(p.key, `${live.home}-${live.away}`)} />
+                        ) : (
+                          <i className="wl-live-dot" aria-hidden />
+                        )}{" "}
+                        {noteBeside(liveNote(p.key, `${live.home}-${live.away}`, home.name, away.name, live.minute)) ||
+                          "Can't tell from the score yet."}
+                      </p>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="wl-sub">Nothing stands out: both teams' recent games look like a normal game in this league.</p>
+          )}
+        </section>
+
+        <section className="wl-sec">
+          <h3>Every pattern, side by side</h3>
+          <p className="wl-sub">
+            How often each happened in the teams' last games, against the league average. Highlighted rows are the
+            ones above.
+          </p>
+          <div className="wl-table-wrap">
+            <table className="wl-ptable">
+              <thead>
+                <tr>
+                  <th />
+                  <th className="wl-num">{home.name}</th>
+                  <th className="wl-num">{away.name}</th>
+                  <th className="wl-num">League</th>
+                  <th className="wl-num">Meetings</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.pattern_table.map((row) => (
+                  <tr key={row.key} className={row.flagged ? "is-flagged" : ""}>
+                    <th scope="row">{row.label}</th>
+                    <CountCell value={row.home} />
+                    <CountCell value={row.away} />
+                    <td className="wl-num">{row.league_pct}%</td>
+                    <td className="wl-num">{row.h2h ? `${row.h2h.count}/${row.h2h.n}` : "–"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="wl-sec">
+          <h3>Recent form</h3>
+          <p className="wl-sub">
+            {result ? "Last 6 games before this one" : "Last 6 games"}, newest on the left. Hover a result for the
+            opponent.
+          </p>
+          {(["home", "away"] as const).map((side) => {
+            const team = side === "home" ? home : away;
+            return (
+              <div key={side} className="wl-form-row">
+                <div className="wl-who">
+                  <Crest src={team.badge} name={team.name} />
+                  {team.name}
+                </div>
+                <FormPills form={form[side]} />
+              </div>
+            );
+          })}
+          <div className="wl-form-sum">
+            {(["home", "away"] as const).map((side) => {
+              const team = side === "home" ? home : away;
+              const f = form[side];
+              return (
+                <div key={side}>
+                  <b>{team.name}</b> score {f.scored_per_game} and concede {f.conceded_per_game} a game.{" "}
+                  {plural(f.wins, "win")}, {plural(f.draws, "draw")}, {plural(f.losses, "defeat")} in their last{" "}
+                  {f.games} ({formSource(f)}).
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="wl-sec">
+          <h3>When the goals come</h3>
+          <p className="wl-sub">Goals for and against in each team's recent games, by part of the match.</p>
+          <TimingChart research={data} />
+        </section>
+      </div>
+
+      <div className="wl-col">
+        <section className="wl-sec">
+          <h3>Head-to-head</h3>
+          {h2h && h2h.sample ? (
+            <>
+              <p className="wl-sub">
+                Last {h2h.sample === 1 ? "meeting" : `${h2h.sample} meetings`}
+                {h2h.avg_goals != null ? `, ${h2h.avg_goals} goals a game` : ""}.
+              </p>
+              <div className="wl-split" aria-hidden>
+                <i className="h" style={{ flex: h2h.home_wins || 0.001 }} />
+                <i className="d" style={{ flex: h2h.draws || 0.001 }} />
+                <i className="a" style={{ flex: h2h.away_wins || 0.001 }} />
+              </div>
+              <div className="wl-split-keys">
+                <span>
+                  <b>{h2h.home_wins}</b> {home.name}
+                </span>
+                <span>
+                  <b>{h2h.draws}</b> {h2h.draws === 1 ? "draw" : "draws"}
+                </span>
+                <span>
+                  <b>{h2h.away_wins}</b> {away.name}
+                </span>
+              </div>
+              {h2h.meetings.map((m) => (
+                <div key={`${m.match_date}-${m.home_team}`} className="wl-meet">
+                  <span className="d">{shortDate(m.match_date)}</span>
+                  <span className="h">{m.home_team}</span>
+                  <span className="s">
+                    {m.home_score}–{m.away_score}
+                  </span>
+                  <span>{m.away_team}</span>
+                </div>
+              ))}
+            </>
+          ) : (
+            <p className="wl-sub">No recent meetings on record.</p>
+          )}
+        </section>
+
+        {table.length ? (
+          <section className="wl-sec">
+            <h3>{result ? "Table before kick-off" : "Table"}</h3>
+            <table className="wl-ltable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Team</th>
+                  <th className="wl-num">P</th>
+                  <th className="wl-num">GD</th>
+                  <th className="wl-num">Pts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {table.map((row, i) => {
+                  const gap = i > 0 && row.position - table[i - 1].position > 1;
+                  const mine = row.team_id === home.id || row.team_id === away.id;
+                  return [
+                    gap ? (
+                      <tr key={`gap-${row.position}`} className="wl-gap">
+                        <td colSpan={5}>· · ·</td>
+                      </tr>
+                    ) : null,
+                    <tr key={row.team_id} className={mine ? "is-me" : ""}>
+                      <td>{row.position}</td>
+                      <td>{row.team}</td>
+                      <td className="wl-num">{row.played}</td>
+                      <td className="wl-num">{row.goal_difference > 0 ? `+${row.goal_difference}` : row.goal_difference}</td>
+                      <td className="wl-num">{row.points}</td>
+                    </tr>,
+                  ];
+                })}
+              </tbody>
+            </table>
+          </section>
+        ) : null}
+
+        {footer ? <section className="wl-sec">{footer}</section> : null}
+      </div>
+    </div>
+  );
+}
+
 function MatchView({
   matchId,
   day,
@@ -1304,8 +1515,7 @@ function MatchView({
     );
   }
 
-  const { home, away, odds, form, h2h, table, result } = data;
-  const formSource = (f: TeamForm) => (f.source === "all" ? "all competitions" : data.league.name.split(" - ")[0]);
+  const { home, away, odds, result } = data;
   const stepper = (
     <div className="wl-stepper">
       {prev ? (
@@ -1403,214 +1613,18 @@ function MatchView({
         ) : null}
       </header>
 
-      <div className="wl-mbody">
-        <div className="wl-col">
-          <section className="wl-sec">
-            <div className="wl-sec-head">
-              <h3>What to watch</h3>
-              <WatchMark watch={data.watch} />
-            </div>
-            {result?.status === "finished" ? (
-              <p className="wl-sub">
-                Written before kick-off. Each point is marked with how it went
-                {result.label !== "FT" ? ", judged on the 90 minutes" : ""}.
-              </p>
-            ) : live ? (
-              <p className="wl-sub">
-                Written before kick-off. While it's played, each point shows where it stands; a tick means it can't
-                be undone.
-              </p>
-            ) : null}
-            {data.points.length ? (
-              <ol className="wl-points">
-                {data.points.map((p, i) => (
-                  <li key={p.key} data-n={i + 1} className={p.outcome ? `is-${p.outcome}` : ""}>
-                    <div>
-                      <b>{p.title}</b> <span>{p.detail}</span>
-                      {p.outcome ? (
-                        <p className="wl-verdict">
-                          <OutcomeMark outcome={p.outcome} /> {p.outcome_note}
-                        </p>
-                      ) : live && !live.finished ? (
-                        <p className="wl-verdict is-live">
-                          {liveVerdict(p.key, `${live.home}-${live.away}`) ? (
-                            <OutcomeMark outcome={liveVerdict(p.key, `${live.home}-${live.away}`)} />
-                          ) : (
-                            <i className="wl-live-dot" aria-hidden />
-                          )}{" "}
-                          {noteBeside(liveNote(p.key, `${live.home}-${live.away}`, home.name, away.name, live.minute)) ||
-                            "Can't tell from the score yet."}
-                        </p>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="wl-sub">Nothing stands out: both teams' recent games look like a normal game in this league.</p>
-            )}
-          </section>
-
-          <section className="wl-sec">
-            <h3>Every pattern, side by side</h3>
-            <p className="wl-sub">
-              How often each happened in the teams' last games, against the league average. Highlighted rows are the
-              ones above.
-            </p>
-            <div className="wl-table-wrap">
-              <table className="wl-ptable">
-                <thead>
-                  <tr>
-                    <th />
-                    <th className="wl-num">{home.name}</th>
-                    <th className="wl-num">{away.name}</th>
-                    <th className="wl-num">League</th>
-                    <th className="wl-num">Meetings</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.pattern_table.map((row) => (
-                    <tr key={row.key} className={row.flagged ? "is-flagged" : ""}>
-                      <th scope="row">{row.label}</th>
-                      <CountCell value={row.home} />
-                      <CountCell value={row.away} />
-                      <td className="wl-num">{row.league_pct}%</td>
-                      <td className="wl-num">{row.h2h ? `${row.h2h.count}/${row.h2h.n}` : "–"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section className="wl-sec">
-            <h3>Recent form</h3>
-            <p className="wl-sub">
-              {result ? "Last 6 games before this one" : "Last 6 games"}, newest on the left. Hover a result for the
-              opponent.
-            </p>
-            {(["home", "away"] as const).map((side) => {
-              const team = side === "home" ? home : away;
-              return (
-                <div key={side} className="wl-form-row">
-                  <div className="wl-who">
-                    <Crest src={team.badge} name={team.name} />
-                    {team.name}
-                  </div>
-                  <FormPills form={form[side]} />
-                </div>
-              );
-            })}
-            <div className="wl-form-sum">
-              {(["home", "away"] as const).map((side) => {
-                const team = side === "home" ? home : away;
-                const f = form[side];
-                return (
-                  <div key={side}>
-                    <b>{team.name}</b> score {f.scored_per_game} and concede {f.conceded_per_game} a game.{" "}
-                    {plural(f.wins, "win")}, {plural(f.draws, "draw")}, {plural(f.losses, "defeat")} in their last{" "}
-                    {f.games} ({formSource(f)}).
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="wl-sec">
-            <h3>When the goals come</h3>
-            <p className="wl-sub">Goals for and against in each team's recent games, by part of the match.</p>
-            <TimingChart research={data} />
-          </section>
-        </div>
-
-        <div className="wl-col">
-          <section className="wl-sec">
-            <h3>Head-to-head</h3>
-            {h2h && h2h.sample ? (
-              <>
-                <p className="wl-sub">
-                  Last {h2h.sample === 1 ? "meeting" : `${h2h.sample} meetings`}
-                  {h2h.avg_goals != null ? `, ${h2h.avg_goals} goals a game` : ""}.
-                </p>
-                <div className="wl-split" aria-hidden>
-                  <i className="h" style={{ flex: h2h.home_wins || 0.001 }} />
-                  <i className="d" style={{ flex: h2h.draws || 0.001 }} />
-                  <i className="a" style={{ flex: h2h.away_wins || 0.001 }} />
-                </div>
-                <div className="wl-split-keys">
-                  <span>
-                    <b>{h2h.home_wins}</b> {home.name}
-                  </span>
-                  <span>
-                    <b>{h2h.draws}</b> {h2h.draws === 1 ? "draw" : "draws"}
-                  </span>
-                  <span>
-                    <b>{h2h.away_wins}</b> {away.name}
-                  </span>
-                </div>
-                {h2h.meetings.map((m) => (
-                  <div key={`${m.match_date}-${m.home_team}`} className="wl-meet">
-                    <span className="d">{shortDate(m.match_date)}</span>
-                    <span className="h">{m.home_team}</span>
-                    <span className="s">
-                      {m.home_score}–{m.away_score}
-                    </span>
-                    <span>{m.away_team}</span>
-                  </div>
-                ))}
-              </>
-            ) : (
-              <p className="wl-sub">No recent meetings on record.</p>
-            )}
-          </section>
-
-          {table.length ? (
-            <section className="wl-sec">
-              <h3>{result ? "Table before kick-off" : "Table"}</h3>
-              <table className="wl-ltable">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Team</th>
-                    <th className="wl-num">P</th>
-                    <th className="wl-num">GD</th>
-                    <th className="wl-num">Pts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {table.map((row, i) => {
-                    const gap = i > 0 && row.position - table[i - 1].position > 1;
-                    const mine = row.team_id === home.id || row.team_id === away.id;
-                    return [
-                      gap ? (
-                        <tr key={`gap-${row.position}`} className="wl-gap">
-                          <td colSpan={5}>· · ·</td>
-                        </tr>
-                      ) : null,
-                      <tr key={row.team_id} className={mine ? "is-me" : ""}>
-                        <td>{row.position}</td>
-                        <td>{row.team}</td>
-                        <td className="wl-num">{row.played}</td>
-                        <td className="wl-num">{row.goal_difference > 0 ? `+${row.goal_difference}` : row.goal_difference}</td>
-                        <td className="wl-num">{row.points}</td>
-                      </tr>,
-                    ];
-                  })}
-                </tbody>
-              </table>
-            </section>
-          ) : null}
-
-          <section className="wl-sec">
-            <p className="wl-sub">
-              {result || live
-                ? `Written ${dayLabel(data.built_at.slice(0, 10))} at ${clock(data.built_at)}, before kick-off, and left unchanged since.`
-                : `Updated ${clock(data.built_at)}. Patterns come from results only. Team news and line-ups are not included yet, so check them before kick-off.`}{" "}
-              Use ← and → for the previous and next match.
-            </p>
-          </section>
-        </div>
-      </div>
+      <ResearchBody
+        data={data}
+        live={live}
+        footer={
+          <p className="wl-sub">
+            {result || live
+              ? `Written ${dayLabel(data.built_at.slice(0, 10))} at ${clock(data.built_at)}, before kick-off, and left unchanged since.`
+              : `Updated ${clock(data.built_at)}. Patterns come from results only. Team news and line-ups are not included yet, so check them before kick-off.`}{" "}
+            Use ← and → for the previous and next match.
+          </p>
+        }
+      />
       <footer className="wl-mfoot">
         {crumb}
         {stepper}

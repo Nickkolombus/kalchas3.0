@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ResearchBody, type Live, type MatchResearch } from "./Watchlist";
 import { PickBox } from "./WatchlistPicks";
+import { logVisitEvent } from "./visit";
 import {
   HoverLedger,
   HoverTip,
@@ -164,22 +166,23 @@ const TIMING_SLOTS: { key: keyof H2HTiming; label: string; threshold: number }[]
   { key: "btts_first_half", label: "BTTS in 1st half", threshold: 75 },
 ];
 
-type TabId = "stats" | "timeline" | "h2h" | "lineups";
+type TabId = "signals" | "stats" | "timeline" | "before" | "lineups";
 
 const TABS: { id: TabId; label: string }[] = [
+  { id: "signals", label: "Signals" },
   { id: "stats", label: "Stats" },
   { id: "timeline", label: "Timeline" },
-  { id: "h2h", label: "H2H" },
-  { id: "lineups", label: "Lineups" },
+  { id: "before", label: "Before kick-off" },
+  { id: "lineups", label: "Line-ups" },
 ];
 
 const STAT_BARS: { key: string; label: string }[] = [
-  { key: "shots_on_target", label: "On target" },
-  { key: "shots_off_target", label: "Off target" },
+  { key: "shots_on_target", label: "Shots on target" },
+  { key: "shots_off_target", label: "Shots off target" },
   { key: "attacks", label: "Attacks" },
   { key: "dangerous_attacks", label: "Dangerous attacks" },
   { key: "corners", label: "Corners" },
-  { key: "possession", label: "Possession" },
+  { key: "possession", label: "Possession %" },
   { key: "yellow_cards", label: "Yellow cards" },
   { key: "red_cards", label: "Red cards" },
 ];
@@ -189,6 +192,8 @@ const STRAT_ROWS: {
   label: string;
   digits: number;
   tip: string;
+  /** The "What's normal" column on the Signals tab. */
+  normal: string;
   suffix?: string;
   signed?: boolean;
   tone: string;
@@ -196,6 +201,7 @@ const STRAT_ROWS: {
 }[] = [
   {
     key: "rule_of_three",
+    normal: "Around 1 is worth a look",
     label: "Unrealised goals",
     digits: 1,
     tone: "urg",
@@ -204,6 +210,7 @@ const STRAT_ROWS: {
   },
   {
     key: "delta_5min",
+    normal: "4 is common, 8+ is a wave",
     label: "5-minute pressure",
     digits: 1,
     tone: "d5",
@@ -212,6 +219,7 @@ const STRAT_ROWS: {
   },
   {
     key: "pressure_index",
+    normal: "70 is a surge, 90+ a siege",
     label: "Sustained pressure",
     digits: 0,
     tone: "d10",
@@ -220,6 +228,7 @@ const STRAT_ROWS: {
   },
   {
     key: "delta_goal",
+    normal: "1.0 = a goal behind their pace",
     label: "Form Bar",
     digits: 1,
     tone: "lbar",
@@ -228,6 +237,7 @@ const STRAT_ROWS: {
   },
   {
     key: "npei",
+    normal: "Attacks turned into shots, out of 100",
     label: "Efficiency",
     digits: 0,
     tone: "phi",
@@ -236,6 +246,7 @@ const STRAT_ROWS: {
   },
   {
     key: "kscore",
+    normal: "60+ is a picked match",
     label: "K-Score",
     digits: 0,
     tone: "k",
@@ -264,31 +275,6 @@ function formBarText(cell: TeamCell | undefined): string {
   if (cell?.delivered) return "Done";
   if (cell?.value == null) return "—";
   return cell.value < 0 ? "Ahead" : fmt(cell.value, 1);
-}
-
-function catmullRomPath(points: { x: number; y: number }[], tension = 0.45): string {
-  if (!points.length) return "";
-  if (points.length === 1) {
-    return `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
-  }
-  if (points.length === 2) {
-    return `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)} L ${points[1].x.toFixed(1)} ${points[1].y.toFixed(1)}`;
-  }
-  const parts = [`M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`];
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const p0 = points[i - 1] || points[i];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[i + 2] || p2;
-    const c1x = p1.x + ((p2.x - p0.x) / 6) * tension;
-    const c1y = p1.y + ((p2.y - p0.y) / 6) * tension;
-    const c2x = p2.x - ((p3.x - p1.x) / 6) * tension;
-    const c2y = p2.y - ((p3.y - p1.y) / 6) * tension;
-    parts.push(
-      `C ${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`,
-    );
-  }
-  return parts.join(" ");
 }
 
 function panelFromLive(match: OverlayMatch): MatchPanel {
@@ -357,17 +343,9 @@ function overlayClock(
   return `${minute}'`;
 }
 
-function dualBarFillPcts(home: number, away: number): { homePct: number; awayPct: number } {
-  const homeFill = Math.max(0, home);
-  const awayFill = Math.max(0, away);
-  const peak = Math.max(homeFill, awayFill, 1);
-  return {
-    homePct: (homeFill / peak) * 100,
-    awayPct: (awayFill / peak) * 100,
-  };
-}
-
-function DualBar({
+/** One signal as a table row: a value and small bar per team, what's normal,
+ * and the same hover card on the name as before. */
+function SignalRow({
   label,
   home,
   away,
@@ -388,6 +366,7 @@ function DualBar({
   windowHeading,
   homeText,
   awayText,
+  normal,
 }: {
   label: string;
   home: number;
@@ -410,8 +389,8 @@ function DualBar({
   /** Replaces the formatted number (Form Bar's Done / Ahead). */
   homeText?: string;
   awayText?: string;
+  normal: string;
 }) {
-  const { homePct, awayPct } = dualBarFillPcts(home, away);
   const extras = { suffix, signed };
   const lead = hoverLead(
     { value: home, triggered: homeTriggered },
@@ -449,31 +428,43 @@ function DualBar({
   ) : (
     label
   );
+  const cell = (value: number, text: string, triggered: boolean, ink?: string) => (
+    <td className={`wl-num mp-sig-val${triggered ? " is-on" : ""}`}>
+      <span style={ink && !triggered ? { color: ink } : undefined}>{text}</span>
+      <span className="wl-mini" aria-hidden>
+        <i style={{ width: `${Math.max(3, hoverBarPct(value, scale) ?? 0)}%` }} />
+      </span>
+    </td>
+  );
   return (
-    <div className="stat-bar">
-      <div className="stat-bar-label">{labelNode}</div>
-      <div className="stat-bar-row">
-        <span
-          className={`stat-bar-val home${homeTriggered ? " trig" : ""}`}
-          style={inkHome ? { color: inkHome } : undefined}
-        >
-          {homeText ?? fmtSignal(home, digits, extras)}
+    <tr className={homeTriggered || awayTriggered ? "is-on" : ""}>
+      <th scope="row">{labelNode}</th>
+      {cell(home, homeText ?? fmtSignal(home, digits, extras), homeTriggered, inkHome)}
+      {cell(away, awayText ?? fmtSignal(away, digits, extras), awayTriggered, inkAway)}
+      <td className="mp-sig-norm">{normal}</td>
+    </tr>
+  );
+}
+
+/** One match stat: the name in the middle, a number at each end, and a bar
+ * split at the centre where each team fills its half by its share. */
+function StatRow({ label, home, away }: { label: string; home: number; away: number }) {
+  const total = home + away;
+  const lead = home > away ? "home" : away > home ? "away" : null;
+  const share = (value: number) => `${total > 0 ? (value / total) * 100 : 0}%`;
+  return (
+    <div className="mp-stat">
+      <b className={lead === "home" ? "is-lead" : ""}>{fmt(home)}</b>
+      <span>{label}</span>
+      <b className={lead === "away" ? "is-lead" : ""}>{fmt(away)}</b>
+      <span className="mp-stat-bars" aria-hidden>
+        <span className="mp-half is-home">
+          <i className={lead === "home" ? "is-lead" : ""} style={{ width: share(home) }} />
         </span>
-        <div className="stat-bar-track" aria-hidden>
-          <div className="stat-bar-half home">
-            <div className="stat-bar-fill home" style={{ width: `${homePct}%` }} />
-          </div>
-          <div className="stat-bar-half away">
-            <div className="stat-bar-fill away" style={{ width: `${awayPct}%` }} />
-          </div>
-        </div>
-        <span
-          className={`stat-bar-val away${awayTriggered ? " trig" : ""}`}
-          style={inkAway ? { color: inkAway } : undefined}
-        >
-          {awayText ?? fmtSignal(away, digits, extras)}
+        <span className="mp-half is-away">
+          <i className={lead === "away" ? "is-lead" : ""} style={{ width: share(away) }} />
         </span>
-      </div>
+      </span>
     </div>
   );
 }
@@ -513,379 +504,233 @@ function cumulativeToPerMinute(
   return out;
 }
 
-function DangerPulseChart({
+type TimelineView = "pressure" | "shots" | "unrealised";
+
+const TIMELINE_VIEWS: { id: TimelineView; label: string; short: string }[] = [
+  { id: "pressure", label: "Pressure", short: "Pressure" },
+  { id: "shots", label: "Shots on target", short: "Shots" },
+  { id: "unrealised", label: "Unrealised goals", short: "Unrealised" },
+];
+
+/** The graph's width until its box has been measured. */
+const GRAPH_W = 900;
+const GRAPH_PAD = 8;
+const BUCKET_MIN = 5;
+const AXIS_MINUTES = [0, 15, 30, 45, 60, 75, 90];
+
+/** The whole match on one short graph. It always opens on pressure (dangerous
+ * attacks per 5 minutes, home above the line, away below); the switch shows
+ * shots on target the same way, or unrealised goals as two lines. */
+function TimelineGraph({
   points,
-  events,
-  title,
-  blurb,
+  story,
   homeName,
   awayName,
-  currentMinute,
+  minute,
 }: {
   points: TimelinePoint[];
-  events: MatchEvent[];
-  title: string;
-  blurb: string;
+  story: StoryEvent[];
   homeName: string;
   awayName: string;
-  currentMinute: number;
+  minute: number;
 }) {
-  const pulses = cumulativeToPerMinute(
-    points,
-    (p) => Number(p.dangerous_attacks.home || 0),
-    (p) => Number(p.dangerous_attacks.away || 0),
-  );
-  if (pulses.length < 2) {
-    return (
-      <article className="chart-card">
-        <header className="chart-head">
-          <h3>{title}</h3>
-          <p>{blurb}</p>
-        </header>
-        <p className="muted">A line appears after a few minutes have been recorded.</p>
-      </article>
-    );
-  }
-  const width = 720;
-  const height = 248;
-  const padL = 44;
-  const padR = 18;
-  const padT = 18;
-  const padB = 32;
-  const maxX = Math.max(90, pulses[pulses.length - 1].minute, currentMinute);
-  const peak = Math.max(1, ...pulses.flatMap((point) => [point.home, point.away]));
-  const plotW = width - padL - padR;
-  const plotH = height - padT - padB;
-  const midY = padT + plotH / 2;
-  const xAt = (minute: number) => padL + (Math.max(0, minute) / maxX) * plotW;
-  const yAt = (signed: number) => midY - (signed / peak) * (plotH / 2);
-  const barW = Math.max(1.2, Math.min(4, plotW / Math.max(pulses.length, 1) / 2));
-  const toLine = (signedOf: (point: PulsePoint) => number) =>
-    catmullRomPath(
-      pulses.map((point) => ({ x: xAt(point.minute), y: yAt(signedOf(point)) })),
-    );
-  const toArea = (signedOf: (point: PulsePoint) => number) => {
-    const line = toLine(signedOf);
-    const first = pulses[0];
-    const last = pulses[pulses.length - 1];
-    return `${line} L ${xAt(last.minute).toFixed(1)} ${midY.toFixed(1)} L ${xAt(first.minute).toFixed(1)} ${midY.toFixed(1)} Z`;
-  };
-  const last = pulses[pulses.length - 1];
-  const goals = events.filter((event) => event.event_type === "goal");
-  const yTickDigits = peak < 8 ? 1 : 0;
-  return (
-    <article className="chart-card">
-      <header className="chart-head">
-        <h3>{title}</h3>
-        <p>{blurb}</p>
-      </header>
-      <ul className="chart-legend">
-        <li className="lg-home">
+  const [view, setView] = useState<TimelineView>("pressure");
+  // Drawn at its real width, so text stays 11px on a phone as on a laptop.
+  const [plot, setPlot] = useState<HTMLDivElement | null>(null);
+  const [W, setW] = useState(GRAPH_W);
+  useEffect(() => {
+    if (!plot) return;
+    const measure = () => setW(Math.max(280, Math.round(plot.clientWidth)));
+    measure();
+    const watcher = new ResizeObserver(measure);
+    watcher.observe(plot);
+    return () => watcher.disconnect();
+  }, [plot]);
+  const last = Math.max(90, minute, ...points.map((p) => p.minute), ...story.map((e) => e.minute));
+  const x = (m: number) => GRAPH_PAD + (m / last) * (W - 2 * GRAPH_PAD);
+  const goals = story.filter((e) => e.kind === "goal");
+  const cards = story.filter((e) => e.kind === "card");
+  const blurb = {
+    pressure: `Dangerous attacks in each 5 minutes: ${homeName} above the line, ${awayName} below. Goals and cards sit on the line.`,
+    shots: `Shots on target in each 5 minutes: ${homeName} above the line, ${awayName} below.`,
+    unrealised: `Shots against the scoreboard, minute by minute. Above 1, a goal is overdue; below 0, they've scored more than their chances.`,
+  }[view];
+
+  let graph: ReactNode;
+  if (!points.some((p) => p.minute > 0)) {
+    graph = <p className="wl-sub mp-tl-empty">The minute-by-minute feed for this match isn't in yet.</p>;
+  } else if (view === "unrealised") {
+    const height = 186;
+    const top = 30;
+    const bottom = 164;
+    const lo = -1;
+    const hi = 3;
+    const y = (v: number) => bottom - ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * (bottom - top);
+    const line = (of: (p: TimelinePoint) => number) =>
+      points
+        .filter((p) => p.minute > 0)
+        .sort((a, b) => a.minute - b.minute)
+        .map((p, i) => `${i ? "L" : "M"}${x(p.minute).toFixed(1)},${y(of(p)).toFixed(1)}`)
+        .join("");
+    graph = (
+      <svg viewBox={`0 0 ${W} ${height}`} role="img" aria-label={`Unrealised goals, ${homeName} and ${awayName}`}>
+        {[-1, 0, 1, 2, 3].map((v) => (
+          <g key={v}>
+            <line className="mp-tl-grid" x1={GRAPH_PAD + 22} x2={W - GRAPH_PAD} y1={y(v)} y2={y(v)} />
+            <text className="mp-tl-ax" x={GRAPH_PAD} y={y(v) + 4}>
+              {v}
+            </text>
+          </g>
+        ))}
+        <rect x={GRAPH_PAD + 30} y={top - 12} width={14} height={3} rx={1.5} className="mp-tl-key is-home" />
+        <text className="mp-tl-team" x={GRAPH_PAD + 50} y={top - 7}>
           {homeName}
-          <span>{fmt(last.home, yTickDigits)}/min</span>
-        </li>
-        <li className="lg-away">
+        </text>
+        <rect x={GRAPH_PAD + Math.min(200, W / 2)} y={top - 12} width={14} height={3} rx={1.5} className="mp-tl-key is-away" />
+        <text className="mp-tl-team" x={GRAPH_PAD + Math.min(200, W / 2) + 20} y={top - 7}>
           {awayName}
-          <span>{fmt(last.away, yTickDigits)}/min</span>
-        </li>
-        <li className="lg-goal">Goal</li>
-      </ul>
-      <svg className="series-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
-        {[-peak, -peak / 2, 0, peak / 2, peak].map((tick) => (
-          <g key={`y-${tick}`}>
-            <line
-              x1={padL}
-              x2={width - padR}
-              y1={yAt(tick)}
-              y2={yAt(tick)}
-              className={tick === 0 ? "chart-zero" : "chart-grid"}
-            />
-            <text x={padL - 8} y={yAt(tick) + 3} className="chart-axis" textAnchor="end">
-              {fmt(Math.abs(tick), yTickDigits)}
+        </text>
+        <line className="mp-tl-due" x1={GRAPH_PAD + 22} x2={W - GRAPH_PAD} y1={y(1)} y2={y(1)} />
+        <text className="mp-tl-due-l" x={W - GRAPH_PAD} y={y(1) - 5} textAnchor="end">
+          1 = a goal is due
+        </text>
+        <line className="mp-tl-ht" x1={x(45)} x2={x(45)} y1={top} y2={bottom} />
+        <path className="mp-tl-line is-home" d={line((p) => Number(p.rule_of_three.home || 0))} />
+        <path className="mp-tl-line is-away" d={line((p) => Number(p.rule_of_three.away || 0))} />
+        {goals.map((g, i) => (
+          <circle key={`g${i}`} className="mp-tl-goal" cx={x(g.minute)} cy={bottom} r={6}>
+            <title>{`${g.minute}' ${g.player} ${g.scoreAfter ?? ""}`}</title>
+          </circle>
+        ))}
+        <g transform={`translate(0,${height - 2})`}>
+          {AXIS_MINUTES.map((m) => (
+            <text key={m} className="mp-tl-ax" x={x(m)} textAnchor="middle">
+              {m}&apos;
             </text>
-          </g>
-        ))}
-        {xTicks(maxX).map((tick) => (
-          <g key={`x-${tick}`}>
-            <line
-              x1={xAt(tick)}
-              x2={xAt(tick)}
-              y1={padT}
-              y2={height - padB}
-              className="chart-grid chart-grid-x"
-            />
-            <text x={xAt(tick)} y={height - 10} className="chart-axis" textAnchor="middle">
-              {tick}&apos;
-            </text>
-          </g>
-        ))}
-        {pulses.map((point) => (
-          <g key={`bar-${point.minute}`}>
-            <rect
-              className="pulse-bar home"
-              x={xAt(point.minute) - barW / 2}
-              y={yAt(point.home)}
-              width={barW}
-              height={Math.max(0, midY - yAt(point.home))}
-            />
-            <rect
-              className="pulse-bar away"
-              x={xAt(point.minute) - barW / 2}
-              y={midY}
-              width={barW}
-              height={Math.max(0, yAt(-point.away) - midY)}
-            />
-          </g>
-        ))}
-        <path d={toArea((p) => p.home)} className="series-home-fill" />
-        <path d={toArea((p) => -p.away)} className="series-away-fill" />
-        <path d={toLine((p) => p.home)} className="series-home" />
-        <path d={toLine((p) => -p.away)} className="series-away" />
-        <line
-          x1={xAt(currentMinute)}
-          x2={xAt(currentMinute)}
-          y1={padT}
-          y2={height - padB}
-          className="chart-now"
-        />
-        {goals.map((goal, index) => {
-          const pulse =
-            pulses.find((point) => point.minute === goal.minute) ||
-            pulses.reduce((best, point) =>
-              Math.abs(point.minute - goal.minute) < Math.abs(best.minute - goal.minute)
-                ? point
-                : best,
-            );
-          const signed = goal.side === "away" ? -pulse.away : pulse.home;
-          return (
-            <circle
-              key={`${goal.minute}-${goal.side}-${index}`}
-              cx={xAt(goal.minute)}
-              cy={yAt(signed)}
-              r={4.5}
-              className={goal.side === "away" ? "goal-away" : "goal-home"}
-            >
-              <title>
-                {goal.minute}&apos; {goal.side === "away" ? awayName : homeName} goal
-              </title>
-            </circle>
-          );
-        })}
+          ))}
+        </g>
       </svg>
-    </article>
-  );
-}
-
-function plotPoints(points: TimelinePoint[]): TimelinePoint[] {
-  const usable = points.filter((point) => point.minute > 0);
-  return usable.length >= 2 ? usable : points;
-}
-
-function valueAt(
-  points: TimelinePoint[],
-  minute: number,
-  read: (point: TimelinePoint) => number,
-): number {
-  if (!points.length) return 0;
-  if (minute <= points[0].minute) return read(points[0]);
-  for (let i = 1; i < points.length; i += 1) {
-    const prev = points[i - 1];
-    const next = points[i];
-    if (minute <= next.minute) {
-      const span = Math.max(1, next.minute - prev.minute);
-      const t = (minute - prev.minute) / span;
-      return read(prev) + t * (read(next) - read(prev));
+    );
+  } else {
+    const height = 210;
+    const mid = 96;
+    const half = 72;
+    const shots = view === "shots";
+    const per = cumulativeToPerMinute(
+      points,
+      (p) => Number((shots ? p.shots_on_target : p.dangerous_attacks).home || 0),
+      (p) => Number((shots ? p.shots_on_target : p.dangerous_attacks).away || 0),
+    );
+    const buckets: { from: number; home: number; away: number }[] = [];
+    for (let from = 0; from < last; from += BUCKET_MIN) {
+      const inside = per.filter((p) => p.minute > from && p.minute <= from + BUCKET_MIN);
+      buckets.push({
+        from,
+        home: inside.reduce((n, p) => n + p.home, 0),
+        away: inside.reduce((n, p) => n + p.away, 0),
+      });
     }
-  }
-  return read(points[points.length - 1]);
-}
-
-function xTicks(maxX: number): number[] {
-  const step = maxX > 60 ? 15 : 10;
-  const ticks: number[] = [];
-  for (let minute = 0; minute < maxX; minute += step) ticks.push(minute);
-  ticks.push(maxX);
-  return ticks;
-}
-
-function yTicks(minY: number, maxY: number): number[] {
-  const span = maxY - minY || 1;
-  return [0, 1, 2, 3, 4].map((step) => minY + (span * step) / 4);
-}
-
-function SeriesChart({
-  points,
-  homeOf,
-  awayOf,
-  events,
-  title,
-  blurb,
-  homeName,
-  awayName,
-  unit = "",
-  signed = false,
-  guide,
-  guideLabel,
-}: {
-  points: TimelinePoint[];
-  homeOf: (p: TimelinePoint) => number;
-  awayOf: (p: TimelinePoint) => number;
-  events: MatchEvent[];
-  title: string;
-  blurb: string;
-  homeName: string;
-  awayName: string;
-  unit?: string;
-  signed?: boolean;
-  guide?: number;
-  guideLabel?: string;
-}) {
-  const series = plotPoints(points);
-  if (series.length < 2) {
-    return (
-      <article className="chart-card">
-        <header className="chart-head">
-          <h3>{title}</h3>
-          <p>{blurb}</p>
-        </header>
-        <p className="muted">A line appears after a few minutes have been recorded.</p>
-      </article>
-    );
-  }
-  const width = 720;
-  const height = 248;
-  const padL = 44;
-  const padR = 18;
-  const padT = 18;
-  const padB = 32;
-  const maxX = Math.max(90, series[series.length - 1].minute);
-  const ys = series.flatMap((point) => [homeOf(point), awayOf(point)]);
-  let minY = signed ? Math.min(0, ...ys) : 0;
-  let maxY = Math.max(signed ? 1 : 1, ...ys);
-  if (guide != null) {
-    maxY = Math.max(maxY, guide);
-    minY = Math.min(minY, 0);
-  }
-  if (maxY === minY) maxY = minY + 1;
-  const plotW = width - padL - padR;
-  const plotH = height - padT - padB;
-  const xAt = (minute: number) => padL + (Math.max(0, minute) / maxX) * plotW;
-  const yAt = (value: number) => padT + (1 - (value - minY) / (maxY - minY)) * plotH;
-  const toLine = (read: (point: TimelinePoint) => number) =>
-    catmullRomPath(
-      series.map((point) => ({ x: xAt(point.minute), y: yAt(read(point)) })),
-    );
-  const toArea = (read: (point: TimelinePoint) => number) => {
-    const line = toLine(read);
-    const base = yAt(Math.max(minY, 0));
-    const first = series[0];
-    const last = series[series.length - 1];
-    return `${line} L ${xAt(last.minute).toFixed(1)} ${base.toFixed(1)} L ${xAt(first.minute).toFixed(1)} ${base.toFixed(1)} Z`;
-  };
-  const homePath = toLine(homeOf);
-  const awayPath = toLine(awayOf);
-  const goals = events.filter((event) => event.event_type === "goal");
-  const last = series[series.length - 1];
-  const yTickDigits = signed || maxY - minY < 8 ? 1 : 0;
-  return (
-    <article className="chart-card">
-      <header className="chart-head">
-        <h3>{title}</h3>
-        <p>{blurb}</p>
-      </header>
-      <ul className="chart-legend">
-        <li className="lg-home">
-          {homeName}
-          <span>
-            {fmt(homeOf(last), yTickDigits)}
-            {unit}
-          </span>
-        </li>
-        <li className="lg-away">
-          {awayName}
-          <span>
-            {fmt(awayOf(last), yTickDigits)}
-            {unit}
-          </span>
-        </li>
-        <li className="lg-goal">Goal</li>
-        {guide != null && guideLabel ? <li className="lg-guide">{guideLabel}</li> : null}
-      </ul>
-      <svg
-        className="series-chart"
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label={title}
-      >
-        {yTicks(minY, maxY).map((tick) => (
-          <g key={`y-${tick}`}>
-            <line
-              x1={padL}
-              x2={width - padR}
-              y1={yAt(tick)}
-              y2={yAt(tick)}
-              className="chart-grid"
-            />
-            <text x={padL - 8} y={yAt(tick) + 3} className="chart-axis" textAnchor="end">
-              {fmt(tick, yTickDigits)}
-              {unit}
-            </text>
-          </g>
-        ))}
-        {xTicks(maxX).map((tick) => (
-          <g key={`x-${tick}`}>
-            <line
-              x1={xAt(tick)}
-              x2={xAt(tick)}
-              y1={padT}
-              y2={height - padB}
-              className="chart-grid chart-grid-x"
-            />
-            <text x={xAt(tick)} y={height - 10} className="chart-axis" textAnchor="middle">
-              {tick}&apos;
-            </text>
-          </g>
-        ))}
-        {signed ? (
-          <line
-            x1={padL}
-            x2={width - padR}
-            y1={yAt(0)}
-            y2={yAt(0)}
-            className="chart-zero"
-          />
-        ) : null}
-        {guide != null ? (
-          <line
-            x1={padL}
-            x2={width - padR}
-            y1={yAt(guide)}
-            y2={yAt(guide)}
-            className="chart-guide"
-          />
-        ) : null}
-        <path d={toArea(homeOf)} className="series-home-fill" />
-        <path d={toArea(awayOf)} className="series-away-fill" />
-        <path d={homePath} className="series-home" />
-        <path d={awayPath} className="series-away" />
-        {goals.map((goal, index) => {
-          const read = goal.side === "away" ? awayOf : homeOf;
+    const peak = Math.max(shots ? 2 : 6, ...buckets.map((b) => Math.max(b.home, b.away)));
+    const width = (x(BUCKET_MIN) - x(0)) * 0.72;
+    const what = shots ? "shots on target" : "dangerous attacks";
+    // Goals a few minutes apart on the same side: every other score label
+    // moves up a line so they don't print over each other.
+    const lifts: number[] = [];
+    goals.forEach((g, i) => {
+      const before = goals[i - 1];
+      const close = before && before.side === g.side && x(g.minute) - x(before.minute) < 40;
+      lifts.push(close && !lifts[i - 1] ? 14 : 0);
+    });
+    graph = (
+      <svg viewBox={`0 0 ${W} ${height}`} role="img" aria-label={`${what}, ${homeName} and ${awayName}`}>
+        <line className="mp-tl-ht" x1={x(45)} x2={x(45)} y1={mid - half - 4} y2={mid + half + 4} />
+        <text className="mp-tl-team" x={GRAPH_PAD} y={mid - half - 8}>
+          {homeName} ↑
+        </text>
+        <text className="mp-tl-team" x={GRAPH_PAD} y={mid + half + 18}>
+          {awayName} ↓
+        </text>
+        {buckets.map((b) => {
+          const left = x(b.from + BUCKET_MIN / 2) - width / 2;
+          const hh = (b.home / peak) * half;
+          const ha = (b.away / peak) * half;
           return (
-            <circle
-              key={`${goal.minute}-${goal.side}-${index}`}
-              cx={xAt(goal.minute)}
-              cy={yAt(valueAt(series, goal.minute, read))}
-              r={4.5}
-              className={goal.side === "away" ? "goal-away" : "goal-home"}
-            >
-              <title>
-                {goal.minute}&apos; {goal.side === "away" ? awayName : homeName} goal
-              </title>
-            </circle>
+            <g key={b.from} className="mp-tl-bucket">
+              <title>{`${b.from + 1}–${b.from + BUCKET_MIN}': ${homeName} ${Math.round(b.home)}, ${awayName} ${Math.round(b.away)} ${what}`}</title>
+              <rect x={left} y={mid - half} width={width} height={half * 2} fill="transparent" />
+              {hh > 0 ? <rect className="mp-tl-bar is-home" x={left} y={mid - hh} width={width} height={hh} rx={2} /> : null}
+              {ha > 0 ? <rect className="mp-tl-bar is-away" x={left} y={mid} width={width} height={ha} rx={2} /> : null}
+            </g>
           );
         })}
+        <line className="mp-tl-mid" x1={GRAPH_PAD} x2={W - GRAPH_PAD} y1={mid} y2={mid} />
+        {cards.map((c, i) => (
+          <rect
+            key={`c${i}`}
+            className={`mp-tl-card is-${cardTone(c.detail)}`}
+            x={x(c.minute) - 3.5}
+            y={mid - 5}
+            width={7}
+            height={10}
+            rx={1.5}
+          >
+            <title>{`${c.minute}' ${cardTone(c.detail) === "red" ? "red card" : "yellow card"}: ${c.player}`}</title>
+          </rect>
+        ))}
+        {goals.map((g, i) => {
+          const lift = lifts[i];
+          return (
+            <g key={`g${i}`}>
+              <title>{`${g.minute}' ${g.player} ${g.scoreAfter ?? ""}`}</title>
+              <circle className="mp-tl-goal" cx={x(g.minute)} cy={mid} r={6.5} />
+              <text
+                className="mp-tl-goal-l"
+                x={x(g.minute)}
+                y={g.side === "away" ? mid + 22 + lift : mid - 12 - lift}
+                textAnchor="middle"
+              >
+                {(g.scoreAfter ?? "").replace("-", "–")}
+              </text>
+            </g>
+          );
+        })}
+        <g transform={`translate(0,${height - 2})`}>
+          {AXIS_MINUTES.map((m) => (
+            <text key={m} className="mp-tl-ax" x={x(m)} textAnchor="middle">
+              {m}&apos;
+            </text>
+          ))}
+        </g>
       </svg>
-    </article>
+    );
+  }
+
+  return (
+    <section className="wl-sec mp-tl">
+      <div className="mp-tl-head">
+        <div>
+          <h3>Timeline</h3>
+          <p className="wl-sub">{blurb}</p>
+        </div>
+        <div className="mp-seg" role="group" aria-label="Graph">
+          {TIMELINE_VIEWS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={view === item.id ? "on" : ""}
+              aria-pressed={view === item.id}
+              onClick={() => setView(item.id)}
+            >
+              <span className="mp-seg-long">{item.label}</span>
+              <span className="mp-seg-short">{item.short}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div ref={setPlot} className="mp-tl-plot">
+        {graph}
+      </div>
+    </section>
   );
 }
 
@@ -897,11 +742,6 @@ type StoryEvent = {
   detail: string;
   scoreAfter?: string;
 };
-
-type StoryRow =
-  | { type: "period"; key: string; label: string; score: string }
-  | { type: "added"; key: string; minutes: number }
-  | { type: "event"; key: string; event: StoryEvent };
 
 function formatScore(home: number, away: number): string {
   return `${home}-${away}`;
@@ -977,171 +817,75 @@ function collectStoryEvents(
   return collapseStoryEvents(rows);
 }
 
-function htScoreFrom(
-  events: MatchEvent[],
-  liveScore: string,
-  status?: string | null,
-): string {
-  if ((status || "").toUpperCase() === "HT") return liveScore;
-  let home = 0;
-  let away = 0;
-  for (const event of events) {
-    if (event.event_type !== "goal" || event.minute > 45) continue;
-    if (event.side === "away") away += 1;
-    else home += 1;
-  }
-  return formatScore(home, away);
-}
-
-function buildStoryRows(
-  events: MatchEvent[],
-  substitutions: Substitution[],
-  liveScore: string,
-  status?: string | null,
-  minute = 0,
-): StoryRow[] {
-  const items = collectStoryEvents(events, substitutions);
-  if (!items.length) return [];
-  const first = items.filter((item) => item.minute <= 45);
-  const second = items.filter((item) => item.minute > 45);
-  const statusU = (status || "").toUpperCase();
-  const showSecond =
-    second.length > 0 || ["2H", "FT", "AET", "PEN"].includes(statusU) || minute > 45;
-  const showHt = showSecond || statusU === "HT";
-  const ht = htScoreFrom(events, liveScore, status);
-  const out: StoryRow[] = [];
-  if (showSecond) {
-    out.push({ type: "period", key: "p-2h", label: "2nd half", score: liveScore });
-    if (minute > 90) {
-      out.push({ type: "added", key: "add-90", minutes: minute - 90 });
-    }
-    for (const [index, event] of [...second].reverse().entries()) {
-      out.push({
-        type: "event",
-        key: `2h-${event.kind}-${event.minute}-${event.side}-${index}`,
-        event,
-      });
-    }
-  }
-  if (showHt) {
-    out.push({ type: "period", key: "p-ht", label: "HT", score: ht });
-  }
-  if (statusU === "1H" && minute > 45) {
-    out.push({ type: "added", key: "add-45", minutes: minute - 45 });
-  }
-  for (const [index, event] of [...first].reverse().entries()) {
-    out.push({
-      type: "event",
-      key: `1h-${event.kind}-${event.minute}-${event.side}-${index}`,
-      event,
-    });
-  }
-  return out;
-}
-
-function StoryEventBody({ event }: { event: StoryEvent }) {
-  if (event.kind === "goal") {
-    return (
-      <span className="story-payload">
-        <span className="story-score-pill">{event.scoreAfter || ""}</span>
-        <span className="story-player">{event.player}</span>
-      </span>
-    );
-  }
-  if (event.kind === "card") {
-    const tone = cardTone(event.detail);
-    return (
-      <span className="story-payload">
-        <span className={`story-card-sq ${tone}`} aria-hidden />
-        <span className="story-player">{event.player}</span>
-        <span className="story-reason">
-          {tone === "red"
-            ? event.detail.toLowerCase().includes("second")
-              ? "2nd yellow"
-              : "Red"
-            : "Yellow"}
-        </span>
-      </span>
-    );
-  }
-  return (
-    <span className="story-payload">
-      <span className="story-sub">
-        <span className="story-sub-in">{event.player}</span>
-        <span className="story-sub-out">{event.detail}</span>
-      </span>
-    </span>
-  );
-}
-
-function MatchStory({
-  events,
-  substitutions,
-  liveScore,
-  status,
-  minute,
+/** Goals and cards, newest first. Substitutions fold away behind a link so
+ * the moments that change a match stand out. */
+function EventList({
+  story,
+  homeName,
+  awayName,
 }: {
-  events: MatchEvent[];
-  substitutions: Substitution[];
-  liveScore: string;
-  status?: string | null;
-  minute: number;
+  story: StoryEvent[];
+  homeName: string;
+  awayName: string;
 }) {
-  const rows = buildStoryRows(events, substitutions, liveScore, status, minute);
+  const [showSubs, setShowSubs] = useState(false);
+  const subs = story.filter((e) => e.kind === "sub").length;
+  const rows = story.filter((e) => showSubs || e.kind !== "sub").reverse();
+  const team = (side: string) => (side === "away" ? awayName : homeName);
   return (
-    <section className="story-block">
-      <h3>Match story</h3>
-      {rows.length ? (
-        <ol className="story-timeline">
-          {rows.map((row) => {
-            if (row.type === "period") {
-              return (
-                <li key={row.key} className="story-period">
-                  <span>{row.label}</span>
-                  <span className="story-period-score">{row.score}</span>
-                </li>
-              );
-            }
-            if (row.type === "added") {
-              return (
-                <li key={row.key} className="story-added">
-                  Additional time {row.minutes}
-                </li>
-              );
-            }
-            const { event } = row;
-            const home = event.side !== "away";
-            return (
-              <li
-                key={row.key}
-                className={`story-event ${home ? "is-home" : "is-away"} is-${event.kind}`}
-              >
-                <div className="story-col home">
-                  {home ? (
-                    <>
-                      <span className="story-min">{event.minute}&apos;</span>
-                      <StoryEventBody event={event} />
-                    </>
-                  ) : null}
-                </div>
-                <div className="story-spine" aria-hidden>
-                  <span className="story-dot" />
-                </div>
-                <div className="story-col away">
-                  {!home ? (
-                    <>
-                      <StoryEventBody event={event} />
-                      <span className="story-min">{event.minute}&apos;</span>
-                    </>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-      ) : (
-        <p className="muted">No goals, cards, or substitutions yet.</p>
-      )}
+    <section className="wl-sec">
+      <h3>What&apos;s happened</h3>
+      {rows.length ? <p className="wl-sub">Newest first.</p> : <p className="wl-sub">No goals or cards yet.</p>}
+      {rows.map((e, i) => {
+        const key = `${e.kind}-${e.minute}-${e.side}-${i}`;
+        if (e.kind === "goal") {
+          return (
+            <div key={key} className="mp-ev">
+              <span className="mp-ev-min">{e.minute}&apos;</span>
+              <i className="mp-ball" aria-label="Goal" />
+              <span>
+                <b>{e.player}</b>
+                <small>{team(e.side)}</small>
+              </span>
+              <b className="mp-ev-score">{(e.scoreAfter ?? "").replace("-", "–")}</b>
+            </div>
+          );
+        }
+        if (e.kind === "card") {
+          const tone = cardTone(e.detail);
+          const what =
+            tone === "red" ? (e.detail.toLowerCase().includes("second") ? "second yellow" : "red card") : "yellow card";
+          return (
+            <div key={key} className="mp-ev">
+              <span className="mp-ev-min">{e.minute}&apos;</span>
+              <i className={`mp-card is-${tone}`} aria-label={what} />
+              <span>
+                {e.player}
+                <small>
+                  {team(e.side)} · {what}
+                </small>
+              </span>
+              <span />
+            </div>
+          );
+        }
+        return (
+          <div key={key} className="mp-ev is-sub">
+            <span className="mp-ev-min">{e.minute}&apos;</span>
+            <span aria-label="Substitution">⇄</span>
+            <span>
+              {e.player} for {e.detail}
+              <small>{team(e.side)}</small>
+            </span>
+            <span />
+          </div>
+        );
+      })}
+      {subs ? (
+        <button type="button" className="mp-link" onClick={() => setShowSubs((v) => !v)}>
+          {showSubs ? "Hide substitutions" : `Show substitutions (${subs})`}
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -1176,53 +920,6 @@ function OverlayBadge({ name, src }: { name: string; src?: string | null }) {
         </span>
       )}
     </span>
-  );
-}
-
-function LineupColumn({
-  name,
-  src,
-  lineup,
-}: {
-  name: string;
-  src?: string | null;
-  lineup: TeamLineup;
-}) {
-  return (
-    <div className="lineup-col">
-      <div className="lineup-head">
-        <OverlayBadge name={name} src={src} />
-        <div>
-          <h3>{name}</h3>
-          {lineup.coach ? <p className="muted">{lineup.coach}</p> : null}
-        </div>
-      </div>
-      {lineup.starting.length ? (
-        <ol className="lineup-xi">
-          {lineup.starting.map((player) => (
-            <li key={`${player.number}-${player.player}`}>
-              <span className="shirt">{player.number || "—"}</span>
-              {player.player}
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="muted">Starting XI is not in the live feed yet.</p>
-      )}
-      {lineup.substitutes.length ? (
-        <>
-          <h4>Bench</h4>
-          <ul className="lineup-bench">
-            {lineup.substitutes.map((player) => (
-              <li key={`b-${player.number}-${player.player}`}>
-                <span className="shirt">{player.number || "—"}</span>
-                {player.player}
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-    </div>
   );
 }
 
@@ -1288,43 +985,6 @@ function overlayHomeWasHome(
   return null;
 }
 
-function patternTone(pct: number | null): "green" | "gold" | "red" | "avg" {
-  if (pct == null) return "avg";
-  if (pct >= 60) return "green";
-  if (pct >= 40) return "gold";
-  return "red";
-}
-
-function H2HPatternRow({
-  label,
-  pct,
-  count,
-  sample,
-  insufficient,
-}: {
-  label: string;
-  pct: number | null;
-  count: number;
-  sample: number;
-  insufficient: boolean;
-}) {
-  const sub = sample > 0 ? `${count}/${sample}` : "";
-  const tone = insufficient ? "avg" : patternTone(pct);
-  const width = insufficient ? 0 : Math.max(0, Math.min(100, pct ?? 0));
-  return (
-    <div className="h2h-pl-row">
-      <span className="h2h-pl-label">{label}</span>
-      <div className="h2h-pl-bar">
-        <div className={`h2h-pl-fill ${tone}`} style={{ width: `${width}%` }} />
-      </div>
-      <div className="h2h-pl-val">
-        <span className={tone}>{insufficient ? sub || "—" : pct == null ? "—" : `${pct}%`}</span>
-        {!insufficient && sub ? <small>{sub}</small> : null}
-      </div>
-    </div>
-  );
-}
-
 function H2HPane({
   matchId,
   homeTeam,
@@ -1370,32 +1030,27 @@ function H2HPane({
     return () => controller.abort();
   }, [matchId]);
 
-  if (loading) return <p className="overlay-note">Loading H2H…</p>;
-  if (error) return <p className="overlay-note">{error}</p>;
-  if (!data) return <p className="overlay-note">No H2H data available.</p>;
+  if (loading) return <p className="mp-note">Loading head-to-head…</p>;
+  if (error) return <p className="mp-note">{error}</p>;
+  if (!data) return <p className="mp-note">No head-to-head on record.</p>;
 
   const n = data.summary.sample;
-  const empty = n === 0;
-  const total = data.summary.home_wins + data.summary.draws + data.summary.away_wins || 1;
-  const homeW = Math.round((data.summary.home_wins / total) * 100);
-  const drawW = Math.round((data.summary.draws / total) * 100);
-  const awayW = 100 - homeW - drawW;
+  const home = data.home_team || homeTeam;
+  const away = data.away_team || awayTeam;
   const games = data.fixtures.slice(0, 5);
   const p = data.patterns;
-  const homeAvg = n > 0 ? (p.home_goals / n).toFixed(1) : "—";
-  const awayAvg = n > 0 ? (p.away_goals / n).toFixed(1) : "—";
 
   let dominance = "";
   if (p.home_goals && p.away_goals && n >= 5) {
     const ratio = Math.max(p.home_goals, p.away_goals) / Math.min(p.home_goals, p.away_goals);
     if (ratio >= 2) {
-      const name = p.home_goals > p.away_goals ? data.home_team : data.away_team;
+      const name = p.home_goals > p.away_goals ? home : away;
       const big = Math.max(p.home_goals, p.away_goals);
       const small = Math.min(p.home_goals, p.away_goals);
       dominance =
         ratio >= 2.5
-          ? `${name} averages ${(big / n).toFixed(1)} goals vs ${(small / n).toFixed(1)}`
-          : `${name} scores 2x more goals (${big} vs ${small})`;
+          ? `${name} average ${(big / n).toFixed(1)} goals a game in these meetings, against ${(small / n).toFixed(1)}.`
+          : `${name} scored twice as many goals in these meetings (${big} to ${small}).`;
     }
   }
 
@@ -1407,166 +1062,152 @@ function H2HPane({
           return typeof row === "object" && row !== null && (row.pct || 0) >= slot.threshold;
         })
       : [];
+  const patternRows: { label: string; count: number; of: number }[] = [
+    { label: "Over 2.5 goals", count: p.over_2_5.count, of: n },
+    { label: "Both teams scored", count: p.btts.count, of: n },
+    { label: "Draws", count: data.summary.draws, of: n },
+    { label: `${home} kept a clean sheet`, count: p.home_cs.count, of: n },
+    { label: `${away} kept a clean sheet`, count: p.away_cs.count, of: n },
+    ...timingRows.map((slot) => ({
+      label: slot.label,
+      count: (timing?.[slot.key] as H2HCount).count,
+      of: timing?.sample ?? n,
+    })),
+  ];
 
   return (
-    <div className="h2h-pane">
-      <div className="h2h-header">
-        <div className="h2h-team-col">
-          <div className="h2h-team-name home">{data.home_team || homeTeam}</div>
-          {leagueRankLabel(data.home_rank) ? (
-            <div className="h2h-rank">{leagueRankLabel(data.home_rank)}</div>
-          ) : null}
-          <div className="h2h-wins home">{empty ? "—" : data.summary.home_wins}</div>
-          <div className="h2h-wins-lbl">Wins</div>
-        </div>
-        <div className="h2h-center">
-          <div className="h2h-draws">{empty ? "—" : data.summary.draws}</div>
-          <div className="h2h-wins-lbl">{empty ? "No data" : "Draws"}</div>
-          {!empty ? (
-            <div className="h2h-sample">
-              {n} game{n === 1 ? "" : "s"}
-              {data.insufficient ? " · small sample" : ""}
-            </div>
-          ) : null}
-        </div>
-        <div className="h2h-team-col">
-          <div className="h2h-team-name away">{data.away_team || awayTeam}</div>
-          {leagueRankLabel(data.away_rank) ? (
-            <div className="h2h-rank">{leagueRankLabel(data.away_rank)}</div>
-          ) : null}
-          <div className="h2h-wins away">{empty ? "—" : data.summary.away_wins}</div>
-          <div className="h2h-wins-lbl">Wins</div>
-        </div>
-      </div>
-      {empty ? (
-        <p className="overlay-note">First meeting or history not yet available.</p>
-      ) : (
-        <>
-          <div className="h2h-tug">
-            <div className="h2h-tug-home" style={{ width: `${homeW}%` }} />
-            <div className="h2h-tug-draw" style={{ width: `${drawW}%` }} />
-            <div className="h2h-tug-away" style={{ width: `${awayW}%` }} />
-          </div>
-          <div className="h2h-goals">
-            <div>
-              <div className="h2h-goals-num home">{homeAvg}</div>
-              <div className="h2h-wins-lbl">Goals / game</div>
-            </div>
-            <div className="h2h-goals-mid">Avg {p.avg_goals ?? "—"}</div>
-            <div>
-              <div className="h2h-goals-num away">{awayAvg}</div>
-              <div className="h2h-wins-lbl">Goals / game</div>
-            </div>
-          </div>
-        </>
-      )}
-      {games.length ? (
-        <div className="h2h-games">
-          {games.map((fx) => {
-            const usHome = overlayHomeWasHome(
-              fx,
-              data.home_team || homeTeam,
-              data.away_team || awayTeam,
-              homeTeamId,
-              awayTeamId,
-            );
-            const wr =
-              fx.home_score === fx.away_score
-                ? "D"
-                : usHome == null
-                  ? ""
-                  : fx.home_score > fx.away_score
-                    ? usHome
-                      ? "W"
-                      : "L"
-                    : usHome
-                      ? "L"
-                      : "W";
-            return (
-              <div className="h2h-game" key={`${fx.match_id}-${fx.match_date}`}>
-                <span className={`h2h-badge ${wr.toLowerCase()}`}>{wr || "·"}</span>
-                <span className={`h2h-gteam${usHome === true ? " hl" : ""}`}>{fx.home_team}</span>
-                <span className="h2h-score">
-                  {fx.home_score} - {fx.away_score}
-                </span>
-                <span className={`h2h-gteam right${usHome === false ? " hl" : ""}`}>{fx.away_team}</span>
-                <span className="h2h-date">{formatH2HDate(fx.match_date)}</span>
+    <div className="wl-mbody">
+      <div className="wl-col">
+        <section className="wl-sec">
+          <h3>Head-to-head</h3>
+          {n === 0 ? (
+            <p className="wl-sub">First meeting, or no history on record yet.</p>
+          ) : (
+            <>
+              <p className="wl-sub">
+                Last {n === 1 ? "meeting" : `${n} meetings`}
+                {p.avg_goals != null ? `, ${p.avg_goals} goals a game` : ""}.
+              </p>
+              <div className="wl-split" aria-hidden>
+                <i className="h" style={{ flex: data.summary.home_wins || 0.001 }} />
+                <i className="d" style={{ flex: data.summary.draws || 0.001 }} />
+                <i className="a" style={{ flex: data.summary.away_wins || 0.001 }} />
               </div>
-            );
-          })}
-        </div>
-      ) : null}
-      {games.length ? (
-        <p className="h2h-wdl-note">W / D / L is for {data.home_team || homeTeam}</p>
-      ) : null}
-      <h3 className="h2h-section">
-        {empty ? "Pattern statistics - no H2H sample" : `Pattern statistics - last ${n} H2H`}
-      </h3>
-      <div className="h2h-patterns">
-        <H2HPatternRow
-          label="Over 2.5 goals"
-          pct={p.over_2_5.pct}
-          count={p.over_2_5.count}
-          sample={n}
-          insufficient={data.insufficient}
-        />
-        <H2HPatternRow
-          label="Both teams score"
-          pct={p.btts.pct}
-          count={p.btts.count}
-          sample={n}
-          insufficient={data.insufficient}
-        />
-        <H2HPatternRow
-          label="Draws"
-          pct={n > 0 ? Math.round((data.summary.draws / n) * 100) : null}
-          count={data.summary.draws}
-          sample={n}
-          insufficient={data.insufficient}
-        />
-        <H2HPatternRow
-          label={`${data.home_team || homeTeam} clean sheet`}
-          pct={p.home_cs.pct}
-          count={p.home_cs.count}
-          sample={n}
-          insufficient={data.insufficient}
-        />
-        <H2HPatternRow
-          label={`${data.away_team || awayTeam} clean sheet`}
-          pct={p.away_cs.pct}
-          count={p.away_cs.count}
-          sample={n}
-          insufficient={data.insufficient}
-        />
+              <div className="wl-split-keys">
+                <span>
+                  <b>{data.summary.home_wins}</b> {home}
+                  {leagueRankLabel(data.home_rank) ? ` (${leagueRankLabel(data.home_rank)})` : ""}
+                </span>
+                <span>
+                  <b>{data.summary.draws}</b> {data.summary.draws === 1 ? "draw" : "draws"}
+                </span>
+                <span>
+                  <b>{data.summary.away_wins}</b> {away}
+                  {leagueRankLabel(data.away_rank) ? ` (${leagueRankLabel(data.away_rank)})` : ""}
+                </span>
+              </div>
+              {games.map((fx) => {
+                const usHome = overlayHomeWasHome(fx, home, away, homeTeamId, awayTeamId);
+                return (
+                  <div key={`${fx.match_id}-${fx.match_date}`} className="wl-meet">
+                    <span className="d">{formatH2HDate(fx.match_date)}</span>
+                    <span className={`h${usHome === true ? " mp-us" : ""}`}>{fx.home_team}</span>
+                    <span className="s">
+                      {fx.home_score}–{fx.away_score}
+                    </span>
+                    <span className={usHome === false ? "mp-us" : ""}>{fx.away_team}</span>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </section>
       </div>
-      {timingRows.length && timing ? (
+      <div className="wl-col">
+        {n > 0 ? (
+          <section className="wl-sec">
+            <h3>Patterns in their meetings</h3>
+            <p className="wl-sub">
+              {data.insufficient
+                ? `Only ${n === 1 ? "one meeting" : `${n} meetings`}, too few to read much into.`
+                : `How often each happened in the last ${n} meetings.`}
+            </p>
+            <table className="wl-ptable">
+              <tbody>
+                {patternRows.map((row) => (
+                  <tr key={row.label}>
+                    <th scope="row">{row.label}</th>
+                    <td className="wl-num">
+                      {row.count}/{row.of}
+                      <span className="wl-mini" aria-hidden>
+                        <i style={{ width: `${row.of ? Math.round((row.count / row.of) * 100) : 0}%` }} />
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {dominance ? <p className="wl-callout">{dominance}</p> : null}
+          </section>
+        ) : null}
+        <section className="wl-sec">
+          <p className="wl-sub">
+            This match isn&apos;t on the watchlist (there were no prices before kick-off), so only past meetings are
+            shown.
+          </p>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function LineupColumn({ name, lineup }: { name: string; lineup: TeamLineup }) {
+  const players = (list: LineupPlayer[], bench = false) => (
+    <ol className={`mp-xi${bench ? " is-bench" : ""}`}>
+      {list.map((player) => (
+        <li key={`${bench ? "b" : "s"}-${player.number}-${player.player}`}>
+          <span>{player.number || "–"}</span>
+          {player.player}
+        </li>
+      ))}
+    </ol>
+  );
+  return (
+    <div className="mp-lineup">
+      <b>{name}</b>
+      {lineup.coach ? <small>Coach: {lineup.coach}</small> : null}
+      {lineup.starting.length ? players(lineup.starting) : <p className="wl-sub">Not announced.</p>}
+      {lineup.substitutes.length ? (
         <>
-          <h3 className="h2h-section">Timing patterns - last {timing.sample} H2H</h3>
-          <div className="h2h-patterns">
-            {timingRows.map((slot) => {
-              const row = timing[slot.key] as H2HCount;
-              return (
-                <H2HPatternRow
-                  key={slot.key}
-                  label={slot.label}
-                  pct={row.pct}
-                  count={row.count}
-                  sample={timing.sample}
-                  insufficient={data.insufficient}
-                />
-              );
-            })}
-          </div>
+          <p className="mp-bench-h">Bench</p>
+          {players(lineup.substitutes, true)}
         </>
-      ) : null}
-      {dominance ? <p className="h2h-dominance">{dominance}</p> : null}
-      {data.insufficient && n > 0 ? (
-        <p className="overlay-note">
-          Only {n} meeting{n === 1 ? "" : "s"} - percentages stay hidden until 5.
-        </p>
       ) : null}
     </div>
   );
+}
+
+const ENDED = new Set(["FT", "AET", "PEN"]);
+
+/** The panel's score as the watchlist's live shape, so the research can mark
+ * each point while the match is played. */
+function liveForResearch(panel: MatchPanel): Live | undefined {
+  const m = /^(\d+)\s*[-–]\s*(\d+)/.exec(panel.score || "");
+  if (!m) return undefined;
+  const status = (panel.status_short || "").toUpperCase();
+  if (status === "NS" || !status) return undefined;
+  return {
+    home: Number(m[1]),
+    away: Number(m[2]),
+    minute: panel.minute,
+    display: panel.minute_display || "",
+    status,
+    finished: ENDED.has(status),
+  };
+}
+
+function ordinalRank(position?: number | null): string {
+  return position ? leagueRankLabel(position) : "";
 }
 
 export function MatchOverlay({
@@ -1576,9 +1217,11 @@ export function MatchOverlay({
   match: OverlayMatch;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<TabId>("stats");
+  const [tab, setTab] = useState<TabId>("signals");
   const [panel, setPanel] = useState<MatchPanel>(() => panelFromLive(match));
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [research, setResearch] = useState<MatchResearch | null>(null);
+  const [researchDone, setResearchDone] = useState(false);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1618,200 +1261,288 @@ export function MatchOverlay({
     return () => controller.abort();
   }, [match, match.match_id, match.minute, match.score]);
 
-  const events = useMemo(
-    () =>
-      [...panel.events].sort(
-        (a, b) => a.minute - b.minute || a.event_type.localeCompare(b.event_type),
-      ),
-    [panel.events],
+  useEffect(() => {
+    // The watchlist's research for this match: every priced match of the day
+    // has one. It feeds the header (positions, prices) and Before kick-off.
+    const controller = new AbortController();
+    setResearch(null);
+    setResearchDone(false);
+    fetch(`/api/watchlist/match/${encodeURIComponent(match.match_id)}`, { signal: controller.signal })
+      .then((res) => (res.ok ? (res.json() as Promise<MatchResearch>) : null))
+      .then((body) => {
+        setResearch(body);
+        setResearchDone(true);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setResearchDone(true);
+      });
+    return () => controller.abort();
+  }, [match.match_id]);
+
+  const story = useMemo(
+    () => collectStoryEvents(panel.events, panel.substitutions),
+    [panel.events, panel.substitutions],
   );
 
+  const status = (panel.status_short || match.status_short || "").toUpperCase();
+  const clock = ENDED.has(status)
+    ? "Full time"
+    : status === "HT"
+      ? "Half-time"
+      : `Live · ${overlayClock(
+          panel.minute,
+          panel.status_short || match.status_short,
+          panel.minute_display || match.minute_display,
+          [
+            ...(panel.events || []).map((event) => event.minute),
+            ...(match.goal_events || []).map((event) => event.minute),
+            ...(match.card_events || []).map((event) => event.minute),
+          ],
+        )}`;
+  const league = research
+    ? [research.league.country, research.league.name, research.league.round ? `Round ${research.league.round}` : ""]
+        .filter(Boolean)
+        .join(" · ")
+    : panel.league || match.league || "";
+  const odds = research?.odds;
+  const price = (value?: number | null) => (value ? value.toFixed(2) : "–");
+  const standing = (side: "home" | "away") => {
+    const team = research?.[side];
+    if (!team?.position) return null;
+    return (
+      <span>
+        {ordinalRank(team.position)}
+        {team.points != null ? ` · ${team.points} pts` : ""}
+      </span>
+    );
+  };
+  const hasLineups = Boolean(panel.lineup.home.starting.length || panel.lineup.away.starting.length);
+
   return (
-    <div
-      className="overlay-backdrop"
-      onClick={onClose}
-      role="presentation"
-    >
+    <div className="overlay-backdrop" onClick={onClose} role="presentation">
       <div
-        className="overlay"
+        className="overlay mp wl-vars"
         role="dialog"
         aria-modal="true"
         aria-labelledby="overlay-title"
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="overlay-head">
-          <div className="overlay-teams">
-            <div className="overlay-side">
+        <header className="mp-head">
+          <div className="mp-crumb">
+            <span>{league}</span>
+            <button type="button" className="mp-close" onClick={onClose}>
+              Close
+            </button>
+          </div>
+          <div className="wl-vs">
+            <div className="wl-side">
               <OverlayBadge name={panel.home_team} src={panel.home_team_logo} />
-              <span>{panel.home_team}</span>
+              <div>
+                <b>{panel.home_team}</b>
+                {standing("home")}
+              </div>
             </div>
-            <div className="overlay-scoreblock">
-              <p className="overlay-league">
-                {panel.league || match.league} · {panel.status_short || match.status_short}{" "}
-                {overlayClock(
-                  panel.minute,
-                  panel.status_short || match.status_short,
-                  panel.minute_display || match.minute_display,
-                  [
-                    ...(panel.events || []).map((event) => event.minute),
-                    ...(match.goal_events || []).map((event) => event.minute),
-                    ...(match.card_events || []).map((event) => event.minute),
-                  ],
-                )}
-              </p>
-              <h2 id="overlay-title" className="overlay-score">
-                {panel.score}
-              </h2>
+            <div className="wl-ko">
+              <b id="overlay-title">{(panel.score || "").replace("-", "–")}</b>
+              <span>
+                {ENDED.has(status) || status === "HT" ? null : <i className="wl-live-dot" aria-hidden />}
+                {clock}
+              </span>
             </div>
-            <div className="overlay-side away">
-              <span>{panel.away_team}</span>
+            <div className="wl-side is-away">
+              <div>
+                <b>{panel.away_team}</b>
+                {standing("away")}
+              </div>
               <OverlayBadge name={panel.away_team} src={panel.away_team_logo} />
             </div>
           </div>
-          <button type="button" className="ghost overlay-close" onClick={onClose}>
-            Close
-          </button>
+          {odds ? (
+            <div className="mp-prices">
+              <em>Before kick-off</em>
+              <span>
+                {panel.home_team} <b>{price(odds.home)}</b>
+              </span>
+              <span>
+                Draw <b>{price(odds.draw)}</b>
+              </span>
+              <span>
+                {panel.away_team} <b>{price(odds.away)}</b>
+              </span>
+              {odds.over_2_5 ? (
+                <span className="is-extra">
+                  Over 2.5 <b>{price(odds.over_2_5)}</b>
+                </span>
+              ) : null}
+              {odds.btts_yes ? (
+                <span className="is-extra">
+                  Both score <b>{price(odds.btts_yes)}</b>
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </header>
         <PickBox matchId={match.match_id} score={panel.score || match.score} minute={panel.minute ?? match.minute} />
-        <nav className="overlay-tabs" aria-label="Match sections">
+        <nav className="mp-tabs" aria-label="Match sections">
           {TABS.map((item) => (
             <button
               key={item.id}
               type="button"
-              className={tab === item.id ? "tab on" : "tab"}
+              className={tab === item.id ? "on" : ""}
+              aria-current={tab === item.id ? "page" : undefined}
               onClick={() => setTab(item.id)}
             >
               {item.label}
             </button>
           ))}
         </nav>
-        {loadError ? (
-          <p className="overlay-note">Showing live row until the panel feed catches up.</p>
-        ) : null}
-        <div className="overlay-body">
+        {loadError ? <p className="mp-note">Showing the live row until the match feed catches up.</p> : null}
+        <div className="mp-body">
+          {tab === "signals" ? (
+            <section className="wl-sec">
+              <div className="mp-narrow">
+                <h3>Kalchas signals</h3>
+                <p className="wl-sub">
+                  Who is pushing right now and whether a goal looks due. A value turns teal once that team passes its
+                  alert line. Hover or tap a name for how it&apos;s worked out.
+                </p>
+                <div className="wl-table-wrap">
+                  <table className="wl-ptable mp-sig">
+                    <thead>
+                      <tr>
+                        <th />
+                        <th className="wl-num">{panel.home_team}</th>
+                        <th className="wl-num">{panel.away_team}</th>
+                        <th className="mp-sig-norm">What&apos;s normal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {STRAT_ROWS.map((row) => {
+                        const block = panel.strategy_status[row.key];
+                        const window =
+                          row.key === "delta_5min"
+                            ? panel.last_5min
+                            : row.key === "pressure_index"
+                              ? panel.last_10min
+                              : null;
+                        const span = row.key === "delta_5min" ? 5 : row.key === "pressure_index" ? 10 : 0;
+                        return (
+                          <SignalRow
+                            key={row.key}
+                            label={row.label}
+                            normal={row.normal}
+                            home={Number(block?.teams?.home?.value || 0)}
+                            away={Number(block?.teams?.away?.value || 0)}
+                            digits={row.digits}
+                            homeTriggered={row.key !== "npei" && Boolean(block?.teams?.home?.triggered)}
+                            awayTriggered={row.key !== "npei" && Boolean(block?.teams?.away?.triggered)}
+                            inkHome={row.key === "npei" ? phiInk(block?.teams?.home?.value) : undefined}
+                            inkAway={row.key === "npei" ? phiInk(block?.teams?.away?.value) : undefined}
+                            tip={row.tip}
+                            suffix={row.suffix}
+                            signed={row.signed}
+                            homeName={panel.home_team}
+                            awayName={panel.away_team}
+                            tone={row.tone}
+                            scale={row.scale}
+                            homeNote={window ? windowRecipe(window, "home") : (block?.teams?.home?.note ?? undefined)}
+                            awayNote={window ? windowRecipe(window, "away") : (block?.teams?.away?.note ?? undefined)}
+                            windowHeading={window && span ? windowLabel(window, span) : undefined}
+                            homeText={row.key === "delta_goal" ? formBarText(block?.teams?.home) : undefined}
+                            awayText={row.key === "delta_goal" ? formBarText(block?.teams?.away) : undefined}
+                          />
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          ) : null}
           {tab === "stats" ? (
-            <div className="overlay-stats">
-              <section>
+            <section className="wl-sec">
+              <div className="mp-narrow">
+                <h3>Match stats</h3>
+                <div className="mp-keys">
+                  <span>
+                    <i className="is-home" />
+                    {panel.home_team}
+                  </span>
+                  <span>
+                    {panel.away_team}
+                    <i className="is-away" />
+                  </span>
+                </div>
                 {STAT_BARS.map((row) => (
-                  <DualBar
+                  <StatRow
                     key={row.key}
                     label={row.label}
                     home={Number(panel.stat_lines[row.key]?.home || 0)}
                     away={Number(panel.stat_lines[row.key]?.away || 0)}
                   />
                 ))}
-              </section>
-              <section className="overlay-signals">
-                <h3>Signals</h3>
-                {STRAT_ROWS.map((row) => {
-                  const block = panel.strategy_status[row.key];
-                  const window =
-                    row.key === "delta_5min"
-                      ? panel.last_5min
-                      : row.key === "pressure_index"
-                        ? panel.last_10min
-                        : null;
-                  const span = row.key === "delta_5min" ? 5 : row.key === "pressure_index" ? 10 : 0;
-                  return (
-                    <DualBar
-                      key={row.key}
-                      label={row.label}
-                      home={Number(block?.teams?.home?.value || 0)}
-                      away={Number(block?.teams?.away?.value || 0)}
-                      digits={row.digits}
-                      homeTriggered={
-                        row.key !== "npei" && Boolean(block?.teams?.home?.triggered)
-                      }
-                      awayTriggered={
-                        row.key !== "npei" && Boolean(block?.teams?.away?.triggered)
-                      }
-                      inkHome={row.key === "npei" ? phiInk(block?.teams?.home?.value) : undefined}
-                      inkAway={row.key === "npei" ? phiInk(block?.teams?.away?.value) : undefined}
-                      tip={row.tip}
-                      suffix={row.suffix}
-                      signed={row.signed}
-                      homeName={panel.home_team}
-                      awayName={panel.away_team}
-                      tone={row.tone}
-                      scale={row.scale}
-                      homeNote={
-                        window
-                          ? windowRecipe(window, "home")
-                          : (block?.teams?.home?.note ?? undefined)
-                      }
-                      awayNote={
-                        window
-                          ? windowRecipe(window, "away")
-                          : (block?.teams?.away?.note ?? undefined)
-                      }
-                      windowHeading={
-                        window && span ? windowLabel(window, span) : undefined
-                      }
-                      homeText={
-                        row.key === "delta_goal" ? formBarText(block?.teams?.home) : undefined
-                      }
-                      awayText={
-                        row.key === "delta_goal" ? formBarText(block?.teams?.away) : undefined
-                      }
-                    />
-                  );
-                })}
-              </section>
-            </div>
+              </div>
+            </section>
           ) : null}
           {tab === "timeline" ? (
-            <div className="overlay-timeline">
-              <DangerPulseChart
+            <>
+              <TimelineGraph
                 points={panel.timeline}
-                events={events}
-                title="Dangerous attacks"
-                blurb="Per-minute intensity, not a running total. Home pulses above the midline, away below. The line follows those peaks."
+                story={story}
                 homeName={panel.home_team}
                 awayName={panel.away_team}
-                currentMinute={panel.minute}
-              />
-              <SeriesChart
-                points={panel.timeline}
-                homeOf={(p) => Number(p.rule_of_three.home || 0)}
-                awayOf={(p) => Number(p.rule_of_three.away || 0)}
-                events={events}
-                title="Unrealised goals"
-                blurb="Shots versus the scoreboard. Around 1 they are overdue. Negative means they have already scored more than the chances say."
-                homeName={panel.home_team}
-                awayName={panel.away_team}
-                signed
-              />
-              <MatchStory
-                events={events}
-                substitutions={panel.substitutions}
-                liveScore={panel.score}
-                status={panel.status_short || match.status_short}
                 minute={panel.minute}
               />
-            </div>
+              <EventList story={story} homeName={panel.home_team} awayName={panel.away_team} />
+            </>
           ) : null}
-          {tab === "h2h" ? (
-            <H2HPane
-              matchId={panel.match_id}
-              homeTeam={panel.home_team}
-              awayTeam={panel.away_team}
-              homeTeamId={panel.home_team_id}
-              awayTeamId={panel.away_team_id}
-            />
+          {tab === "before" ? (
+            research ? (
+              <ResearchBody
+                data={research}
+                live={liveForResearch(panel)}
+                footer={
+                  <>
+                    <p className="wl-sub">Written before kick-off from results only.</p>
+                    <a
+                      className="mp-more"
+                      href={`/${research.day}/${research.match_id}`}
+                      onClick={() => logVisitEvent("wl_panel")}
+                    >
+                      Open the full match page →
+                    </a>
+                  </>
+                }
+              />
+            ) : researchDone ? (
+              <H2HPane
+                matchId={panel.match_id}
+                homeTeam={panel.home_team}
+                awayTeam={panel.away_team}
+                homeTeamId={panel.home_team_id}
+                awayTeamId={panel.away_team_id}
+              />
+            ) : (
+              <p className="mp-note">Loading…</p>
+            )
           ) : null}
           {tab === "lineups" ? (
-            <div className="overlay-lineups">
-              <LineupColumn
-                name={panel.home_team}
-                src={panel.home_team_logo}
-                lineup={panel.lineup.home}
-              />
-              <LineupColumn
-                name={panel.away_team}
-                src={panel.away_team_logo}
-                lineup={panel.lineup.away}
-              />
-            </div>
+            <section className="wl-sec">
+              <div className="mp-narrow">
+                <h3>Line-ups</h3>
+                {hasLineups ? (
+                  <>
+                    <p className="wl-sub">Starting eleven and bench, as announced.</p>
+                    <div className="mp-lineups">
+                      <LineupColumn name={panel.home_team} lineup={panel.lineup.home} />
+                      <LineupColumn name={panel.away_team} lineup={panel.lineup.away} />
+                    </div>
+                  </>
+                ) : (
+                  <p className="wl-sub">Not announced for this match. Most lower leagues never publish them.</p>
+                )}
+              </div>
+            </section>
           ) : null}
         </div>
       </div>

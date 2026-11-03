@@ -1,6 +1,9 @@
 /* Pre-match watchlist: /today, /tomorrow, /<date>, /<day>/<match_id> and /calendar. */
 
-.wl-shell {
+/* .wl-vars carries the watchlist's colours into other places that reuse
+   its sections, such as the live board's match pop-up. */
+.wl-shell,
+.wl-vars {
   --wl-surface: #0c1520;
   --wl-surface-2: #121d29;
   --wl-strong: #2fd39a;
@@ -8,13 +11,17 @@
   --wl-loss: #e0685f;
   --wl-draw: #9aa3af;
   --wl-track: rgba(255, 255, 255, 0.07);
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 1rem 1rem 4rem;
   font-variant-numeric: tabular-nums;
 }
 
-.wl-shell a {
+.wl-shell {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 1rem 1rem 4rem;
+}
+
+.wl-shell a,
+.wl-vars a {
   color: inherit;
 }
 

@@ -249,7 +249,7 @@ def test_watchlist_usage_counts_ways_in_and_what_they_did() -> None:
     assert ways == {
         "Hero button": 1,
         "Tag on a board row": 1,
-        "Box in a match panel": 0,
+        "Match pop-up": 0,
         "Mobile Picks tab": 1,
         "Direct link": 1,
     }
