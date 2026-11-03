@@ -514,13 +514,45 @@ const TIMELINE_VIEWS: { id: TimelineView; label: string; short: string }[] = [
 
 /** The graph's width until its box has been measured. */
 const GRAPH_W = 900;
-const GRAPH_PAD = 8;
-const BUCKET_MIN = 5;
+const GRAPH_LEFT = 26;
+const GRAPH_RIGHT = 10;
 const AXIS_MINUTES = [0, 15, 30, 45, 60, 75, 90];
+/** Pressure is smoothed over five minutes, the middle one counting most. */
+const MOMENTUM_WEIGHTS = [1, 2, 3, 2, 1];
+// Rows of the drawing: home events, the plot, away events, the minute axis.
+const HOME_ROW = 11;
+const PLOT_TOP = 26;
+const PLOT_BOTTOM = 166;
+const AWAY_ROW = 181;
+const GRAPH_H = 206;
 
-/** The whole match on one short graph. It always opens on pressure (dangerous
- * attacks per 5 minutes, home above the line, away below); the switch shows
- * shots on target the same way, or unrealised goals as two lines. */
+/** One value per minute: who was on top. Each team's dangerous attacks per
+ * minute, smoothed over five minutes, home minus away. */
+function momentum(per: PulsePoint[]): { minute: number; home: number; away: number; net: number }[] {
+  const byMinute = new Map(per.map((p) => [p.minute, p]));
+  return per.map((p) => {
+    let home = 0;
+    let away = 0;
+    let weight = 0;
+    MOMENTUM_WEIGHTS.forEach((w, i) => {
+      const at = byMinute.get(p.minute + i - 2);
+      if (!at) return;
+      home += w * at.home;
+      away += w * at.away;
+      weight += w;
+    });
+    home /= weight || 1;
+    away /= weight || 1;
+    return { minute: p.minute, home, away, net: home - away };
+  });
+}
+
+/** The whole match on one short graph, like the momentum charts football
+ * apps use: one thin bar a minute, above the line when the home side was on
+ * top and below when the away side was. Goals and cards sit above the graph
+ * for the home team and below it for the away team. The switch shows shots
+ * on target the same way, or unrealised goals as two lines; it always opens
+ * on pressure. */
 function TimelineGraph({
   points,
   story,
@@ -546,172 +578,159 @@ function TimelineGraph({
     watcher.observe(plot);
     return () => watcher.disconnect();
   }, [plot]);
+
   const last = Math.max(90, minute, ...points.map((p) => p.minute), ...story.map((e) => e.minute));
-  const x = (m: number) => GRAPH_PAD + (m / last) * (W - 2 * GRAPH_PAD);
-  const goals = story.filter((e) => e.kind === "goal");
-  const cards = story.filter((e) => e.kind === "card");
+  const x = (m: number) => GRAPH_LEFT + (m / last) * (W - GRAPH_LEFT - GRAPH_RIGHT);
+  const step = x(1) - x(0);
+  const barWidth = Math.max(1.5, step - Math.min(1.5, step * 0.25));
+  const mid = (PLOT_TOP + PLOT_BOTTOM) / 2;
+  const half = (PLOT_BOTTOM - PLOT_TOP) / 2;
+  const events = story.filter((e) => e.kind !== "sub");
   const blurb = {
-    pressure: `Dangerous attacks in each 5 minutes: ${homeName} above the line, ${awayName} below. Goals and cards sit on the line.`,
-    shots: `Shots on target in each 5 minutes: ${homeName} above the line, ${awayName} below.`,
+    pressure: `Who was on top, minute by minute: above the line when ${homeName} had more dangerous attacks, below when ${awayName} did. Goals and cards sit on their team's side.`,
+    shots: `Shots on target, minute by minute: ${homeName} above the line, ${awayName} below.`,
     unrealised: `Shots against the scoreboard, minute by minute. Above 1, a goal is overdue; below 0, they've scored more than their chances.`,
   }[view];
 
-  let graph: ReactNode;
+  const axis = (
+    <g transform={`translate(0,${GRAPH_H - 2})`}>
+      {AXIS_MINUTES.map((m) => (
+        <text key={m} className="mp-tl-ax" x={x(m)} textAnchor="middle">
+          {m}&apos;
+        </text>
+      ))}
+    </g>
+  );
+  const halfTime = <line className="mp-tl-ht" x1={x(45)} x2={x(45)} y1={PLOT_TOP} y2={PLOT_BOTTOM} />;
+
+  // Goals and cards in a row above (home) or below (away) the plot. A goal's
+  // score sits to its right, or to its left when the next goal or card on
+  // that side is too close.
+  const marks = events.map((e, i) => {
+    const row = e.side === "away" ? AWAY_ROW : HOME_ROW;
+    const cx = x(e.minute - 0.5);
+    if (e.kind === "card") {
+      const tone = cardTone(e.detail);
+      return (
+        <rect key={`e${i}`} className={`mp-tl-card is-${tone}`} x={cx - 3.5} y={row - 5} width={7} height={10} rx={1.5}>
+          <title>{`${e.minute}' ${tone === "red" ? "red card" : "yellow card"}: ${e.player}`}</title>
+        </rect>
+      );
+    }
+    const next = events.slice(i + 1).find((n) => n.side === e.side);
+    const crowded = (next && x(next.minute) - x(e.minute) < 38) || cx > W - 40;
+    return (
+      <g key={`e${i}`}>
+        <title>{`${e.minute}' goal: ${e.player} ${(e.scoreAfter ?? "").replace("-", "–")}`}</title>
+        <circle className="mp-tl-goal" cx={cx} cy={row} r={5.5} />
+        <text
+          className="mp-tl-goal-l"
+          x={crowded ? cx - 9 : cx + 9}
+          y={row + 4}
+          textAnchor={crowded ? "end" : "start"}
+        >
+          {(e.scoreAfter ?? "").replace("-", "–")}
+        </text>
+      </g>
+    );
+  });
+
+  let body: ReactNode;
   if (!points.some((p) => p.minute > 0)) {
-    graph = <p className="wl-sub mp-tl-empty">The minute-by-minute feed for this match isn't in yet.</p>;
+    body = null;
   } else if (view === "unrealised") {
-    const height = 186;
-    const top = 30;
-    const bottom = 164;
     const lo = -1;
     const hi = 3;
-    const y = (v: number) => bottom - ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * (bottom - top);
+    const y = (v: number) => PLOT_BOTTOM - ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * (PLOT_BOTTOM - PLOT_TOP);
     const line = (of: (p: TimelinePoint) => number) =>
       points
         .filter((p) => p.minute > 0)
         .sort((a, b) => a.minute - b.minute)
         .map((p, i) => `${i ? "L" : "M"}${x(p.minute).toFixed(1)},${y(of(p)).toFixed(1)}`)
         .join("");
-    graph = (
-      <svg viewBox={`0 0 ${W} ${height}`} role="img" aria-label={`Unrealised goals, ${homeName} and ${awayName}`}>
+    body = (
+      <>
         {[-1, 0, 1, 2, 3].map((v) => (
           <g key={v}>
-            <line className="mp-tl-grid" x1={GRAPH_PAD + 22} x2={W - GRAPH_PAD} y1={y(v)} y2={y(v)} />
-            <text className="mp-tl-ax" x={GRAPH_PAD} y={y(v) + 4}>
+            <line className="mp-tl-grid" x1={GRAPH_LEFT} x2={W - GRAPH_RIGHT} y1={y(v)} y2={y(v)} />
+            <text className="mp-tl-ax" x={GRAPH_LEFT - 8} y={y(v) + 4} textAnchor="end">
               {v}
             </text>
           </g>
         ))}
-        <rect x={GRAPH_PAD + 30} y={top - 12} width={14} height={3} rx={1.5} className="mp-tl-key is-home" />
-        <text className="mp-tl-team" x={GRAPH_PAD + 50} y={top - 7}>
-          {homeName}
-        </text>
-        <rect x={GRAPH_PAD + Math.min(200, W / 2)} y={top - 12} width={14} height={3} rx={1.5} className="mp-tl-key is-away" />
-        <text className="mp-tl-team" x={GRAPH_PAD + Math.min(200, W / 2) + 20} y={top - 7}>
-          {awayName}
-        </text>
-        <line className="mp-tl-due" x1={GRAPH_PAD + 22} x2={W - GRAPH_PAD} y1={y(1)} y2={y(1)} />
-        <text className="mp-tl-due-l" x={W - GRAPH_PAD} y={y(1) - 5} textAnchor="end">
+        <line className="mp-tl-due" x1={GRAPH_LEFT} x2={W - GRAPH_RIGHT} y1={y(1)} y2={y(1)} />
+        <text className="mp-tl-due-l" x={W - GRAPH_RIGHT} y={y(1) - 5} textAnchor="end">
           1 = a goal is due
         </text>
-        <line className="mp-tl-ht" x1={x(45)} x2={x(45)} y1={top} y2={bottom} />
+        {halfTime}
         <path className="mp-tl-line is-home" d={line((p) => Number(p.rule_of_three.home || 0))} />
         <path className="mp-tl-line is-away" d={line((p) => Number(p.rule_of_three.away || 0))} />
-        {goals.map((g, i) => (
-          <circle key={`g${i}`} className="mp-tl-goal" cx={x(g.minute)} cy={bottom} r={6}>
-            <title>{`${g.minute}' ${g.player} ${g.scoreAfter ?? ""}`}</title>
-          </circle>
-        ))}
-        <g transform={`translate(0,${height - 2})`}>
-          {AXIS_MINUTES.map((m) => (
-            <text key={m} className="mp-tl-ax" x={x(m)} textAnchor="middle">
-              {m}&apos;
-            </text>
-          ))}
-        </g>
-      </svg>
+      </>
     );
-  } else {
-    const height = 210;
-    const mid = 96;
-    const half = 72;
-    const shots = view === "shots";
+  } else if (view === "shots") {
     const per = cumulativeToPerMinute(
       points,
-      (p) => Number((shots ? p.shots_on_target : p.dangerous_attacks).home || 0),
-      (p) => Number((shots ? p.shots_on_target : p.dangerous_attacks).away || 0),
+      (p) => Number(p.shots_on_target.home || 0),
+      (p) => Number(p.shots_on_target.away || 0),
     );
-    const buckets: { from: number; home: number; away: number }[] = [];
-    for (let from = 0; from < last; from += BUCKET_MIN) {
-      const inside = per.filter((p) => p.minute > from && p.minute <= from + BUCKET_MIN);
-      buckets.push({
-        from,
-        home: inside.reduce((n, p) => n + p.home, 0),
-        away: inside.reduce((n, p) => n + p.away, 0),
-      });
-    }
-    const peak = Math.max(shots ? 2 : 6, ...buckets.map((b) => Math.max(b.home, b.away)));
-    const width = (x(BUCKET_MIN) - x(0)) * 0.72;
-    const what = shots ? "shots on target" : "dangerous attacks";
-    // Goals a few minutes apart on the same side: every other score label
-    // moves up a line so they don't print over each other.
-    const lifts: number[] = [];
-    goals.forEach((g, i) => {
-      const before = goals[i - 1];
-      const close = before && before.side === g.side && x(g.minute) - x(before.minute) < 40;
-      lifts.push(close && !lifts[i - 1] ? 14 : 0);
-    });
-    graph = (
-      <svg viewBox={`0 0 ${W} ${height}`} role="img" aria-label={`${what}, ${homeName} and ${awayName}`}>
-        <line className="mp-tl-ht" x1={x(45)} x2={x(45)} y1={mid - half - 4} y2={mid + half + 4} />
-        <text className="mp-tl-team" x={GRAPH_PAD} y={mid - half - 8}>
-          {homeName} ↑
-        </text>
-        <text className="mp-tl-team" x={GRAPH_PAD} y={mid + half + 18}>
-          {awayName} ↓
-        </text>
-        {buckets.map((b) => {
-          const left = x(b.from + BUCKET_MIN / 2) - width / 2;
-          const hh = (b.home / peak) * half;
-          const ha = (b.away / peak) * half;
+    const peak = Math.max(1, ...per.map((p) => Math.max(p.home, p.away)));
+    body = (
+      <>
+        {halfTime}
+        {per.map((p) => {
+          const left = x(p.minute - 1) + (step - barWidth) / 2;
+          const hh = (p.home / peak) * half;
+          const ha = (p.away / peak) * half;
+          if (hh <= 0 && ha <= 0) return null;
           return (
-            <g key={b.from} className="mp-tl-bucket">
-              <title>{`${b.from + 1}–${b.from + BUCKET_MIN}': ${homeName} ${Math.round(b.home)}, ${awayName} ${Math.round(b.away)} ${what}`}</title>
-              <rect x={left} y={mid - half} width={width} height={half * 2} fill="transparent" />
-              {hh > 0 ? <rect className="mp-tl-bar is-home" x={left} y={mid - hh} width={width} height={hh} rx={2} /> : null}
-              {ha > 0 ? <rect className="mp-tl-bar is-away" x={left} y={mid} width={width} height={ha} rx={2} /> : null}
+            <g key={p.minute}>
+              <title>{`${p.minute}': ${homeName} ${Math.round(p.home)}, ${awayName} ${Math.round(p.away)} on target`}</title>
+              {hh > 0 ? <rect className="mp-tl-bar is-home" x={left} y={mid - hh} width={barWidth} height={hh} rx={1} /> : null}
+              {ha > 0 ? <rect className="mp-tl-bar is-away" x={left} y={mid} width={barWidth} height={ha} rx={1} /> : null}
             </g>
           );
         })}
-        <line className="mp-tl-mid" x1={GRAPH_PAD} x2={W - GRAPH_PAD} y1={mid} y2={mid} />
-        {cards.map((c, i) => (
-          <rect
-            key={`c${i}`}
-            className={`mp-tl-card is-${cardTone(c.detail)}`}
-            x={x(c.minute) - 3.5}
-            y={mid - 5}
-            width={7}
-            height={10}
-            rx={1.5}
-          >
-            <title>{`${c.minute}' ${cardTone(c.detail) === "red" ? "red card" : "yellow card"}: ${c.player}`}</title>
-          </rect>
-        ))}
-        {goals.map((g, i) => {
-          const lift = lifts[i];
+        <line className="mp-tl-mid" x1={GRAPH_LEFT} x2={W - GRAPH_RIGHT} y1={mid} y2={mid} />
+      </>
+    );
+  } else {
+    const per = cumulativeToPerMinute(
+      points,
+      (p) => Number(p.dangerous_attacks.home || 0),
+      (p) => Number(p.dangerous_attacks.away || 0),
+    );
+    const flow = momentum(per);
+    const peak = Math.max(0.6, ...flow.map((p) => Math.abs(p.net)));
+    body = (
+      <>
+        {halfTime}
+        {flow.map((p) => {
+          const h = (Math.abs(p.net) / peak) * half;
+          if (h < 0.5) return null;
+          const home = p.net > 0;
           return (
-            <g key={`g${i}`}>
-              <title>{`${g.minute}' ${g.player} ${g.scoreAfter ?? ""}`}</title>
-              <circle className="mp-tl-goal" cx={x(g.minute)} cy={mid} r={6.5} />
-              <text
-                className="mp-tl-goal-l"
-                x={x(g.minute)}
-                y={g.side === "away" ? mid + 22 + lift : mid - 12 - lift}
-                textAnchor="middle"
-              >
-                {(g.scoreAfter ?? "").replace("-", "–")}
-              </text>
-            </g>
+            <rect
+              key={p.minute}
+              className={`mp-tl-bar ${home ? "is-home" : "is-away"}`}
+              x={x(p.minute - 1) + (step - barWidth) / 2}
+              y={home ? mid - h : mid}
+              width={barWidth}
+              height={h}
+              rx={1}
+            >
+              <title>{`${p.minute}': ${home ? homeName : awayName} on top (dangerous attacks a minute, over 5 minutes: ${homeName} ${p.home.toFixed(1)}, ${awayName} ${p.away.toFixed(1)})`}</title>
+            </rect>
           );
         })}
-        <g transform={`translate(0,${height - 2})`}>
-          {AXIS_MINUTES.map((m) => (
-            <text key={m} className="mp-tl-ax" x={x(m)} textAnchor="middle">
-              {m}&apos;
-            </text>
-          ))}
-        </g>
-      </svg>
+        <line className="mp-tl-mid" x1={GRAPH_LEFT} x2={W - GRAPH_RIGHT} y1={mid} y2={mid} />
+      </>
     );
   }
 
   return (
     <section className="wl-sec mp-tl">
       <div className="mp-tl-head">
-        <div>
-          <h3>Timeline</h3>
-          <p className="wl-sub">{blurb}</p>
-        </div>
+        <h3>Timeline</h3>
         <div className="mp-seg" role="group" aria-label="Graph">
           {TIMELINE_VIEWS.map((item) => (
             <button
@@ -726,9 +745,30 @@ function TimelineGraph({
             </button>
           ))}
         </div>
+        <p className="wl-sub">{blurb}</p>
+      </div>
+      <div className="mp-keys">
+        <span>
+          <i className="is-home" />
+          {homeName}
+          {view === "unrealised" ? "" : " ↑"}
+        </span>
+        <span>
+          {awayName}
+          {view === "unrealised" ? "" : " ↓"}
+          <i className="is-away" />
+        </span>
       </div>
       <div ref={setPlot} className="mp-tl-plot">
-        {graph}
+        {body ? (
+          <svg viewBox={`0 0 ${W} ${GRAPH_H}`} role="img" aria-label={`Timeline: ${blurb}`}>
+            {body}
+            {marks}
+            {axis}
+          </svg>
+        ) : (
+          <p className="wl-sub mp-tl-empty">The minute-by-minute feed for this match isn&apos;t in yet.</p>
+        )}
       </div>
     </section>
   );

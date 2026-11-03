@@ -2369,12 +2369,34 @@ body {
 }
 
 /* Timeline */
+/* The switch keeps one place whichever view is on: top right, beside the
+   title. The description below reserves two lines so the graph doesn't jump. */
 .mp-tl-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 0.8rem 1rem;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title seg"
+    "blurb blurb";
+  align-items: center;
+  gap: 0.35rem 1rem;
+}
+
+.mp-tl-head h3 {
+  grid-area: title;
+  margin: 0;
+}
+
+.mp-tl-head .mp-seg {
+  grid-area: seg;
+}
+
+.mp-tl-head .wl-sub {
+  grid-area: blurb;
+  min-height: 2.9em;
+}
+
+.mp-tl .mp-keys {
+  margin-top: 0.2rem;
 }
 
 .mp-seg {
@@ -2431,13 +2453,6 @@ body {
   font-family: var(--font-body);
 }
 
-.mp-tl-team {
-  fill: var(--text-2);
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--font-body);
-}
-
 .mp-tl-grid {
   stroke: rgba(255, 255, 255, 0.07);
 }
@@ -2451,18 +2466,12 @@ body {
   stroke-dasharray: 3 4;
 }
 
-.mp-tl-bar.is-home,
-.mp-tl-key.is-home {
+.mp-tl-bar.is-home {
   fill: var(--accent);
 }
 
-.mp-tl-bar.is-away,
-.mp-tl-key.is-away {
+.mp-tl-bar.is-away {
   fill: #6f9bd1;
-}
-
-.mp-tl-bucket:hover .mp-tl-bar {
-  opacity: 0.8;
 }
 
 .mp-tl-goal {
@@ -2684,6 +2693,22 @@ body {
 
   .mp-lineups {
     grid-template-columns: 1fr;
+  }
+
+  .mp-tl-head {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "title"
+      "seg"
+      "blurb";
+  }
+
+  .mp-tl-head .mp-seg {
+    justify-self: start;
+  }
+
+  .mp-tl-head .wl-sub {
+    min-height: 5.8em;
   }
 
   .mp-seg-long {
