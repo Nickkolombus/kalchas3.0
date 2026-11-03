@@ -1400,7 +1400,7 @@ export function MatchOverlay({
         <div className="mp-body">
           {tab === "signals" ? (
             <section className="wl-sec">
-              <div className="mp-narrow">
+              <div>
                 <h3>Kalchas signals</h3>
                 <p className="wl-sub">
                   Who is pushing right now and whether a goal looks due. A value turns teal once that team passes its
@@ -1461,7 +1461,7 @@ export function MatchOverlay({
           ) : null}
           {tab === "stats" ? (
             <section className="wl-sec">
-              <div className="mp-narrow">
+              <div>
                 <h3>Match stats</h3>
                 <div className="mp-keys">
                   <span>
@@ -1528,7 +1528,7 @@ export function MatchOverlay({
           ) : null}
           {tab === "lineups" ? (
             <section className="wl-sec">
-              <div className="mp-narrow">
+              <div>
                 <h3>Line-ups</h3>
                 {hasLineups ? (
                   <>

@@ -2237,10 +2237,6 @@ body {
   border-bottom: 0;
 }
 
-.mp-narrow {
-  max-width: 760px;
-}
-
 /* Signals */
 .mp-sig .wl-num {
   width: 6rem;
