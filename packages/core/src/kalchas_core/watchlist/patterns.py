@@ -29,12 +29,38 @@ TEAM_WEIGHT: Final = 0.5
 """One team's habit says half as much about a match as both teams' games
 agreeing, so single-team patterns are scored at half strength."""
 
-STRONG: Final = 0.52
-NOTABLE: Final = 0.40
-"""`watch_score` cut-offs for "Strong watch" and "Worth a look". Set from a
-real day's slate (3 Nov 2026, 89 priced matches) so roughly one in eight
-reads strong and three in ten worth a look; revisit once weeks of builds
-exist."""
+STRONG: Final = 0.55
+NOTABLE: Final = 0.39
+"""`watch_score` cut-offs for "Strong watch" and "Worth a look". Re-set when
+over 3.5, team over 1.5 and the card patterns came in, on the real 3 and
+4 Nov 2026 slates (196 priced matches): roughly one in eight reads strong
+and three in ten worth a look. Revisit once weeks of results exist."""
+
+TEAM_GOALS_WEIGHT: Final = 0.8
+"""A team scoring twice is a one-team market that mostly repeats what the
+match's goal patterns say, so it ranks a little below them."""
+
+FOLLOW_ON: Final = 0.9
+"""Over 3.5 only comes up as a follow-on to over 2.5 and never outranks it:
+it is the same story at a line that lands far less often."""
+
+FAMILY: Final = {
+    "over_2_5": "goals",
+    "over_3_5": "goals",
+    "btts_yes": "goals",
+    "team_over_1_5_home": "goals",
+    "team_over_1_5_away": "goals",
+    "leaky_home": "goals",
+    "leaky_away": "goals",
+    "under_2_5": "tight",
+    "btts_no": "tight",
+    "blanks_home": "tight",
+    "blanks_away": "tight",
+    "cards_over_4_5": "cards",
+    "red_card": "cards",
+}
+"""Patterns that tell the same story. A second one from the same family adds
+nothing to a match's watch score."""
 
 FLAG_ROW: Final = 0.25
 """A pattern this strong highlights its row in the pattern table."""
@@ -233,10 +259,10 @@ def _goals_line(
             )
         )
 
-    big = _pair(home, away, "over_3_5", norms.rate("over_3_5"))
+    big = _pair(home, away, "over_3_5", norms.rate("over_3_5")) if over_score > 0 else None
     if big is not None:
         big_est, (bc, bn), (ac4, an4) = big
-        big_score = _lift(big_est, norms.rate("over_3_5"))
+        big_score = min(_lift(big_est, norms.rate("over_3_5")), over_score * FOLLOW_ON)
         if big_score > 0:
             out.append(
                 Pattern(
@@ -434,7 +460,7 @@ def _team_goals(
         scored = team.count("scored_2plus")
         leaked = other.count("conceded_2plus")
         estimate = (_shrunk(scored, team.n, norm) + _shrunk(leaked, other.n, norm)) / 2
-        score = _lift(estimate, norm)
+        score = TEAM_GOALS_WEIGHT * _lift(estimate, norm)
         if score <= 0:
             continue
         out.append(
@@ -534,13 +560,19 @@ def match_patterns(
     return found
 
 
+def _family(key: str) -> str:
+    return FAMILY.get(key, key)
+
+
 def watch_score(patterns: Sequence[Pattern]) -> float:
     """One number to rank a day's matches: the best pattern, plus a little
-    for a second one that agrees."""
+    for the best one that says something different (over 2.5 and over 3.5
+    are one story, not two)."""
     if not patterns:
         return 0.0
-    second = patterns[1].score if len(patterns) > 1 else 0.0
-    return round(min(1.0, patterns[0].score + 0.3 * second), 3)
+    top = patterns[0]
+    second = next((p.score for p in patterns[1:] if _family(p.key) != _family(top.key)), 0.0)
+    return round(min(1.0, top.score + 0.3 * second), 3)
 
 
 def watch_level(patterns: Sequence[Pattern]) -> str:

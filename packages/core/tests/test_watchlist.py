@@ -369,3 +369,30 @@ def test_new_wording() -> None:
     assert found["btts_no"].tag == "Both score: No"
     assert found["btts_no"].title == "Both teams to score looks unlikely."
     assert found["under_2_5"].tag == "Under 2.5"
+
+
+def test_over_3_5_follows_over_2_5_and_never_outranks_it() -> None:
+    home = build_team_profile(
+        season(HOME, [(3, 2), (4, 1), (2, 2), (3, 1), (2, 3)] * 2), HOME, name="A"
+    )
+    away = build_team_profile(
+        season(AWAY, [(1, 3), (2, 2), (0, 4), (1, 3), (2, 3)] * 2, start=50), AWAY, name="B"
+    )
+    found = {p.key: p for p in match_patterns(home, away, norms(), league="")}
+    assert found["over_3_5"].score <= found["over_2_5"].score
+
+    low = build_team_profile(season(HOME, [(1, 0), (0, 0), (0, 1)] * 4), HOME, name="C")
+    low_away = build_team_profile(
+        season(AWAY, [(0, 0), (1, 0), (0, 1)] * 4, start=50), AWAY, name="D"
+    )
+    assert "over_3_5" not in {p.key for p in match_patterns(low, low_away, norms(), league="")}
+
+
+def test_watch_score_ignores_a_second_pattern_from_the_same_family() -> None:
+    from kalchas_core.watchlist.patterns import Pattern, watch_score
+
+    def p(key: str, score: float) -> Pattern:
+        return Pattern(key=key, tag="", title="", detail="", brief="", score=score)
+
+    assert watch_score([p("over_2_5", 0.5), p("over_3_5", 0.45)]) == 0.5
+    assert watch_score([p("over_2_5", 0.5), p("over_3_5", 0.45), p("late_goal", 0.2)]) == 0.56
