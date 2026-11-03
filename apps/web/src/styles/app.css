@@ -2479,24 +2479,14 @@ body {
   stroke-width: 1;
 }
 
-.mp-fb-skin {
-  fill: #f2ebe0;
-  stroke: #0c1520;
-  stroke-width: 1;
-}
-
-.mp-fb-panel {
-  fill: #0c1520;
-}
-
-.mp-fb-seam {
-  stroke: #0c1520;
-  stroke-width: 1.1;
-  fill: none;
+.mp-fb {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 }
 
 .mp-ball {
-  display: block;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 0.85rem;
+  line-height: 1;
 }
 
 .mp-tl-card.is-yellow {
