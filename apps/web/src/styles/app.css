@@ -2474,17 +2474,29 @@ body {
   fill: #6f9bd1;
 }
 
-.mp-tl-goal {
-  fill: #f2ebe0;
-  stroke: var(--wl-surface);
-  stroke-width: 2;
+.mp-tl-goal line {
+  stroke: rgba(242, 235, 224, 0.55);
+  stroke-width: 1;
 }
 
-.mp-tl-goal-l {
-  fill: var(--text);
-  font-size: 11px;
-  font-weight: 700;
-  font-family: var(--font-body);
+.mp-fb-skin {
+  fill: #f2ebe0;
+  stroke: #0c1520;
+  stroke-width: 1;
+}
+
+.mp-fb-panel {
+  fill: #0c1520;
+}
+
+.mp-fb-seam {
+  stroke: #0c1520;
+  stroke-width: 1.1;
+  fill: none;
+}
+
+.mp-ball {
+  display: block;
 }
 
 .mp-tl-card.is-yellow {
@@ -2545,14 +2557,6 @@ body {
 .mp-ev.is-sub {
   color: var(--text-2);
   font-size: 0.82rem;
-}
-
-.mp-ball {
-  display: inline-block;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: #f2ebe0;
 }
 
 .mp-card {

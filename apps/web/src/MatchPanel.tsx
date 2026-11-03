@@ -547,6 +547,29 @@ function momentum(per: PulsePoint[]): { minute: number; home: number; away: numb
   });
 }
 
+/** A football: a white ball with a dark centre panel and seams. */
+function FootballShape() {
+  return (
+    <>
+      <circle r={9.2} className="mp-fb-skin" />
+      <polygon points="0,-3.6 3.4,-1.1 2.1,2.9 -2.1,2.9 -3.4,-1.1" className="mp-fb-panel" />
+      <path
+        d="M0,-3.6V-9.2M3.4,-1.1L8.75,-2.84M2.1,2.9L5.4,7.44M-2.1,2.9L-5.4,7.44M-3.4,-1.1L-8.75,-2.84"
+        className="mp-fb-seam"
+      />
+    </>
+  );
+}
+
+/** The football centred on (x, y) inside a drawing. */
+function Football({ x, y, size }: { x: number; y: number; size: number }) {
+  return (
+    <g transform={`translate(${x},${y}) scale(${size / 20})`}>
+      <FootballShape />
+    </g>
+  );
+}
+
 /** The whole match on one short graph, like the momentum charts football
  * apps use: one thin bar a minute, above the line when the home side was on
  * top and below when the away side was. Goals and cards sit above the graph
@@ -603,9 +626,7 @@ function TimelineGraph({
   );
   const halfTime = <line className="mp-tl-ht" x1={x(45)} x2={x(45)} y1={PLOT_TOP} y2={PLOT_BOTTOM} />;
 
-  // Goals and cards in a row above (home) or below (away) the plot. A goal's
-  // score sits to its right, or to its left when the next goal or card on
-  // that side is too close.
+  // Goals and cards in a row above (home) or below (away) the plot.
   const marks = events.map((e, i) => {
     const row = e.side === "away" ? AWAY_ROW : HOME_ROW;
     const cx = x(e.minute - 0.5);
@@ -617,20 +638,14 @@ function TimelineGraph({
         </rect>
       );
     }
-    const next = events.slice(i + 1).find((n) => n.side === e.side);
-    const crowded = (next && x(next.minute) - x(e.minute) < 38) || cx > W - 40;
+    // A goal: a football above (home) or below (away) the plot, on a thin
+    // stem down or up to the centre line at its minute.
+    const stemTo = (PLOT_TOP + PLOT_BOTTOM) / 2;
     return (
-      <g key={`e${i}`}>
+      <g key={`e${i}`} className="mp-tl-goal">
         <title>{`${e.minute}' goal: ${e.player} ${(e.scoreAfter ?? "").replace("-", "–")}`}</title>
-        <circle className="mp-tl-goal" cx={cx} cy={row} r={5.5} />
-        <text
-          className="mp-tl-goal-l"
-          x={crowded ? cx - 9 : cx + 9}
-          y={row + 4}
-          textAnchor={crowded ? "end" : "start"}
-        >
-          {(e.scoreAfter ?? "").replace("-", "–")}
-        </text>
+        <line x1={cx} x2={cx} y1={e.side === "away" ? row - 7 : row + 7} y2={stemTo} />
+        <Football x={cx} y={row} size={14} />
       </g>
     );
   });
@@ -882,7 +897,9 @@ function EventList({
           return (
             <div key={key} className="mp-ev">
               <span className="mp-ev-min">{e.minute}&apos;</span>
-              <i className="mp-ball" aria-label="Goal" />
+              <svg className="mp-ball" viewBox="-10 -10 20 20" width={13} height={13} role="img" aria-label="Goal">
+                <FootballShape />
+              </svg>
               <span>
                 <b>{e.player}</b>
                 <small>{team(e.side)}</small>
