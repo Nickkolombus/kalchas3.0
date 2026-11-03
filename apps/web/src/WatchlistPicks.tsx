@@ -108,27 +108,24 @@ export function SpyglassIcon({ size = 18 }: { size?: number }) {
 /* ---------------------------------------------------------------- hero */
 
 /** "Watchlist picks", and while one is still to come today, the next
- * strong watch. Always opens today's list. */
+ * strong watch. Always opens today's list. Sized as a hero tile, the same
+ * height as the join buttons beside it. */
 export function WatchlistButton() {
   const { next } = useContext(PicksContext);
   return (
-    <a className={`wl-entry${next ? "" : " is-solo"}`} href="/today">
+    <a className="wl-entry" href="/today">
       <span className="wl-entry-icon">
-        <SpyglassIcon size={next ? 34 : 20} />
+        <SpyglassIcon size={28} />
       </span>
-      <span className="wl-entry-text">
-        <b>Watchlist picks</b>
+      <b>Watchlist picks</b>
+      <span className="wl-entry-next">
         {next ? (
           <>
-            <small>Coming up next</small>
-            <span className="wl-entry-next">
-              <i>{clock(next.kickoff)}</i> {next.home.name} v {next.away.name}
-            </span>
+            Next <i>{clock(next.kickoff)}</i> {next.home.name} v {next.away.name}
           </>
-        ) : null}
-      </span>
-      <span className="wl-entry-arrow" aria-hidden>
-        →
+        ) : (
+          "Today's list"
+        )}
       </span>
     </a>
   );

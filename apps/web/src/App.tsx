@@ -3021,6 +3021,7 @@ export function App() {
                   Join full feed
                   <span>€2.99 a week</span>
                 </a>
+                <span className="hero-sep" aria-hidden />
                 <WatchlistButton />
               </div>
             </div>

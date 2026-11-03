@@ -34,6 +34,8 @@ body {
 }
 
 .hero {
+  --mark: 96px;
+  --mark-gap: 1.1rem;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(22rem, 34rem);
   gap: 1rem 2rem;
@@ -56,26 +58,39 @@ body {
   gap: 0.5rem 1.1rem;
   margin-top: auto;
   width: 100%;
+  /* Same left edge as the title, intro and buttons above. */
+  padding-left: calc(var(--mark) + var(--mark-gap));
 }
 
 .identity {
   display: flex;
   align-items: center;
-  gap: 1.1rem;
+  gap: var(--mark-gap);
   min-width: 0;
 }
 
 .mark {
   flex: 0 0 auto;
-  width: 96px;
-  height: 96px;
+  width: var(--mark);
+  height: var(--mark);
   border-radius: 50%;
   border: 1px solid rgba(61, 214, 198, 0.28);
   box-shadow: 0 0 0 6px rgba(61, 214, 198, 0.05);
 }
 
+/* As wide as its widest line (title or button row): the intro then wraps
+   to exactly that width, so its right edge meets the buttons' right edge. */
 .identity-text {
+  display: grid;
+  width: max-content;
+  max-width: 100%;
   min-width: 0;
+}
+
+.identity-text .lede {
+  width: 0;
+  min-width: 100%;
+  max-width: none;
 }
 
 .hero .brand {
@@ -89,9 +104,26 @@ body {
 .hero-joins {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
+  align-items: stretch;
+  gap: 0.6rem;
+  margin-top: 0.85rem;
+}
+
+.hero-joins .hero-telegram {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.12rem;
+  min-height: 3.15rem;
+  padding: 0.45rem 0.95rem;
+  border-radius: 0.45rem;
+  font-size: 0.8rem;
+}
+
+.hero-sep {
+  width: 1px;
+  margin: 0.35rem 0.1rem;
+  background: var(--border);
 }
 
 .hero-telegram {
@@ -131,57 +163,51 @@ body {
 
 /* Watchlist picks: hero button, board tag, overlay box (WatchlistPicks.tsx) */
 .wl-entry {
-  display: inline-grid;
-  grid-template-columns: auto auto auto;
-  align-items: center;
-  gap: 0 0.6rem;
-  padding: 0.35rem 0.75rem 0.35rem 0.55rem;
-  border-radius: 0.4rem;
-  border: 1px solid rgba(47, 211, 154, 0.38);
-  background: rgba(47, 211, 154, 0.07);
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  column-gap: 0.7rem;
+  row-gap: 0.12rem;
+  min-height: 3.15rem;
+  padding: 0.45rem 1rem 0.45rem 0.8rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(61, 214, 198, 0.28);
+  background: rgba(61, 214, 198, 0.05);
   color: var(--text);
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .wl-entry:hover {
-  border-color: rgba(47, 211, 154, 0.75);
+  border-color: rgba(61, 214, 198, 0.55);
+  background: rgba(61, 214, 198, 0.08);
 }
 
 .wl-entry-icon {
+  grid-row: span 2;
   display: grid;
-  color: #2fd39a;
+  align-items: center;
+  color: var(--accent);
 }
 
-.wl-entry-text {
-  display: grid;
-  line-height: 1.25;
-}
-
-.wl-entry-text b {
-  font-size: 0.78rem;
+.wl-entry b {
+  font-size: 0.8rem;
   font-weight: 600;
-  white-space: nowrap;
-}
-
-.wl-entry-text small {
-  font-size: 0.64rem;
-  color: var(--muted);
 }
 
 .wl-entry-next {
-  font-size: 0.7rem;
+  max-width: 19rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.68rem;
   color: var(--text-2);
-  white-space: nowrap;
 }
 
 .wl-entry-next i {
   font-style: normal;
   font-weight: 600;
-  color: #2fd39a;
-}
-
-.wl-entry-arrow {
-  color: var(--text-2);
+  color: var(--accent);
 }
 
 .pick-mark {
@@ -206,13 +232,13 @@ body {
   font-weight: 600;
   line-height: 1.4;
   white-space: nowrap;
-  color: #2fd39a;
-  background: rgba(47, 211, 154, 0.12);
+  color: var(--accent);
+  background: rgba(61, 214, 198, 0.1);
   text-decoration: none;
 }
 
 .pick-tag:hover {
-  background: rgba(47, 211, 154, 0.2);
+  background: rgba(61, 214, 198, 0.18);
 }
 
 .pick-tag i {
@@ -227,7 +253,7 @@ body {
   min-width: 17rem;
   max-width: 21rem;
   text-align: left;
-  border-top: 2px solid #2fd39a;
+  border-top: 2px solid var(--accent);
 }
 
 .pick-tip p {
@@ -261,15 +287,15 @@ body {
 .pick-tip .pick-tip-go {
   margin-top: 0.45rem;
   font-size: 0.7rem;
-  color: #2fd39a;
+  color: var(--accent);
 }
 
 .pick-box {
   margin: 0 1rem 0.75rem;
   padding: 0.7rem 0.85rem;
   border-radius: 0.55rem;
-  border: 1px solid rgba(47, 211, 154, 0.35);
-  background: rgba(47, 211, 154, 0.06);
+  border: 1px solid rgba(61, 214, 198, 0.28);
+  background: rgba(61, 214, 198, 0.05);
   font-size: 0.8rem;
   line-height: 1.45;
   color: var(--text-2);
@@ -293,7 +319,7 @@ body {
   font-size: 0.6rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #2fd39a;
+  color: var(--accent);
 }
 
 .pick-box .pick-box-now {
@@ -304,7 +330,7 @@ body {
 .pick-box a {
   display: inline-block;
   margin-top: 0.45rem;
-  color: #2fd39a;
+  color: var(--accent);
   font-weight: 600;
   text-decoration: none;
 }
@@ -619,14 +645,28 @@ body {
   line-height: 1.45;
 }
 
+/* Laptop widths: Recent signals gives up a little room so the three hero
+   tiles stay on one row. */
+@media (max-width: 1440px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr) minmax(20rem, 28rem);
+  }
+}
+
+/* Where the row can still wrap, a divider would be left hanging. */
+@media (min-width: 901px) and (max-width: 1180px) {
+  .hero-sep {
+    display: none;
+  }
+}
+
 @media (max-width: 900px) {
   .hero {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .mark {
-    width: 68px;
-    height: 68px;
+  .hero {
+    --mark: 68px;
   }
 }
 

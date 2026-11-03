@@ -507,7 +507,7 @@
 }
 
 .m-row.is-pick:not(.is-fav) {
-  box-shadow: inset 3px 0 0 #2fd39a;
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .m-row.is-fav-last {
@@ -1122,17 +1122,7 @@
   }
 }
 
-.m-nav .m-nav-link.is-picks {
-  color: #2fd39a;
-}
 
-@media (max-width: 760px) {
-  .wl-entry {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    width: 100%;
-  }
-}
 
 .m-card .pick-box {
   margin: 0.2rem 0 0.7rem;
