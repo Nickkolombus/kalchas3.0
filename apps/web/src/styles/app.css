@@ -1413,6 +1413,17 @@ body {
   text-shadow: none;
 }
 
+.red-card-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 1px;
+  line-height: 0;
+}
+
+.red-card-mark svg {
+  display: block;
+}
+
 .goal-ball {
   flex: 0 0 auto;
   margin-left: 0.15rem;

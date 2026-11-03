@@ -398,7 +398,19 @@
   line-height: 1;
 }
 
-.m-teams span {
+.m-team {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.m-team .red-card-mark svg {
+  width: 8px;
+  height: 10px;
+}
+
+.m-teams .m-team > span:first-child {
   font-size: 0.72rem;
   font-weight: 500;
   line-height: 1;

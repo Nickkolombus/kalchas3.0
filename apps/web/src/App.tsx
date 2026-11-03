@@ -988,6 +988,34 @@ function UnderdogMark({ run }: { run: NonNullable<ReturnType<typeof underdogRun>
   );
 }
 
+/** Red cards a side has had: the feed's count, or the red-card events when
+ * the count is missing. */
+function redCards(match: LiveMatch, side: BoardSide): number {
+  const counted = statLineValue(match, "red_cards", side);
+  if (counted != null) return counted;
+  return (match.card_events || []).filter(
+    (event) => event.side === side && /red|second/i.test(event.detail || ""),
+  ).length;
+}
+
+/** A tilted red card beside a team's name; one card per red, up to two. */
+function RedCardMark({ count }: { count: number }) {
+  if (count < 1) return null;
+  const label = count === 1 ? "Red card" : `${count} red cards`;
+  return (
+    <span className="red-card-mark" role="img" aria-label={label} title={label}>
+      {Array.from({ length: Math.min(count, 2) }, (_, i) => (
+        <svg key={i} viewBox="0 0 12 15" width="10.5" height="13" aria-hidden>
+          <g transform="rotate(14 6 7.5)">
+            <rect x="1.6" y="1.4" width="8.8" height="12.2" rx="1.6" fill="#d62b2b" stroke="#0b0f14" strokeWidth="1.1" />
+            <rect x="2.6" y="2.4" width="1.3" height="10.2" rx="0.6" fill="#f07a7a" />
+          </g>
+        </svg>
+      ))}
+    </span>
+  );
+}
+
 function TeamStack({
   match,
   scorer,
@@ -1015,6 +1043,7 @@ function TeamStack({
           >
             {match.home_team}
           </span>
+          <RedCardMark count={redCards(match, "home")} />
           {homeScorer ? (
             <span className="goal-ball" role="img" aria-label="Goal">
               ⚽
@@ -1030,6 +1059,7 @@ function TeamStack({
           >
             {match.away_team}
           </span>
+          <RedCardMark count={redCards(match, "away")} />
           {awayScorer ? (
             <span className="goal-ball" role="img" aria-label="Goal">
               ⚽
@@ -2159,8 +2189,14 @@ function MobileRow({
           <MobileScore match={match} flash={flash} />
         </div>
         <div className="m-teams">
-          <span>{match.home_team}</span>
-          <span>{match.away_team}</span>
+          <div className="m-team">
+            <span>{match.home_team}</span>
+            <RedCardMark count={redCards(match, "home")} />
+          </div>
+          <div className="m-team">
+            <span>{match.away_team}</span>
+            <RedCardMark count={redCards(match, "away")} />
+          </div>
         </div>
       </div>
       <MobileLensCells match={match} lens={lens} />
