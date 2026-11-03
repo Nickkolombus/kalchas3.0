@@ -61,6 +61,7 @@ class WatchRow(BaseModel):
     watch: Watch
     score: float
     lead_key: str = ""
+    lead_side: Literal["home", "away", ""] | None = None
     headline: str
     reason: str
     tags: list[Tag]
@@ -120,6 +121,7 @@ class Pick(BaseModel):
     home: TeamRef
     away: TeamRef
     lead_key: str = ""
+    lead_side: Literal["home", "away", ""] | None = None
     tag: str = ""
     headline: str
     reason: str
@@ -148,6 +150,7 @@ class PatternOut(BaseModel):
     detail: str
     brief: str
     score: float
+    side: Literal["home", "away", ""] = ""
     outcome: Outcome | None = None
     outcome_note: str = ""
 

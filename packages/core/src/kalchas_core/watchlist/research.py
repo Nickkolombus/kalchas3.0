@@ -46,6 +46,7 @@ def _pattern_out(p: Pattern) -> dict[str, Any]:
         "detail": p.detail,
         "brief": p.brief,
         "score": round(p.score, 3),
+        "side": p.side,
     }
 
 
@@ -291,6 +292,8 @@ def list_row(research: Mapping[str, Any], league_key: str) -> dict[str, Any]:
         "watch": research["watch"],
         "score": research["score"],
         "lead_key": top["key"] if top else "",
+        # None: built before patterns carried a side (the board then reads it from the key).
+        "lead_side": top.get("side") if top else "",
         "headline": top["title"] if top else "",
         "reason": top["brief"] if top else "",
         "tags": _tags(patterns),

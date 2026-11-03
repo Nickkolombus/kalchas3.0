@@ -149,6 +149,7 @@ def test_picks_lists_strong_watches_and_the_next_to_kick_off(
     assert [p["match_id"] for p in body["picks"]] == ["100", "101", "102"]
     assert body["next"]["match_id"] == "102"
     assert body["picks"][0]["tag"] == "Both score"
+    assert body["picks"][0]["lead_side"] is None  # a row from before sides
     assert body["picks"][0]["outcome"] == "landed"
 
 

@@ -14,6 +14,8 @@ export type Pick = {
   home: { name: string };
   away: { name: string };
   lead_key: string;
+  /** The team the lead pattern is about; "" for the whole match. */
+  lead_side?: "home" | "away" | "" | null;
   tag: string;
   headline: string;
   reason: string;
@@ -216,9 +218,14 @@ export function liveVerdict(key: string, score: string): Outcome | null {
   }
 }
 
-/** The team a pattern is about: "away over 1.5" belongs next to the away side. */
-export function pickSide(key: string): "home" | "away" {
-  return key.endsWith("_away") || key.startsWith("away_") ? "away" : "home";
+/** Which team line the tag goes on: the team the lead pattern is about,
+ * as the backend says it ("away over 1.5" → away). Match-wide patterns sit
+ * with the home side. Lists built before patterns carried a side (frozen
+ * since kick-off) fall back to the side in the pattern's name. */
+export function pickSide(pick: Pick): "home" | "away" {
+  if (pick.lead_side === "home" || pick.lead_side === "away") return pick.lead_side;
+  if (pick.lead_side === "") return "home";
+  return pick.lead_key.endsWith("_away") || pick.lead_key.startsWith("away_") ? "away" : "home";
 }
 
 /* ------------------------------------------------------------ board mark */
@@ -238,7 +245,7 @@ export function PickTag({
 }) {
   const { today } = useContext(PicksContext);
   const pick = usePick(matchId);
-  if (!pick || pickSide(pick.lead_key) !== side) return null;
+  if (!pick || pickSide(pick) !== side) return null;
   const decided = pick.outcome ?? liveVerdict(pick.lead_key, score);
   const note = pick.outcome ? pick.outcome_note : liveNote(pick.lead_key, score, pick.home.name, pick.away.name, minute);
   const stop = (event: MouseEvent) => event.stopPropagation();

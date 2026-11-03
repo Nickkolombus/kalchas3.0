@@ -85,6 +85,9 @@ class Pattern:
     brief: str
     """One line for the list row."""
     score: float
+    side: str = ""
+    """The team the pattern is about ("home" / "away"), or "" for the whole
+    match. The live board puts the tag next to that team."""
 
 
 def _shrunk(count: int, n: int, norm: float) -> float:
@@ -374,6 +377,7 @@ def _runs(home: TeamProfile, away: TeamProfile) -> list[Pattern]:
         out.append(
             Pattern(
                 key=f"{where}_scoring_run",
+                side=where,
                 tag="Scoring streak",
                 title=f"{team.name} keep scoring {place}.",
                 detail=f"They've scored in each of their last {run} {where} games.",
@@ -398,6 +402,7 @@ def _defence_and_attack(home: TeamProfile, away: TeamProfile, norms: LeagueNorms
             out.append(
                 Pattern(
                     key=f"leaky_{'home' if team is home else 'away'}",
+                    side="home" if team is home else "away",
                     tag="No clean sheet",
                     title=f"{team.name} rarely keep a clean sheet.",
                     detail=(
@@ -414,6 +419,7 @@ def _defence_and_attack(home: TeamProfile, away: TeamProfile, norms: LeagueNorms
             out.append(
                 Pattern(
                     key=f"blanks_{'home' if team is home else 'away'}",
+                    side="home" if team is home else "away",
                     tag="Struggles to score",
                     title=f"{team.name} struggle to score.",
                     detail=(
@@ -444,6 +450,7 @@ def _favourite(
         out.append(
             Pattern(
                 key=f"favourite_{key}",
+                side=key,
                 tag="Strong favourite",
                 title=f"{team.name} are clear favourites, and in form.",
                 detail=f"Priced {price:.2f} with {_of(wins, team.n)} wins in their last games.",
@@ -473,6 +480,7 @@ def _team_goals(
         out.append(
             Pattern(
                 key=f"team_over_1_5_{side}",
+                side=side,
                 tag=f"{side.title()} over 1.5",
                 title=f"{team.name} to score twice or more.",
                 detail=(

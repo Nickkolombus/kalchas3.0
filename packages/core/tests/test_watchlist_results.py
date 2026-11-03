@@ -231,3 +231,12 @@ def test_penalty_and_corner_patterns_settle() -> None:
     assert judge("corners_over_13_5", result) == ("missed", "13 corners.")
     no_stats = match_result(row("FT", 2, 1))
     assert judge("corners_over_12_5", no_stats) == (None, "")
+
+
+def test_lead_side_is_none_for_pages_built_before_sides() -> None:
+    old = page("team_over_1_5_away")  # its patterns have no "side"
+    doc = assemble_day("2026-11-03", [old], built_at="x", timezone="+03:00")
+    assert doc["matches"][0]["lead_side"] is None
+    new = {**page(), "patterns": [{**page()["patterns"][0], "side": "away"}]}
+    doc = assemble_day("2026-11-03", [new], built_at="x", timezone="+03:00")
+    assert doc["matches"][0]["lead_side"] == "away"

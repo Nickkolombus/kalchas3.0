@@ -492,3 +492,18 @@ def test_meeting_patterns_never_lead_or_make_a_match_alone() -> None:
         meetings=habit,
     )
     assert watch_level(alone) == "quiet"
+
+
+def test_team_patterns_say_which_side_they_are_about() -> None:
+    home = build_team_profile(
+        season(HOME, [(0, 0), (0, 1), (0, 2), (1, 0), (0, 0)] * 2), HOME, name="A"
+    )
+    away = build_team_profile(
+        season(AWAY, [(3, 0), (2, 1), (4, 2), (2, 0), (3, 1)] * 2, start=50), AWAY, name="B"
+    )
+    found = {p.key: p for p in match_patterns(home, away, norms(), league="")}
+    assert found["team_over_1_5_away"].side == "away"
+    assert found["blanks_home"].side == "home"
+    assert all(
+        found[k].side == "" for k in found if k in {"over_2_5", "under_2_5", "btts_yes", "btts_no"}
+    )
