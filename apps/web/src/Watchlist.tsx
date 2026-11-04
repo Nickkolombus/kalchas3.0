@@ -552,16 +552,72 @@ function DayNav({ day, data, nav }: { day: DayKey; data: WatchlistDay | null; na
 /* ------------------------------------------------------------------ list */
 
 type Filter = "all" | "strong" | "look";
+type Layout = "time" | "league";
 
-function orderedRows(data: WatchlistDay, filter: Filter): WatchRow[] {
+const LAYOUT_KEY = "wl-layout";
+
+function savedLayout(): Layout {
+  try {
+    return window.localStorage.getItem(LAYOUT_KEY) === "league" ? "league" : "time";
+  } catch {
+    return "time";
+  }
+}
+
+function saveLayout(layout: Layout): void {
+  try {
+    window.localStorage.setItem(LAYOUT_KEY, layout);
+  } catch {
+    /* private window: the choice just won't stick */
+  }
+}
+
+const WATCH_RANK: { [K in Watch]: number } = { strong: 0, look: 1, quiet: 2 };
+
+/** Kick-off order; matches starting together put the stronger ones first. */
+function byKickoff(a: WatchRow, b: WatchRow): number {
+  return a.kickoff.localeCompare(b.kickoff) || WATCH_RANK[a.watch] - WATCH_RANK[b.watch] || b.score - a.score;
+}
+
+/** Kick-off to final whistle with room for stoppages and a late start. */
+const MATCH_SPAN_MS = 150 * 60_000;
+
+type TimeGroup = { key: string; title: string; kind: "live" | "slot" | "played"; rows: WatchRow[] };
+
+/** The day as a schedule: what's being played, then each kick-off time still
+ * to come, then what's done. Past days are just their kick-off times. */
+function timeGroups(rows: WatchRow[], live: Record<string, Live>, past: boolean): TimeGroup[] {
+  const sorted = [...rows].sort(byKickoff);
+  const inPlay: WatchRow[] = [];
+  const played: WatchRow[] = [];
+  const slots = new Map<string, WatchRow[]>();
+  const now = Date.now();
+  for (const m of sorted) {
+    const since = now - Date.parse(m.kickoff);
+    // No score and long past kick-off: over, its result just isn't in yet.
+    if (!past && (m.result || (!live[m.match_id] && since > MATCH_SPAN_MS))) played.push(m);
+    else if (!past && (live[m.match_id] || since >= 0)) inPlay.push(m);
+    else {
+      const at = clock(m.kickoff);
+      slots.set(at, [...(slots.get(at) ?? []), m]);
+    }
+  }
+  const out: TimeGroup[] = [];
+  if (inPlay.length) out.push({ key: "live", title: "Live now", kind: "live", rows: inPlay });
+  for (const [at, group] of slots) out.push({ key: at, title: at, kind: "slot", rows: group });
+  if (played.length) out.push({ key: "played", title: "Played", kind: "played", rows: played });
+  return out;
+}
+
+function orderedRows(data: WatchlistDay, filter: Filter, layout: Layout, past: boolean): WatchRow[] {
   const byId = new Map(data.matches.map((m) => [m.match_id, m]));
+  const keep = (m: WatchRow | undefined): m is WatchRow => Boolean(m) && (filter === "all" || m!.watch === filter);
+  if (layout === "time") {
+    return timeGroups(data.matches.filter(keep), {}, past).flatMap((g) => g.rows);
+  }
   const out: WatchRow[] = [];
   for (const league of data.leagues) {
-    const rows = league.match_ids
-      .map((id) => byId.get(id))
-      .filter((m): m is WatchRow => Boolean(m) && (filter === "all" || (m as WatchRow).watch === filter))
-      .sort((a, b) => a.kickoff.localeCompare(b.kickoff));
-    out.push(...rows);
+    out.push(...league.match_ids.map((id) => byId.get(id)).filter(keep).sort((a, b) => a.kickoff.localeCompare(b.kickoff)));
   }
   return out;
 }
@@ -627,10 +683,87 @@ function LiveLine({ m, live }: { m: WatchRow; live: Live }) {
   );
 }
 
+function MatchRow({
+  m,
+  day,
+  live,
+  league,
+  recent,
+  open,
+  warm,
+}: {
+  m: WatchRow;
+  day: DayKey;
+  live?: Live;
+  league?: LeagueGroup;
+  recent: boolean;
+  open: (id: string) => void;
+  warm: (id: string) => void;
+}) {
+  return (
+    <a
+      className={`wl-row${recent ? " is-recent" : ""}`}
+      href={`/${day}/${m.match_id}`}
+      data-match={m.match_id}
+      onClick={linkTo(() => open(m.match_id))}
+      onPointerEnter={() => warm(m.match_id)}
+      onFocus={() => warm(m.match_id)}
+    >
+      <RowScore result={m.result} kickoff={m.kickoff} live={live} />
+      <div className="wl-teams">
+        {(["home", "away"] as const).map((side) => {
+          const t = m[side];
+          const lv = m.result ? undefined : live;
+          const goals = m.result?.status === "finished" ? m.result[side] : lv ? lv[side] : null;
+          return (
+            <div key={side}>
+              <Crest src={t.badge} name={t.name} />
+              <span className="wl-name">{t.name}</span>
+              {t.position ? <span className="wl-pos">{ordinal(t.position)}</span> : null}
+              {goals != null ? <b className={`wl-goals${lv ? " is-live" : ""}`}>{goals}</b> : null}
+            </div>
+          );
+        })}
+        {league ? (
+          <small className="wl-row-league">
+            {league.logo ? <Crest src={league.logo} name={league.name} size={12} /> : null}
+            <span>
+              {league.country} · {league.name}
+            </span>
+          </small>
+        ) : null}
+      </div>
+      <div className="wl-odds" aria-label="Match odds">
+        {(["home", "draw", "away"] as const).map((k, idx) => (
+          <span key={k}>
+            <b>{["1", "X", "2"][idx]}</b>
+            {price(m.odds?.[k])}
+          </span>
+        ))}
+      </div>
+      <div className="wl-why">
+        {m.reason || "Nothing stands out against the league norm."}
+        {m.outcome ? (
+          <span className="wl-why-out">
+            <OutcomeMark outcome={m.outcome} /> {m.outcome_note}
+          </span>
+        ) : !m.result && live ? (
+          <LiveLine m={m} live={live} />
+        ) : null}
+      </div>
+      <div className="wl-end">
+        <WatchMark watch={m.watch} />
+      </div>
+    </a>
+  );
+}
+
 function DayView({
   day,
   filter,
   setFilter,
+  layout,
+  setLayout,
   recent,
   nav,
   onReady,
@@ -638,11 +771,14 @@ function DayView({
   day: DayKey;
   filter: Filter;
   setFilter: (f: Filter) => void;
+  layout: Layout;
+  setLayout: (l: Layout) => void;
   recent: string | null;
   nav: Nav;
   onReady: () => void;
 }) {
   const [refreshMs, setRefreshMs] = useState(0);
+  const [showPlayed, setShowPlayed] = useState(false);
   const { data, error, loading } = useJson<WatchlistDay>(`/api/watchlist/day/${day}`, refreshMs);
   const underway = Boolean(data?.status === "ready" && data.matches.some((m) => !m.result && started(m.kickoff)));
   const live = useLive(day, underway);
@@ -677,6 +813,7 @@ function DayView({
   }, [data?.day, data?.today, data?.first_day, nav]);
 
   const byId = useMemo(() => new Map((data?.matches ?? []).map((m) => [m.match_id, m])), [data]);
+  const leagueByKey = useMemo(() => new Map((data?.leagues ?? []).map((l) => [l.key, l])), [data]);
   const counts = useMemo(() => {
     const out = { all: 0, strong: 0, look: 0 };
     for (const m of data?.matches ?? []) {
@@ -719,6 +856,23 @@ function DayView({
                 ] as const
               ).map(([key, label]) => (
                 <button key={key} type="button" className={filter === key ? "on" : ""} onClick={() => setFilter(key)}>
+                  {label}
+                </button>
+              ))}
+              <span className="wl-filters-gap" aria-hidden />
+              {(
+                [
+                  ["time", "By time"],
+                  ["league", "By league"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={layout === key ? "on" : ""}
+                  aria-pressed={layout === key}
+                  onClick={() => setLayout(key)}
+                >
                   {label}
                 </button>
               ))}
@@ -810,7 +964,56 @@ function DayView({
           </section>
         ) : null}
 
-        {ready
+        {ready && layout === "time"
+          ? (() => {
+              const groups = timeGroups(data.matches.filter(shown), live, past);
+              const pending = groups.some((g) => g.kind !== "played");
+              return groups.map((g) => {
+                const folded = g.kind === "played" && pending && !showPlayed;
+                const count = plural(g.rows.length, "match");
+                return (
+                  <section key={g.key} className={`wl-league wl-slot is-${g.kind}`}>
+                    <header className="wl-league-head">
+                      {g.kind === "played" && pending ? (
+                        <button
+                          type="button"
+                          className="wl-slot-toggle"
+                          aria-expanded={!folded}
+                          onClick={() => setShowPlayed((v) => !v)}
+                        >
+                          <b>
+                            Played <span className="wl-slot-n">· {count}</span>
+                          </b>
+                          <span className="wl-slot-more">{folded ? "Show" : "Hide"}</span>
+                        </button>
+                      ) : (
+                        <b>
+                          {g.kind === "live" ? <i className="wl-live-dot" aria-hidden /> : null}
+                          {g.title} <span className="wl-slot-n">· {count}</span>
+                        </b>
+                      )}
+                    </header>
+                    {folded
+                      ? null
+                      : g.rows.map((m) => (
+                          <MatchRow
+                            key={m.match_id}
+                            m={m}
+                            day={day}
+                            live={live[m.match_id]}
+                            league={leagueByKey.get(m.league_key)}
+                            recent={recent === m.match_id}
+                            open={open}
+                            warm={warm}
+                          />
+                        ))}
+                  </section>
+                );
+              });
+            })()
+          : null}
+
+        {ready && layout === "league"
           ? data.leagues.map((league) => {
               const rows = league.match_ids
                 .map((id) => byId.get(id))
@@ -826,53 +1029,15 @@ function DayView({
                     </b>
                   </header>
                   {rows.map((m) => (
-                    <a
+                    <MatchRow
                       key={m.match_id}
-                      className={`wl-row${recent === m.match_id ? " is-recent" : ""}`}
-                      href={`/${day}/${m.match_id}`}
-                      data-match={m.match_id}
-                      onClick={linkTo(() => open(m.match_id))}
-                      onPointerEnter={() => warm(m.match_id)}
-                      onFocus={() => warm(m.match_id)}
-                    >
-                      <RowScore result={m.result} kickoff={m.kickoff} live={live[m.match_id]} />
-                      <div className="wl-teams">
-                        {(["home", "away"] as const).map((side) => {
-                          const t = m[side];
-                          const lv = m.result ? undefined : live[m.match_id];
-                          const goals = m.result?.status === "finished" ? m.result[side] : lv ? lv[side] : null;
-                          return (
-                            <div key={side}>
-                              <Crest src={t.badge} name={t.name} />
-                              <span className="wl-name">{t.name}</span>
-                              {t.position ? <span className="wl-pos">{ordinal(t.position)}</span> : null}
-                              {goals != null ? <b className={`wl-goals${lv ? " is-live" : ""}`}>{goals}</b> : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="wl-odds" aria-label="Match odds">
-                        {(["home", "draw", "away"] as const).map((k, idx) => (
-                          <span key={k}>
-                            <b>{["1", "X", "2"][idx]}</b>
-                            {price(m.odds?.[k])}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="wl-why">
-                        {m.reason || "Nothing stands out against the league norm."}
-                        {m.outcome ? (
-                          <span className="wl-why-out">
-                            <OutcomeMark outcome={m.outcome} /> {m.outcome_note}
-                          </span>
-                        ) : !m.result && live[m.match_id] ? (
-                          <LiveLine m={m} live={live[m.match_id]} />
-                        ) : null}
-                      </div>
-                      <div className="wl-end">
-                        <WatchMark watch={m.watch} />
-                      </div>
-                    </a>
+                      m={m}
+                      day={day}
+                      live={live[m.match_id]}
+                      recent={recent === m.match_id}
+                      open={open}
+                      warm={warm}
+                    />
                   ))}
                 </section>
               );
@@ -1440,12 +1605,14 @@ function MatchView({
   matchId,
   day,
   filter,
+  layout,
   nav,
   onReady,
 }: {
   matchId: string;
   day: DayKey;
   filter: Filter;
+  layout: Layout;
   nav: Nav;
   onReady: () => void;
 }) {
@@ -1463,7 +1630,11 @@ function MatchView({
     if (data) onReady();
   }, [data, onReady]);
 
-  const order = useMemo(() => (list?.status === "ready" ? orderedRows(list, filter) : []), [list, filter]);
+  const pastDay = day !== "today" && day !== "tomorrow";
+  const order = useMemo(
+    () => (list?.status === "ready" ? orderedRows(list, filter, layout, pastDay) : []),
+    [list, filter, layout, pastDay],
+  );
   const at = order.findIndex((m) => m.match_id === matchId);
   const prev = at > 0 ? order[at - 1] : null;
   const next = at >= 0 && at < order.length - 1 ? order[at + 1] : null;
@@ -1648,6 +1819,11 @@ function titleFor(route: Route): string {
 export function WatchlistApp() {
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname));
   const [filter, setFilter] = useState<Filter>("all");
+  const [layout, setLayoutState] = useState<Layout>(savedLayout);
+  const setLayout = useCallback((next: Layout) => {
+    setLayoutState(next);
+    saveLayout(next);
+  }, []);
   const [recent, setRecent] = useState<string | null>(null);
   const pendingScroll = useRef<number | null>(null);
   const current = useRef(route);
@@ -1750,9 +1926,30 @@ export function WatchlistApp() {
   if (route.view === "calendar") {
     page = <CalendarView month={route.month} nav={nav} onReady={onReady} />;
   } else if (route.view === "match") {
-    page = <MatchView key={route.matchId} matchId={route.matchId} day={route.day} filter={filter} nav={nav} onReady={onReady} />;
+    page = (
+      <MatchView
+        key={route.matchId}
+        matchId={route.matchId}
+        day={route.day}
+        filter={filter}
+        layout={layout}
+        nav={nav}
+        onReady={onReady}
+      />
+    );
   } else {
-    page = <DayView day={route.day} filter={filter} setFilter={setFilter} recent={recent} nav={nav} onReady={onReady} />;
+    page = (
+      <DayView
+        day={route.day}
+        filter={filter}
+        setFilter={setFilter}
+        layout={layout}
+        setLayout={setLayout}
+        recent={recent}
+        nav={nav}
+        onReady={onReady}
+      />
+    );
   }
 
   return (
