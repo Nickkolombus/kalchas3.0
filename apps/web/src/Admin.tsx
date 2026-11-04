@@ -7,6 +7,7 @@ import { AdminRecap } from "./AdminRecap";
 import { AdminResults, type ResultsInsights, type StrategyMeta } from "./AdminResults";
 import { AdminTips } from "./AdminTips";
 import { AdminVisitors } from "./AdminVisitors";
+import { AdminMessages } from "./AdminMessages";
 
 type WeightRow = {
   key: string;
@@ -67,10 +68,11 @@ const DEFAULT_DISCORD: DiscordState = {
   paid_enabled: true,
 };
 
-type Page = "overview" | "results" | "visitors" | "strategies" | "board" | "recap" | "tips" | "discord";
+type Page = "overview" | "messages" | "results" | "visitors" | "strategies" | "board" | "recap" | "tips" | "discord";
 
 const PAGES: Record<Page, { group: string; title: string }> = {
   overview: { group: "Today", title: "Overview" },
+  messages: { group: "Today", title: "Messages" },
   results: { group: "Insights", title: "Results" },
   visitors: { group: "Insights", title: "Visitors" },
   strategies: { group: "Strategy", title: "Strategies" },
@@ -131,6 +133,12 @@ const ICONS: Record<Page, ReactNode> = {
       <rect x="9" y="2" width="5" height="5" rx="1" />
       <rect x="2" y="9" width="5" height="5" rx="1" />
       <rect x="9" y="9" width="5" height="5" rx="1" />
+    </>
+  ),
+  messages: (
+    <>
+      <rect x="2" y="3.5" width="12" height="9" rx="1.5" />
+      <path d="M2.5 4.5L8 9l5.5-4.5" />
     </>
   ),
   results: <path d="M2 13l4-5 3 3 5-7" />,
@@ -543,6 +551,7 @@ export function AdminApp() {
           <span>Admin</span>
         </div>
         <NavItem page="overview" on={page === "overview"} onClick={() => go("overview")} />
+        <NavItem page="messages" on={page === "messages"} onClick={() => go("messages")} />
         <div className="adm-nav-group">Insights</div>
         <NavItem page="results" on={page === "results"} onClick={() => go("results")} />
         <NavItem page="visitors" on={page === "visitors"} onClick={() => go("visitors")} />
@@ -599,6 +608,7 @@ export function AdminApp() {
             />
           ) : null}
           {page === "visitors" ? <AdminVisitors api={api} range={range} zone={zone} /> : null}
+          {page === "messages" ? <AdminMessages api={api} zone={zone} /> : null}
           {page === "strategies" && current ? (
             <StrategiesPage
               items={items}

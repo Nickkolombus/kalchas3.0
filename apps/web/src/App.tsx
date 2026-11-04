@@ -20,6 +20,7 @@ import {
 import { PickBox, PickTag, SpyglassIcon, WatchlistButton, usePick } from "./WatchlistPicks";
 import { logVisitEvent, visitorId } from "./visit";
 import { MatchOverlay } from "./MatchPanel";
+import { ContactLink, SiteFooter } from "./ContactForm";
 import kalchasMark from "./assets/kalchas-mark.png";
 
 const TELEGRAM_FREE_JOIN_URL = "https://t.me/Kalchas_Tips_Free";
@@ -2695,6 +2696,9 @@ function MobileBoard({
               <span>€2.99 a week</span>
             </a>
           </div>
+          <p className="m-join-contact">
+            Questions or feedback? <ContactLink />
+          </p>
         </section>
       ) : null}
 
@@ -3333,6 +3337,8 @@ export function App() {
           </tbody>
         </table>
       </div>
+
+      <SiteFooter />
 
       {selected ? (
         <MatchOverlay
