@@ -75,7 +75,7 @@ const PAGES: Record<Page, { group: string; title: string }> = {
   visitors: { group: "Insights", title: "Visitors" },
   strategies: { group: "Strategy", title: "Strategies" },
   board: { group: "Strategy", title: "Board filters" },
-  recap: { group: "Distribution", title: "Weekly recap" },
+  recap: { group: "Distribution", title: "Recaps" },
   tips: { group: "Distribution", title: "Tips feed" },
   discord: { group: "Distribution", title: "Discord" },
 };

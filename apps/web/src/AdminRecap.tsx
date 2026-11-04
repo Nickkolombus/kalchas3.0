@@ -2,59 +2,37 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 type Api = <T>(path: string, init?: RequestInit) => Promise<T>;
 
-type Pick = {
-  match_id: string;
-  home: string;
-  away: string;
-  league: string;
-  minute: number;
-  goal_minute: number | null;
-  gap: number | null;
-  team_name: string | null;
-  why: string;
-};
-
-type Texts = {
-  cover_line: string;
-  calls: string[];
-  honourable: string;
-  miss: string;
-  lesson: string;
-  x: string;
-  caption: string;
-};
-
+type Kind = "week" | "day";
+type Texts = Record<string, string>;
 type Channels = Record<string, boolean>;
 
+type FieldSpec = { key: string; label: string; where: string; rows: number; hint: string };
+
 type Recap = {
+  kind: Kind;
   week_start: string;
   status: "draft" | "approved" | "posting" | "posted" | "skipped" | "failed";
   editable: boolean;
-  deadline: string;
+  deadline: string | null;
   headline: string;
-  data: {
-    total: number;
-    goals: number;
-    misses: number;
-    calls: Pick[];
-    honourable: Pick | null;
-    miss: (Pick & { strategies: string[] }) | null;
-  };
   texts: Texts;
+  fields: FieldSpec[];
+  needs_lesson: boolean;
+  card_count: number;
   channels: Channels;
   post_log: Record<string, { ok: boolean; error?: string; ref?: string } | string>;
   notes: string[];
-  limits: Record<string, { used: number; max: number }>;
-  notified_at: string | null;
-  approved_at: string | null;
   posted_at: string | null;
 };
 
 type Payload = {
+  kind?: Kind;
   recap: Recap | null;
   weeks?: { week_start: string; status: string }[];
   last_week?: string;
   this_week?: string;
+  today?: string;
+  yesterday?: string;
 };
 
 const CHANNELS: [string, string][] = [
@@ -71,6 +49,15 @@ const STATUS: Record<Recap["status"], { label: string; tone: string }> = {
   posted: { label: "Posted", tone: "is-ok" },
   skipped: { label: "Skipped", tone: "is-miss" },
   failed: { label: "Some channels failed", tone: "is-miss" },
+};
+
+const GROUPS: Record<string, string> = {
+  "every card": "On every card",
+  "card 1": "Card 1 · the week",
+  "card 2": "Card 2 · three we got right",
+  "card 3": "Card 3 · the one that got away",
+  card: "The card",
+  posts: "Post text",
 };
 
 /** Close to how X counts: most emoji and symbols weigh 2, URLs 23. */
@@ -91,18 +78,19 @@ function tweetWeight(text: string): number {
 }
 
 function finalCaption(texts: Texts): string {
-  const caption = texts.caption.trim();
-  const lesson = texts.lesson.trim();
+  const caption = (texts.caption ?? "").trim();
+  const lesson = (texts.lesson ?? "").trim();
   if (!lesson || caption.includes(lesson)) return caption;
   const cut = caption.lastIndexOf("\n\n");
   if (cut < 0) return `${caption}\n\n${lesson}`;
   return `${caption.slice(0, cut)}\n\n${lesson}${caption.slice(cut)}`;
 }
 
-function fmtWeek(iso: string): string {
+function fmtPeriod(iso: string, kind: Kind): string {
   const first = new Date(`${iso}T00:00:00Z`);
-  const last = new Date(first.getTime() + 6 * 86400000);
   const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", timeZone: "UTC" };
+  if (kind === "day") return first.toLocaleDateString(undefined, { ...opts, weekday: "long" });
+  const last = new Date(first.getTime() + 6 * 86400000);
   return `${first.toLocaleDateString(undefined, opts)} – ${last.toLocaleDateString(undefined, opts)}`;
 }
 
@@ -112,10 +100,12 @@ function fmtWhen(iso: string | null): string {
 }
 
 export function AdminRecap({ api }: { api: Api }) {
+  const [kind, setKind] = useState<Kind>("week");
   const [payload, setPayload] = useState<Payload | null>(null);
   const [texts, setTexts] = useState<Texts | null>(null);
   const [channels, setChannels] = useState<Channels>({});
   const [week, setWeek] = useState<string | null>(null);
+  const [pickDay, setPickDay] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -124,25 +114,19 @@ export function AdminRecap({ api }: { api: Api }) {
   const recap = payload?.recap ?? null;
 
   const adopt = useCallback((next: Payload) => {
-    setPayload((prev) => ({
-      ...prev,
-      ...next,
-      weeks: next.weeks ?? prev?.weeks,
-      last_week: next.last_week ?? prev?.last_week,
-      this_week: next.this_week ?? prev?.this_week,
-    }));
-    setTexts(next.recap ? { ...next.recap.texts, calls: [...(next.recap.texts.calls || [])] } : null);
+    setPayload((prev) => ({ ...prev, ...next, weeks: next.weeks ?? prev?.weeks }));
+    setTexts(next.recap ? { ...next.recap.texts } : null);
     setChannels(next.recap?.channels ?? {});
   }, []);
 
   const load = useCallback(async () => {
     setError("");
     try {
-      adopt(await api<Payload>(`/api/admin/recap${week ? `?week=${week}` : ""}`));
+      adopt(await api<Payload>(`/api/admin/recap?kind=${kind}${week ? `&week=${week}` : ""}`));
     } catch (err) {
       setError(err instanceof Error ? err.message : "load failed");
     }
-  }, [api, week, adopt]);
+  }, [api, kind, week, adopt]);
 
   useEffect(() => {
     void load();
@@ -160,8 +144,6 @@ export function AdminRecap({ api }: { api: Api }) {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  const cardCount = recap ? 1 + (recap.data.calls.length ? 1 : 0) + (recap.data.miss ? 1 : 0) : 0;
-
   // Re-render the cards from the text as typed, a moment after typing stops.
   useEffect(() => {
     if (!recap || !texts) return;
@@ -170,8 +152,8 @@ export function AdminRecap({ api }: { api: Api }) {
     const made: string[] = [];
     previewTimer.current = window.setTimeout(async () => {
       try {
-        for (let card = 1; card <= cardCount; card++) {
-          const res = await fetch(`/api/admin/recap/${recap.week_start}/preview/${card}`, {
+        for (let card = 1; card <= recap.card_count; card++) {
+          const res = await fetch(`/api/admin/recap/${recap.week_start}/preview/${card}?kind=${recap.kind}`, {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
@@ -194,16 +176,16 @@ export function AdminRecap({ api }: { api: Api }) {
       cancelled = true;
       window.clearTimeout(previewTimer.current);
     };
-  }, [recap, texts, cardCount]);
+  }, [recap, texts]);
 
-  async function save(): Promise<boolean> {
-    if (!recap || !texts) return false;
-    const next = await api<Payload>(`/api/admin/recap/${recap.week_start}`, {
-      method: "PUT",
-      body: JSON.stringify({ texts, channels }),
-    });
-    adopt(next);
-    return true;
+  async function save(): Promise<void> {
+    if (!recap || !texts) return;
+    adopt(
+      await api<Payload>(`/api/admin/recap/${recap.week_start}?kind=${recap.kind}`, {
+        method: "PUT",
+        body: JSON.stringify({ texts, channels }),
+      }),
+    );
   }
 
   async function run(label: string, work: () => Promise<void>) {
@@ -220,62 +202,102 @@ export function AdminRecap({ api }: { api: Api }) {
     }
   }
 
-  const draftNow = (target?: string) =>
-    run("Draft built from the week's signals.", async () => {
-      const target_week = target ?? payload?.last_week;
-      adopt(await api<Payload>(`/api/admin/recap/draft${target_week ? `?week=${target_week}` : ""}`, { method: "POST" }));
-      setWeek(target_week ?? null);
+  const draft = (target?: string) =>
+    run("Draft built from the signals.", async () => {
+      adopt(await api<Payload>(`/api/admin/recap/draft?kind=${kind}${target ? `&week=${target}` : ""}`, { method: "POST" }));
+      setWeek(target ?? null);
     });
 
   const approve = () =>
     run("Approved. The bot posts it within a minute.", async () => {
       if (!recap) return;
       if (dirty) await save();
-      adopt(await api<Payload>(`/api/admin/recap/${recap.week_start}/approve`, { method: "POST" }));
+      adopt(await api<Payload>(`/api/admin/recap/${recap.week_start}/approve?kind=${recap.kind}`, { method: "POST" }));
     });
 
   const skip = () =>
-    run("Skipped. Nothing will be posted for this week.", async () => {
+    run("Skipped. Nothing will be posted for this one.", async () => {
       if (!recap) return;
-      adopt(await api<Payload>(`/api/admin/recap/${recap.week_start}/skip`, { method: "POST" }));
+      adopt(await api<Payload>(`/api/admin/recap/${recap.week_start}/skip?kind=${recap.kind}`, { method: "POST" }));
     });
 
-  const setText = <K extends keyof Texts>(key: K, value: Texts[K]) => setTexts((t) => (t ? { ...t, [key]: value } : t));
-  const setCall = (index: number, value: string) =>
-    setTexts((t) => (t ? { ...t, calls: t.calls.map((c, i) => (i === index ? value : c)) } : t));
+  const switchKind = (next: Kind) => {
+    if (next === kind) return;
+    if (dirty && !window.confirm("Leave without saving your edits?")) return;
+    setKind(next);
+    setWeek(null);
+    setPayload(null);
+    setPreviews([]);
+  };
 
-  if (!payload) return <p className="kit-empty">{error || "Loading…"}</p>;
+  const tabs = (
+    <div className="rc-tabs">
+      <button type="button" className={kind === "week" ? "is-on" : ""} onClick={() => switchKind("week")}>
+        Weekly
+      </button>
+      <button type="button" className={kind === "day" ? "is-on" : ""} onClick={() => switchKind("day")}>
+        Daily
+      </button>
+    </div>
+  );
+
+  const dayPicker =
+    kind === "day" && payload ? (
+      <div className="rc-draft-day">
+        <button type="button" className="kit-btn" disabled={busy} onClick={() => void draft(payload.yesterday)}>
+          Draft yesterday
+        </button>
+        <button type="button" className="kit-btn" disabled={busy} onClick={() => void draft(payload.today)}>
+          Today so far
+        </button>
+        <input type="date" value={pickDay} max={payload.today} onChange={(e) => setPickDay(e.target.value)} />
+        <button type="button" className="kit-btn" disabled={busy || !pickDay} onClick={() => void draft(pickDay)}>
+          Draft that day
+        </button>
+      </div>
+    ) : null;
+
+  if (!payload) return <div className="rc">{tabs}<p className="kit-empty">{error || "Loading…"}</p></div>;
 
   if (!recap || !texts) {
     return (
-      <div className="rc-empty kit-card">
-        <h2>No recap yet</h2>
-        <p>
-          The bot drafts last week's recap every Monday at 08:00 UTC and messages you on Telegram. You can build it now
-          instead to see how it looks.
-        </p>
-        <div className="rc-actions">
-          <button type="button" className="kit-btn is-primary" disabled={busy} onClick={() => void draftNow()}>
-            Draft last week ({payload.last_week ? fmtWeek(payload.last_week) : "…"})
-          </button>
-          {payload.this_week ? (
-            <button type="button" className="kit-btn" disabled={busy} onClick={() => void draftNow(payload.this_week)}>
-              This week so far ({fmtWeek(payload.this_week)})
-            </button>
-          ) : null}
+      <div className="rc">
+        {tabs}
+        <div className="rc-empty kit-card">
+          {kind === "week" ? (
+            <>
+              <h2>No weekly recap yet</h2>
+              <p>
+                The bot drafts last week's recap every Monday at 08:00 UTC and messages you on Telegram. You can build it
+                now instead to see how it looks.
+              </p>
+              <div className="rc-actions">
+                <button type="button" className="kit-btn is-primary" disabled={busy} onClick={() => void draft(payload.last_week)}>
+                  Draft last week ({payload.last_week ? fmtPeriod(payload.last_week, "week") : "…"})
+                </button>
+                {payload.this_week ? (
+                  <button type="button" className="kit-btn" disabled={busy} onClick={() => void draft(payload.this_week)}>
+                    This week so far
+                  </button>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <>
+              <h2>No daily recap yet</h2>
+              <p>Daily recaps are never drafted for you. On a day that went well, draft it here, edit every word, and approve.</p>
+              {dayPicker}
+            </>
+          )}
+          {error ? <p className="kit-error">{error}</p> : null}
         </div>
-        <p className="kit-muted">
-          A draft of a week that hasn't ended is a preview: on Monday the bot replaces it with the full week and
-          messages you.
-        </p>
-        {error ? <p className="kit-error">{error}</p> : null}
       </div>
     );
   }
 
-  const xWeight = tweetWeight(texts.x);
+  const xWeight = tweetWeight(texts.x ?? "");
   const caption = finalCaption(texts);
-  const lessonMissing = !texts.lesson.trim();
+  const lessonMissing = recap.needs_lesson && !(texts.lesson ?? "").trim();
   const st = STATUS[recap.status];
   const editable = recap.editable;
   const chosen = CHANNELS.some(([key]) => channels[key]);
@@ -286,23 +308,40 @@ export function AdminRecap({ api }: { api: Api }) {
     !chosen && "pick a channel",
   ].filter(Boolean) as string[];
 
+  const groups: [string, FieldSpec[]][] = [];
+  for (const field of recap.fields) {
+    const last = groups[groups.length - 1];
+    if (last && last[0] === field.where) last[1].push(field);
+    else groups.push([field.where, [field]]);
+  }
+
+  const hintFor = (field: FieldSpec): string => {
+    if (field.key === "x") return `${xWeight} / 280`;
+    if (field.key === "caption") return `${caption.length} / 1024${recap.needs_lesson ? " · the lesson is added above the last line" : ""}`;
+    if (field.key === "lesson") return "yours to write · required";
+    return field.hint;
+  };
+  const isNeed = (field: FieldSpec) =>
+    editable && ((field.key === "lesson" && lessonMissing) || (field.key === "x" && xWeight > 280) || (field.key === "caption" && caption.length > 1024));
+
   return (
     <div className="rc">
+      {tabs}
       <div className="rc-bar kit-card">
         <span className={`kit-pill ${st.tone}`}>
           <i>●</i>
           {st.label}
         </span>
-        <b>{fmtWeek(recap.week_start)}</b>
+        <b>{fmtPeriod(recap.week_start, recap.kind)}</b>
         <span className="kit-muted">{recap.headline}</span>
         <div className="kit-card-right">
-          {recap.status === "draft" ? <span className="kit-muted">Approve by {fmtWhen(recap.deadline)}</span> : null}
+          {recap.status === "draft" && recap.deadline ? <span className="kit-muted">Approve by {fmtWhen(recap.deadline)}</span> : null}
           {recap.posted_at ? <span className="kit-muted">Posted {fmtWhen(recap.posted_at)}</span> : null}
           {payload.weeks && payload.weeks.length > 1 ? (
             <select value={recap.week_start} onChange={(e) => setWeek(e.target.value)}>
               {payload.weeks.map((w) => (
                 <option key={w.week_start} value={w.week_start}>
-                  {fmtWeek(w.week_start)} · {w.status}
+                  {fmtPeriod(w.week_start, recap.kind)} · {w.status}
                 </option>
               ))}
             </select>
@@ -312,9 +351,9 @@ export function AdminRecap({ api }: { api: Api }) {
               type="button"
               className="kit-btn"
               disabled={busy}
-              title="Re-read the week's signals and start the text over. Your edits are lost."
+              title="Re-read the signals and start the text over. Your edits are lost."
               onClick={() => {
-                if (!dirty || window.confirm("Rebuild the draft? Your edits will be lost.")) void draftNow(recap.week_start);
+                if (!dirty || window.confirm("Rebuild the draft? Your edits will be lost.")) void draft(recap.week_start);
               }}
             >
               Rebuild draft
@@ -322,6 +361,7 @@ export function AdminRecap({ api }: { api: Api }) {
           ) : null}
         </div>
       </div>
+      {dayPicker}
 
       {Object.keys(recap.post_log || {}).length ? (
         <div className="rc-log">
@@ -341,7 +381,7 @@ export function AdminRecap({ api }: { api: Api }) {
       <div className="rc-grid">
         <div className="rc-previews">
           <div className="rc-cap">Preview · updates as you type</div>
-          {Array.from({ length: cardCount }, (_, i) =>
+          {Array.from({ length: recap.card_count }, (_, i) =>
             previews[i] ? (
               <a key={i} href={previews[i]} target="_blank" rel="noreferrer">
                 <img src={previews[i]} alt={`Card ${i + 1}`} />
@@ -353,60 +393,40 @@ export function AdminRecap({ api }: { api: Api }) {
         </div>
 
         <div className="rc-form">
-          <Field label="Cover line" hint="under the headline on card 1">
-            <textarea rows={2} value={texts.cover_line} disabled={!editable} onChange={(e) => setText("cover_line", e.target.value)} />
-          </Field>
-
-          {recap.data.calls.map((call, i) => (
-            <Field key={call.match_id} label={`Call ${i + 1} · ${call.home} v ${call.away}`} hint={`picked: ${call.why}`}>
-              <textarea rows={3} value={texts.calls[i] ?? ""} disabled={!editable} onChange={(e) => setCall(i, e.target.value)} />
-            </Field>
+          {groups.map(([where, fields]) => (
+            <section key={where} className="rc-group">
+              <h3>{GROUPS[where] ?? where}</h3>
+              {where === "card 3" && recap.notes.length ? (
+                <div className="kit-note">
+                  <h3>Worth knowing before you write the lesson</h3>
+                  <ul>
+                    {recap.notes.map((note) => (
+                      <li key={note}>{note}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {fields.map((field) => (
+                <Field key={field.key} label={field.label} hint={hintFor(field)} need={isNeed(field)}>
+                  {field.rows > 1 ? (
+                    <textarea
+                      rows={field.rows}
+                      value={texts[field.key] ?? ""}
+                      disabled={!editable}
+                      placeholder={field.key === "lesson" ? "One honest sentence about what this week taught you." : undefined}
+                      onChange={(e) => setTexts((t) => (t ? { ...t, [field.key]: e.target.value } : t))}
+                    />
+                  ) : (
+                    <input
+                      value={texts[field.key] ?? ""}
+                      disabled={!editable}
+                      onChange={(e) => setTexts((t) => (t ? { ...t, [field.key]: e.target.value } : t))}
+                    />
+                  )}
+                </Field>
+              ))}
+            </section>
           ))}
-
-          {recap.data.calls.length ? (
-            <Field label="Footer of card 2" hint="honourable mention, or leave empty">
-              <input value={texts.honourable} disabled={!editable} onChange={(e) => setText("honourable", e.target.value)} />
-            </Field>
-          ) : null}
-
-          {recap.data.miss ? (
-            <Field label={`The miss · ${recap.data.miss.home} v ${recap.data.miss.away}`} hint={`picked: ${recap.data.miss.why}`}>
-              <textarea rows={3} value={texts.miss} disabled={!editable} onChange={(e) => setText("miss", e.target.value)} />
-            </Field>
-          ) : null}
-
-          {recap.notes.length ? (
-            <div className="kit-note">
-              <h3>Worth knowing before you write the lesson</h3>
-              <ul>
-                {recap.notes.map((note) => (
-                  <li key={note}>{note}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          <Field label="What we learned" hint="yours to write · required" need={lessonMissing && editable}>
-            <textarea
-              rows={2}
-              value={texts.lesson}
-              disabled={!editable}
-              placeholder="One honest sentence about what this week taught you."
-              onChange={(e) => setText("lesson", e.target.value)}
-            />
-          </Field>
-
-          <Field label="X post" hint={`${xWeight} / 280`} need={xWeight > 280}>
-            <textarea rows={4} value={texts.x} disabled={!editable} onChange={(e) => setText("x", e.target.value)} />
-          </Field>
-
-          <Field
-            label="Telegram and Discord caption"
-            hint={`${caption.length} / 1024 · the lesson is added above the last line`}
-            need={caption.length > 1024}
-          >
-            <textarea rows={7} value={texts.caption} disabled={!editable} onChange={(e) => setText("caption", e.target.value)} />
-          </Field>
 
           <div className="rc-channels">
             {CHANNELS.map(([key, label]) => (
@@ -433,7 +453,7 @@ export function AdminRecap({ api }: { api: Api }) {
               >
                 {recap.status === "failed" ? "Approve and retry" : "Approve and post"}
               </button>
-              <button type="button" className="kit-btn" disabled={busy || !dirty} onClick={() => void run("Saved.", async () => void (await save()))}>
+              <button type="button" className="kit-btn" disabled={busy || !dirty} onClick={() => void run("Saved.", save)}>
                 Save draft
               </button>
               {recap.status === "draft" ? (
@@ -442,10 +462,10 @@ export function AdminRecap({ api }: { api: Api }) {
                   className="kit-btn"
                   disabled={busy}
                   onClick={() => {
-                    if (window.confirm("Skip this week? Nothing will be posted.")) void skip();
+                    if (window.confirm("Skip this one? Nothing will be posted.")) void skip();
                   }}
                 >
-                  Skip this week
+                  Skip
                 </button>
               ) : null}
               {blockers.length ? <span className="kit-muted">First: {blockers.join(", ")}.</span> : null}

@@ -1,4 +1,5 @@
-"""Weekly recap rows: the bot drafts and posts (asyncpg), the admin edits and approves (sync).
+"""Recap rows, weekly and daily: the bot drafts and posts (asyncpg), the admin edits and
+approves (sync). A row is keyed by its kind ("week" or "day") and start date.
 
 A recap only ever moves forward: draft -> approved -> posting -> posted, or
 draft -> skipped. A failed post can be approved again to retry.
@@ -36,63 +37,68 @@ ORDER BY a.created_at
 THRESHOLDS = "SELECT strategy_slot, threshold FROM strategy_thresholds"
 
 INSERT_DRAFT = """
-INSERT INTO weekly_recaps (week_start, data, texts)
-VALUES ($1, $2::jsonb, $3::jsonb)
-ON CONFLICT (week_start) DO NOTHING
+INSERT INTO weekly_recaps (kind, week_start, data, texts)
+VALUES ('week', $1, $2::jsonb, $3::jsonb)
+ON CONFLICT (kind, week_start) DO NOTHING
 RETURNING week_start
 """
 
-MARK_NOTIFIED = "UPDATE weekly_recaps SET notified_at = NOW() WHERE week_start = $1"
+MARK_NOTIFIED = (
+    "UPDATE weekly_recaps SET notified_at = NOW() WHERE kind = 'week' AND week_start = $1"
+)
 
 # A draft made before its week ended (a "this week so far" preview) is
 # replaced by the full week; one made after is the admin's and is left alone.
 REFRESH_EARLY_DRAFT = """
 UPDATE weekly_recaps
 SET data = $2::jsonb, texts = $3::jsonb, created_at = NOW(), updated_at = NOW()
-WHERE week_start = $1 AND status = 'draft' AND created_at < $4
+WHERE kind = 'week' AND week_start = $1 AND status = 'draft' AND created_at < $4
 RETURNING week_start
 """
 
 CLAIM_APPROVED = """
 UPDATE weekly_recaps
 SET status = 'posting', updated_at = NOW()
-WHERE week_start = (
-    SELECT week_start FROM weekly_recaps
+WHERE (kind, week_start) = (
+    SELECT kind, week_start FROM weekly_recaps
     WHERE status = 'approved'
-    ORDER BY week_start
+    ORDER BY approved_at NULLS LAST, week_start
     LIMIT 1
     FOR UPDATE SKIP LOCKED
 )
-RETURNING week_start, data, texts, channels, post_log
+RETURNING kind, week_start, data, texts, channels, post_log
 """
 
 FINISH_POST = """
 UPDATE weekly_recaps
 SET status = $2, post_log = $3::jsonb, updated_at = NOW(),
     posted_at = CASE WHEN $2 = 'posted' THEN NOW() ELSE posted_at END
-WHERE week_start = $1
+WHERE kind = $4 AND week_start = $1
 """
 
 SKIP_STALE = """
 UPDATE weekly_recaps
 SET status = 'skipped', updated_at = NOW()
-WHERE status = 'draft' AND week_start <= $1
+WHERE kind = 'week' AND status = 'draft' AND week_start <= $1
 RETURNING week_start
 """
 
 _COLUMNS = (
-    "week_start, status, data, texts, channels, post_log, created_at, updated_at, "
+    "kind, week_start, status, data, texts, channels, post_log, created_at, updated_at, "
     "notified_at, approved_at, posted_at"
 )
 
-GET_RECAP = text(f"SELECT {_COLUMNS} FROM weekly_recaps WHERE week_start = :week")  # noqa: S608
+GET_RECAP = text(
+    f"SELECT {_COLUMNS} FROM weekly_recaps WHERE kind = :kind AND week_start = :week"  # noqa: S608
+)
 LATEST_RECAP = text(
-    f"SELECT {_COLUMNS} FROM weekly_recaps ORDER BY week_start DESC LIMIT 1"  # noqa: S608
+    f"SELECT {_COLUMNS} FROM weekly_recaps WHERE kind = :kind ORDER BY week_start DESC LIMIT 1"  # noqa: S608
 )
 LIST_RECAPS = text(
     """
     SELECT week_start, status, posted_at
     FROM weekly_recaps
+    WHERE kind = :kind
     ORDER BY week_start DESC
     LIMIT :limit
     """
@@ -101,15 +107,15 @@ UPDATE_TEXTS = text(
     """
     UPDATE weekly_recaps
     SET texts = CAST(:texts AS jsonb), channels = CAST(:channels AS jsonb), updated_at = NOW()
-    WHERE week_start = :week AND status IN ('draft', 'failed')
+    WHERE kind = :kind AND week_start = :week AND status IN ('draft', 'failed')
     RETURNING week_start
     """
 )
 SAVE_DRAFT = text(
     """
-    INSERT INTO weekly_recaps (week_start, data, texts)
-    VALUES (:week, CAST(:data AS jsonb), CAST(:texts AS jsonb))
-    ON CONFLICT (week_start) DO UPDATE
+    INSERT INTO weekly_recaps (kind, week_start, data, texts)
+    VALUES (:kind, :week, CAST(:data AS jsonb), CAST(:texts AS jsonb))
+    ON CONFLICT (kind, week_start) DO UPDATE
         SET data = EXCLUDED.data, texts = EXCLUDED.texts, updated_at = NOW()
         WHERE weekly_recaps.status = 'draft'
     RETURNING week_start
@@ -120,7 +126,7 @@ SET_STATUS = text(
     UPDATE weekly_recaps
     SET status = :status, updated_at = NOW(),
         approved_at = CASE WHEN :status = 'approved' THEN NOW() ELSE approved_at END
-    WHERE week_start = :week AND status = ANY(:allowed)
+    WHERE kind = :kind AND week_start = :week AND status = ANY(:allowed)
     RETURNING week_start
     """
 )
@@ -178,9 +184,14 @@ async def claim_approved(conn: asyncpg.Connection) -> dict[str, Any] | None:
 
 
 async def finish_post(
-    conn: asyncpg.Connection, week_start: date, *, status: str, post_log: dict[str, Any]
+    conn: asyncpg.Connection,
+    week_start: date,
+    *,
+    status: str,
+    post_log: dict[str, Any],
+    kind: str = "week",
 ) -> None:
-    await conn.execute(FINISH_POST, week_start, status, json.dumps(post_log))
+    await conn.execute(FINISH_POST, week_start, status, json.dumps(post_log), kind)
 
 
 async def skip_stale_drafts(conn: asyncpg.Connection, through_week: date) -> list[date]:
@@ -191,25 +202,32 @@ async def skip_stale_drafts(conn: asyncpg.Connection, through_week: date) -> lis
 # ---------------------------------------------------------------- admin (sync)
 
 
-def get_recap_sync(dsn: str, week_start: date | None = None) -> dict[str, Any] | None:
+def get_recap_sync(
+    dsn: str, week_start: date | None = None, *, kind: str = "week"
+) -> dict[str, Any] | None:
     eng = sync_engine(dsn)
     with eng.connect() as conn:
         if week_start is None:
-            row = conn.execute(LATEST_RECAP).mappings().first()
+            row = conn.execute(LATEST_RECAP, {"kind": kind}).mappings().first()
         else:
-            row = conn.execute(GET_RECAP, {"week": week_start}).mappings().first()
+            row = conn.execute(GET_RECAP, {"kind": kind, "week": week_start}).mappings().first()
     return _decode(dict(row)) if row else None
 
 
-def list_recaps_sync(dsn: str, limit: int = 8) -> list[dict[str, Any]]:
+def list_recaps_sync(dsn: str, limit: int = 8, *, kind: str = "week") -> list[dict[str, Any]]:
     eng = sync_engine(dsn)
     with eng.connect() as conn:
-        rows = conn.execute(LIST_RECAPS, {"limit": int(limit)}).mappings().all()
+        rows = conn.execute(LIST_RECAPS, {"kind": kind, "limit": int(limit)}).mappings().all()
     return [dict(row) for row in rows]
 
 
 def update_texts_sync(
-    dsn: str, week_start: date, texts: dict[str, Any], channels: dict[str, bool]
+    dsn: str,
+    week_start: date,
+    texts: dict[str, Any],
+    channels: dict[str, bool],
+    *,
+    kind: str = "week",
 ) -> bool:
     """False unless the recap is still editable (a draft, or a failed post)."""
     eng = sync_engine(dsn)
@@ -217,6 +235,7 @@ def update_texts_sync(
         row = conn.execute(
             UPDATE_TEXTS,
             {
+                "kind": kind,
                 "week": week_start,
                 "texts": json.dumps(texts),
                 "channels": json.dumps({**DEFAULT_CHANNELS, **channels}),
@@ -225,11 +244,14 @@ def update_texts_sync(
     return row is not None
 
 
-def set_status_sync(dsn: str, week_start: date, status: str, *, allowed: list[str]) -> bool:
+def set_status_sync(
+    dsn: str, week_start: date, status: str, *, allowed: list[str], kind: str = "week"
+) -> bool:
     eng = sync_engine(dsn)
     with eng.begin() as conn:
         row = conn.execute(
-            SET_STATUS, {"week": week_start, "status": status, "allowed": list(allowed)}
+            SET_STATUS,
+            {"kind": kind, "week": week_start, "status": status, "allowed": list(allowed)},
         ).first()
     return row is not None
 
@@ -247,14 +269,24 @@ def fetch_week_signals_sync(dsn: str, since: datetime, until: datetime) -> list[
 
 
 def save_draft_sync(
-    dsn: str, week_start: date, data: dict[str, Any], texts: dict[str, Any]
+    dsn: str,
+    week_start: date,
+    data: dict[str, Any],
+    texts: dict[str, Any],
+    *,
+    kind: str = "week",
 ) -> bool:
-    """Create the week's draft, or rebuild it while it is still a draft (edits are lost)."""
+    """Create the draft, or rebuild it while it is still a draft (edits are lost)."""
     eng = sync_engine(dsn)
     with eng.begin() as conn:
         row = conn.execute(
             SAVE_DRAFT,
-            {"week": week_start, "data": json.dumps(data), "texts": json.dumps(texts)},
+            {
+                "kind": kind,
+                "week": week_start,
+                "data": json.dumps(data),
+                "texts": json.dumps(texts),
+            },
         ).first()
     return row is not None
 

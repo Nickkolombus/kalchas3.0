@@ -1,58 +1,74 @@
-"""The weekly recap as three PNG cards: the week, three calls, the miss.
+"""Recap cards, weekly (three cards) and daily (one), in the "Paper" look.
 
-Direction A ("match sheet"): warm paper, Manrope, one green for goals and
-hatching for no goal, the same on every card. Drawn on a 1200x675 grid and
-rendered at 1.5x so X, Telegram and Discord all get a crisp 16:9 image.
+Warm paper, Manrope, faint pitch lines, real crests with a soft glow in the
+team's colour, and one green for goals with hatching for no goal. Drawn on a
+1200x675 grid and rendered at 1.5x so X, Telegram and Discord all get a crisp
+16:9 image.
 
-Numbers come from the recap ``data``; every sentence comes from ``texts``,
-which the admin has edited and approved.
+Numbers, crests and charts come from the recap ``data``; every word comes
+from ``texts``, which the admin has edited and approved.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
-from datetime import date
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from PIL import Image, ImageDraw, ImageFont
+from kalchas_core.recap import normalize_texts
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+from kalchas_bot import banner
+
+logger = logging.getLogger("kalchas.bot.recap_cards")
 
 W, H = 1200, 675
 SCALE = 1.5
 PAD = 52
+FOOT_Y = H - 52
 
-BG = (247, 246, 242)
-INK = (18, 21, 26)
-INK2 = (75, 82, 96)
-MUTED = (138, 144, 155)
-LINE = (226, 224, 216)
-TRACK = (233, 231, 225)
+BG = (247, 245, 239)
+INK = (19, 22, 27)
+INK2 = (77, 84, 98)
+MUTED = (139, 144, 154)
+LINE = (227, 224, 214)
+TRACK = (235, 232, 224)
+TILE = (255, 255, 255)
+TILE_LINE = (235, 232, 223)
 GOAL = (15, 138, 92)
-MISS = (163, 168, 177)
-RED = (194, 65, 58)
+GOAL_SOFT = (223, 241, 232)
+MISS = (166, 170, 178)
+RED = (208, 69, 60)
+PITCH = (239, 237, 230)
 
 _HERE = Path(__file__).parent
 FONT_PATH = _HERE / "fonts" / "Manrope-Variable.ttf"
 MARK_PATH = _HERE / "assets" / "kalchas-mark.png"
 _fonts: dict[tuple[int, int], ImageFont.FreeTypeFont] = {}
 
-STRATEGY_READOUT: dict[str, tuple[str, str]] = {
-    "delta_goal": ("+{v:.1f}", "goals owed on form"),
-    "delta_5min": ("{v:.1f}", "5-minute pressure, out of 12"),
-    "pressure_index": ("{v:.0f}", "sustained pressure, out of 100"),
-    "rule_of_three": ("{v:.1f}", "unrealised goals"),
-    "kscore": ("{v:.0f}", "K-Score, out of 100"),
+READOUT: dict[str, str] = {
+    "delta_goal": "+{v:.1f}",
+    "delta_5min": "{v:.1f}",
+    "pressure_index": "{v:.0f}",
+    "rule_of_three": "{v:.1f}",
+    "kscore": "{v:.0f}",
 }
 
 
 def render_recap_cards(data: Mapping[str, Any], texts: Mapping[str, Any]) -> list[bytes]:
-    """PNG bytes for each card that has something to say (the cover always does)."""
-    cards = [_cover(data, texts)]
-    if data.get("calls"):
-        cards.append(_calls(data, texts))
-    if data.get("miss"):
-        cards.append(_miss(data, texts))
+    """PNG bytes for each card that has something to say."""
+    words = normalize_texts(texts, data)
+    if data.get("kind") == "day":
+        cards = [_daily(data, words)]
+    else:
+        cards = [_cover(data, words)]
+        if data.get("calls"):
+            cards.append(_calls(data, words))
+        if data.get("miss"):
+            cards.append(_miss(data, words))
     out = []
     for card in cards:
         buf = BytesIO()
@@ -65,7 +81,7 @@ def render_recap_cards(data: Mapping[str, Any], texts: Mapping[str, Any]) -> lis
 
 
 def _font(size: float, weight: int = 500) -> ImageFont.FreeTypeFont:
-    px = round(size * SCALE)
+    px = max(1, round(size * SCALE))
     key = (px, weight)
     if key not in _fonts:
         font = ImageFont.truetype(str(FONT_PATH), px)
@@ -78,53 +94,100 @@ def _s(value: float) -> int:
     return round(value * SCALE)
 
 
+def _clean(value: object) -> str:
+    # Manrope has no prime glyph; 76' is how most football graphics write it anyway.
+    return str(value or "").replace("′", "'")
+
+
 class Card:
     """Draws in 1200x675 units; everything is scaled on the way to the image."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self, glows: Sequence[tuple[tuple[int, int, int] | None, tuple[float, float]]]
+    ) -> None:
         self.image = Image.new("RGB", (_s(W), _s(H)), BG)
+        self._backdrop(glows)
         self.draw = ImageDraw.Draw(self.image)
+
+    def _backdrop(
+        self, glows: Sequence[tuple[tuple[int, int, int] | None, tuple[float, float]]]
+    ) -> None:
+        layer = Image.new("RGBA", self.image.size, (0, 0, 0, 0))
+        pen = ImageDraw.Draw(layer)
+        for colour, (cx, cy) in glows:
+            if colour is None:
+                continue
+            r = 230
+            pen.ellipse([_s(cx - r), _s(cy - r), _s(cx + r), _s(cy + r)], fill=(*colour, 72))
+        layer = layer.filter(ImageFilter.GaussianBlur(_s(70)))
+        self.image.paste(layer, (0, 0), layer)
+        pitch = ImageDraw.Draw(self.image)
+        width = _s(2)
+        pitch.line([(_s(600), 0), (_s(600), _s(H))], fill=PITCH, width=width)
+        pitch.ellipse([_s(490), _s(227), _s(710), _s(447)], outline=PITCH, width=width)
+        for x0, x1, y0, y1 in (
+            (-2, 168, 157, 517),
+            (1032, 1202, 157, 517),
+            (-2, 58, 247, 427),
+            (1142, 1202, 247, 427),
+        ):
+            pitch.rectangle([_s(x0), _s(y0), _s(x1), _s(y1)], outline=PITCH, width=width)
 
     def text(
         self,
         xy: tuple[float, float],
-        value: str,
+        value: object,
         *,
         size: float,
         weight: int = 500,
         fill: tuple[int, int, int] = INK,
         anchor: str = "la",
     ) -> float:
-        """Draws one line; returns its width in card units."""
         font = _font(size, weight)
         clean = _clean(value)
         self.draw.text((_s(xy[0]), _s(xy[1])), clean, font=font, fill=fill, anchor=anchor)
         return font.getlength(clean) / SCALE
 
-    def width(self, value: str, *, size: float, weight: int = 500) -> float:
-        return _font(size, weight).getlength(_clean(value)) / SCALE
-
-    def wrap(
+    def caps(
         self,
         xy: tuple[float, float],
-        value: str,
+        value: object,
+        *,
+        size: float,
+        fill: tuple[int, int, int],
+        anchor: str = "l",
+    ) -> float:
+        """Uppercase with a little tracking, the way small labels are set."""
+        word = _clean(value).upper()
+        track = size * 0.09
+        total = sum(self.width(ch, size=size, weight=800) + track for ch in word) - track
+        x, y = xy
+        if anchor == "r":
+            x -= total
+        elif anchor == "m":
+            x -= total / 2
+        for ch in word:
+            x += self.text((x, y), ch, size=size, weight=800, fill=fill) + track
+        return total
+
+    def width(self, value: object, *, size: float, weight: int = 500) -> float:
+        return _font(size, weight).getlength(_clean(value)) / SCALE
+
+    def fit(
+        self, value: object, *, width: float, size: float, weight: int, smallest: float
+    ) -> float:
+        """The largest size up to `size` at which one line fits `width`."""
+        natural = self.width(value, size=size, weight=weight)
+        return size if natural <= width else max(smallest, size * width / natural)
+
+    def lines(
+        self,
+        value: object,
         *,
         width: float,
         size: float,
         weight: int = 500,
-        fill: tuple[int, int, int] = INK,
-        leading: float = 1.45,
         max_lines: int | None = None,
-    ) -> float:
-        """Word-wrapped paragraph; returns the y just below it."""
-        x, y = xy
-        for line in self.lines(value, width=width, size=size, weight=weight, max_lines=max_lines):
-            self.text((x, y), line, size=size, weight=weight, fill=fill)
-            y += size * leading
-        return y
-
-    def lines(
-        self, value: str, *, width: float, size: float, weight: int, max_lines: int | None = None
     ) -> list[str]:
         out: list[str] = []
         for para in _clean(value).split("\n"):
@@ -136,11 +199,36 @@ class Card:
                     current = word
                 else:
                     current = trial
-            out.append(current)
+            if current:
+                out.append(current)
         if max_lines is not None and len(out) > max_lines:
             out = out[:max_lines]
             out[-1] = out[-1].rstrip(".,;:") + "…"
         return out
+
+    def wrap(
+        self,
+        xy: tuple[float, float],
+        value: object,
+        *,
+        width: float,
+        size: float,
+        weight: int = 500,
+        fill: tuple[int, int, int] = INK,
+        leading: float = 1.45,
+        max_lines: int | None = None,
+        align: str = "l",
+    ) -> float:
+        x, y = xy
+        for line in self.lines(value, width=width, size=size, weight=weight, max_lines=max_lines):
+            if align == "m":
+                self.text(
+                    (x + width / 2, y), line, size=size, weight=weight, fill=fill, anchor="ma"
+                )
+            else:
+                self.text((x, y), line, size=size, weight=weight, fill=fill)
+            y += size * leading
+        return y
 
     def rect(
         self,
@@ -154,14 +242,21 @@ class Card:
             [_s(v) for v in box], radius=_s(radius), fill=fill, outline=outline, width=_s(1)
         )
 
+    def tile(self, box: tuple[float, float, float, float], radius: float = 18) -> None:
+        x0, y0, x1, y1 = box
+        shadow = Image.new("RGBA", self.image.size, (0, 0, 0, 0))
+        ImageDraw.Draw(shadow).rounded_rectangle(
+            [_s(x0), _s(y0 + 6), _s(x1), _s(y1 + 6)], radius=_s(radius), fill=(30, 30, 20, 26)
+        )
+        shadow = shadow.filter(ImageFilter.GaussianBlur(_s(10)))
+        self.image.paste(shadow, (0, 0), shadow)
+        self.draw = ImageDraw.Draw(self.image)
+        self.rect(box, fill=TILE, outline=TILE_LINE, radius=radius)
+
     def hline(self, y: float, x0: float = PAD, x1: float = W - PAD) -> None:
         self.draw.line([(_s(x0), _s(y)), (_s(x1), _s(y))], fill=LINE, width=_s(1))
 
-    def vline(self, x: float, y0: float, y1: float) -> None:
-        self.draw.line([(_s(x), _s(y0)), (_s(x), _s(y1))], fill=LINE, width=_s(1))
-
     def hatch(self, box: tuple[float, float, float, float], *, radius: float) -> None:
-        """Diagonal stripes clipped to a rounded box: the "no goal" fill."""
         x0, y0, x1, y1 = (_s(v) for v in box)
         if x1 - x0 < 2:
             return
@@ -182,28 +277,63 @@ class Card:
             [_s(cx - radius), _s(cy - radius), _s(cx + radius), _s(cy + radius)], fill=fill
         )
 
+    def paste(self, image: Image.Image, xy: tuple[float, float]) -> None:
+        self.image.paste(image, (_s(xy[0]), _s(xy[1])), image)
+
+
+# ---------------------------------------------------------------- crests
+
+
+@lru_cache(maxsize=256)
+def _crest_source(url: str, name: str) -> tuple[Image.Image, tuple[int, int, int] | None]:
+    try:
+        return banner._crest(url, name)
+    except Exception:  # noqa: BLE001 - a missing crest never stops a recap
+        logger.debug("crest failed for %s", name)
+        return banner._letter_badge(name), None
+
+
+def _crest(url: object, name: object, size: float) -> Image.Image:
+    logo, _ = _crest_source(str(url or ""), str(name or ""))
+    px = _s(size)
+    return logo.resize((px, px), Image.Resampling.LANCZOS)
+
+
+def _colour(url: object, name: object) -> tuple[int, int, int] | None:
+    return _crest_source(str(url or ""), str(name or ""))[1]
+
+
+def _flagged_colour(call: Mapping[str, Any] | None) -> tuple[int, int, int] | None:
+    if not call:
+        return None
+    side = call.get("team") or "home"
+    return _colour(call.get(f"{side}_logo"), call.get(side))
+
 
 # ---------------------------------------------------------------- shared parts
 
 
-def _header(card: Card, data: Mapping[str, Any]) -> None:
+def _header(card: Card, words: Mapping[str, str]) -> None:
     mark = _mark(38)
     if mark is not None:
-        card.image.paste(mark, (_s(PAD), _s(32)), mark)
-    card.text((PAD + 50, 51), "Kalchas", size=22, weight=800, anchor="lm")
-    span = f" · {_week_span(data)}"
-    span_w = card.width(span, size=16, weight=500)
-    card.text((W - PAD, 51), span, size=16, weight=500, fill=INK2, anchor="rm")
-    card.text((W - PAD - span_w, 51), "The week in signals", size=16, weight=700, anchor="rm")
-    card.hline(84)
+        card.paste(mark, (PAD, 31))
+    card.text((PAD + 50, 50), "Kalchas", size=22, weight=800, anchor="lm")
+    dates = words.get("period_dates", "")
+    tail = f" · {dates}" if dates else ""
+    tail_w = card.text((W - PAD, 50), tail, size=16, fill=INK2, anchor="rm") if tail else 0
+    card.text(
+        (W - PAD - tail_w, 50), words.get("period_label", ""), size=16, weight=700, anchor="rm"
+    )
+    card.hline(83)
 
 
 def _footer(card: Card, note: str) -> None:
-    card.hline(H - 52)
-    card.text((PAD, H - 26), note, size=16, weight=500, fill=INK2, anchor="lm")
-    card.text((W - PAD, H - 26), "kalchas.live", size=16, weight=700, anchor="rm")
+    card.hline(FOOT_Y)
+    card.text((PAD, H - 26), note, size=16, fill=INK2, anchor="lm")
+    card.text((W - PAD, H - 26), "kalchas.live", size=16, weight=800, anchor="rm")
 
 
+@lru_cache(maxsize=4)
 def _mark(size: float) -> Image.Image | None:
     try:
         mark = Image.open(MARK_PATH).convert("RGBA")
@@ -217,265 +347,357 @@ def _mark(size: float) -> Image.Image | None:
     return mark
 
 
+def _headline(card: Card, words: Mapping[str, str], *, x: float, y: float, width: float) -> float:
+    number = words.get("headline_number", "")
+    size = card.fit(number, width=width, size=72, weight=800, smallest=40)
+    card.text((x, y), number, size=size, weight=800, fill=GOAL)
+    y += size * 1.04
+    return card.wrap(
+        (x, y),
+        words.get("headline_rest", ""),
+        width=width,
+        size=30,
+        weight=800,
+        leading=1.12,
+        max_lines=2,
+    )
+
+
 def _timeline(
     card: Card,
     box: tuple[float, float, float],
     *,
-    signal: int,
+    flags: Sequence[int],
     goal: int | None,
     height: float = 10,
 ) -> None:
-    """A 0-90 bar: a tick where we posted, green to the goal, hatched if none came."""
+    """A 0-90 strip: a tick for each signal, green to the goal, hatched if none came."""
     x0, x1, cy = box
-    span = x1 - x0
 
     def at(minute: float) -> float:
-        return x0 + span * max(0.0, min(minute, 90)) / 90
+        return x0 + (x1 - x0) * max(0.0, min(minute, 90)) / 90
 
     top, bottom = cy - height / 2, cy + height / 2
     card.rect((x0, top, x1, bottom), fill=TRACK, radius=height / 2)
-    half = at(45)
-    card.draw.line([(_s(half), _s(top - 3)), (_s(half), _s(bottom + 3))], fill=MISS, width=_s(1))
+    card.draw.line(
+        [(_s(at(45)), _s(top - 3)), (_s(at(45)), _s(bottom + 3))], fill=MISS, width=_s(1)
+    )
+    first = min(flags) if flags else 0
     if goal is None:
-        card.hatch((at(signal), top, x1, bottom), radius=height / 2)
+        card.hatch((at(first), top, x1, bottom), radius=height / 2)
     else:
         card.rect(
-            (at(signal), top, max(at(goal), at(signal) + 8), bottom), fill=GOAL, radius=height / 2
+            (at(first), top, max(at(goal), at(first) + 8), bottom), fill=GOAL, radius=height / 2
         )
-    card.rect((at(signal) - 1.5, top - 5, at(signal) + 1.5, bottom + 5), fill=INK, radius=1.5)
+    for minute in flags:
+        card.rect((at(minute) - 1.5, top - 5, at(minute) + 1.5, bottom + 5), fill=INK, radius=1.5)
     if goal is not None:
-        card.dot((at(goal), cy), 11, BG)
-        card.dot((at(goal), cy), 8, GOAL)
+        card.dot((at(goal), cy), 10, BG)
+        card.dot((at(goal), cy), 7.5, GOAL)
 
 
-# ---------------------------------------------------------------- cover
+def _versus(
+    card: Card,
+    call: Mapping[str, Any],
+    *,
+    cx: float,
+    y: float,
+    crest: float,
+    spread: float,
+    score_size: float,
+    name_size: float = 15,
+    name_width: float = 130,
+    minute_label: str = "",
+) -> float:
+    """Crest, score, crest; names under the crests, the flagged side underlined in green."""
+    flagged = call.get("team")
+    score = _clean(call.get("settle_score") or call.get("fire_score") or "")
+    card.text((cx, y + crest / 2), score, size=score_size, weight=800, anchor="mm")
+    if minute_label:
+        card.text(
+            (cx, y + crest / 2 + score_size * 0.62),
+            minute_label,
+            size=12,
+            weight=700,
+            fill=MUTED,
+            anchor="ma",
+        )
+    bottom = y + crest
+    for side, centre in (("home", cx - spread), ("away", cx + spread)):
+        card.paste(_crest(call.get(f"{side}_logo"), call.get(side), crest), (centre - crest / 2, y))
+        ny = y + crest + 8
+        is_flag = side == flagged
+        end = card.wrap(
+            (centre - name_width / 2, ny),
+            call.get(side),
+            width=name_width,
+            size=name_size,
+            weight=700,
+            fill=INK if is_flag else INK2,
+            leading=1.2,
+            max_lines=2,
+            align="m",
+        )
+        if is_flag:
+            card.rect((centre - 13, end + 3, centre + 13, end + 6), fill=GOAL, radius=1.5)
+            end += 6
+        bottom = max(bottom, end)
+    return bottom
 
 
-def _cover(data: Mapping[str, Any], texts: Mapping[str, Any]) -> Card:
-    card = Card()
-    _header(card, data)
-    left, right = PAD, 460
+def _goal_label(call: Mapping[str, Any]) -> str:
+    return f"{call.get('goal_minute')}'" if call.get("goal_minute") is not None else ""
 
-    card.text((left, 112), "EVERY SIGNAL WE SENT", size=14, weight=700, fill=GOAL)
-    settled = int(data["goals"]) + int(data["misses"])
-    lead = f"{data['goals']} of {settled}"
-    y = 138.0
-    # A busy week ("273 of 516") is wider than the column: shrink to fit, never spill.
-    natural = card.width(f"{lead} signals", size=50, weight=800) + 12
-    size = min(50.0, 50.0 * 360 / natural)
-    lead_w = card.text((left, y), lead, size=size, weight=800, fill=GOAL)
-    card.text((left + lead_w + 12 * size / 50, y), "signals", size=size, weight=800)
-    card.text((left, y + size * 1.02), "found a goal", size=size, weight=800)
-    y = card.wrap(
-        (left, y + size * 2.44),
-        str(texts.get("cover_line") or ""),
-        width=360,
-        size=20,
-        fill=INK2,
-        max_lines=3,
-    )
 
-    facts = _facts(data)
-    fy = max(y + 18, 440.0)
-    for label, value in facts:
-        card.hline(fy, left, left + 360)
-        card.text((left, fy + 20), label, size=16, fill=INK2, anchor="lm")
-        card.text((left + 360, fy + 20), value, size=16, weight=700, anchor="rm")
-        fy += 40
+# ---------------------------------------------------------------- weekly: cover
+
+
+def _cover(data: Mapping[str, Any], words: Mapping[str, str]) -> Card:
+    calls = data.get("calls") or []
+    feature = calls[0] if calls else None
+    card = Card([(_flagged_colour(feature), (60, 600)), (GOAL, (1130, 40))])
+    _header(card, words)
+    left, lw, right = PAD, 400.0, 496.0
+
+    card.caps((left, 112), words.get("kicker", ""), size=14, fill=GOAL)
+    y = _headline(card, words, x=left, y=134, width=lw)
+    card.wrap((left, y + 8), words.get("cover_line", ""), width=lw, size=18, fill=INK2, max_lines=3)
+
+    if feature:
+        top, bottom = 440.0, 605.0
+        card.tile((left, top, left + lw, bottom), radius=16)
+        card.caps((left + 18, top + 20), words.get("feature_label", ""), size=12, fill=MUTED)
+        card.caps(
+            (left + lw - 18, top + 20), words.get("feature_tag", ""), size=12, fill=GOAL, anchor="r"
+        )
+        end = _versus(
+            card,
+            feature,
+            cx=left + lw / 2,
+            y=top + 42,
+            crest=50,
+            spread=110,
+            score_size=32,
+            name_size=13,
+            minute_label=_goal_label(feature),
+        )
+        card.wrap(
+            (left + 18, end + 8),
+            words.get("feature_line", ""),
+            width=lw - 36,
+            size=15,
+            weight=600,
+            leading=1.35,
+            max_lines=2,
+            align="m",
+        )
 
     # How long until the goal
-    card.text((right, 112), "How long until the goal", size=16, weight=700)
-    card.text((W - PAD, 112), f"{data['total']} signals", size=14, fill=INK2, anchor="ra")
+    card.text((right, 112), words.get("waits_title", ""), size=16, weight=800)
+    card.text((W - PAD, 114), f"{data['total']} signals", size=14, fill=INK2, anchor="ra")
     waits = [(w["label"], int(w["count"]), True) for w in data.get("waits") or []]
     waits.append(("No goal", int(data["misses"]), False))
     most = max([n for _, n, _ in waits] + [1])
-    bar_x0, bar_x1 = right + 134, W - PAD - 54
-    by = 150.0
+    bar_x0, bar_x1 = right + 130, W - PAD - 52
+    by = 152.0
     for label, n, is_goal in waits:
         card.text(
-            (right, by), label, size=15, weight=500, fill=INK if is_goal else MUTED, anchor="lm"
+            (right, by), label, size=15, weight=600, fill=INK if is_goal else MUTED, anchor="lm"
         )
-        card.rect((bar_x0, by - 9, bar_x1, by + 9), fill=TRACK, radius=5)
+        card.rect((bar_x0, by - 9, bar_x1, by + 9), fill=TRACK, radius=6)
         end = bar_x0 + (bar_x1 - bar_x0) * n / most
-        if n:
-            if is_goal:
-                card.rect((bar_x0, by - 9, end, by + 9), fill=GOAL, radius=5)
-            else:
-                card.hatch((bar_x0, by - 9, end, by + 9), radius=5)
+        if n and is_goal:
+            card.rect((bar_x0, by - 9, end, by + 9), fill=GOAL, radius=6)
+        elif n:
+            card.hatch((bar_x0, by - 9, end, by + 9), radius=6)
         card.text(
-            (W - PAD, by), str(n), size=15, weight=700, fill=INK if is_goal else MUTED, anchor="rm"
+            (W - PAD, by), str(n), size=15, weight=800, fill=INK if is_goal else MUTED, anchor="rm"
         )
         by += 30
-    if data["goals"]:
-        say = f"{data['within_10']} of the {data['goals']} goals"
-        say_w = card.text((right, by + 2), say, size=15, weight=700)
-        card.text(
-            (right + say_w + 5, by + 2), "came within 10 minutes of the signal.", size=15, fill=INK2
-        )
+    card.wrap(
+        (right, by - 4),
+        words.get("waits_note", ""),
+        width=W - PAD - right,
+        size=15,
+        fill=INK2,
+        max_lines=2,
+    )
 
     # Day by day
-    dy = by + 46
-    card.text((right, dy), "Day by day", size=16, weight=700)
-    card.text((W - PAD, dy), "goals / signals", size=14, fill=INK2, anchor="ra")
+    dy = by + 44
+    card.text((right, dy), words.get("days_title", ""), size=16, weight=800)
+    card.text((W - PAD, dy + 2), "goals / signals", size=14, fill=INK2, anchor="ra")
     days = data.get("days") or []
     busiest = max([int(d["total"]) for d in days] + [1])
-    col_w, col_h = 44.0, 104.0
+    best = (data.get("best_day") or {}).get("day")
+    col_w, col_h = 46.0, 100.0
     span = (W - PAD - right) / max(len(days), 1)
     top = dy + 32
     for index, day in enumerate(days):
         cx = right + span * index + span / 2
         x0, x1 = cx - col_w / 2, cx + col_w / 2
-        card.rect((x0, top, x1, top + col_h), fill=TRACK, radius=6)
+        card.rect((x0, top, x1, top + col_h), fill=TRACK, radius=7)
         goals, total = int(day["goals"]), int(day["total"])
-        g_h = col_h * goals / busiest
-        m_h = col_h * (total - goals) / busiest
+        g_h, m_h = col_h * goals / busiest, col_h * (total - goals) / busiest
         if m_h:
-            card.hatch((x0, top + col_h - g_h - m_h, x1, top + col_h - g_h), radius=4)
+            card.hatch((x0, top + col_h - g_h - m_h, x1, top + col_h - g_h), radius=5)
         if g_h:
-            card.rect((x0, top + col_h - g_h, x1, top + col_h), fill=GOAL, radius=6)
-        card.text((cx, top + col_h + 8), f"{goals}/{total}", size=15, weight=700, anchor="ma")
+            card.rect((x0, top + col_h - g_h, x1, top + col_h), fill=GOAL, radius=7)
+        card.text(
+            (cx, top + col_h + 8),
+            f"{goals}/{total}",
+            size=15,
+            weight=800,
+            fill=GOAL if day["day"] == best else INK,
+            anchor="ma",
+        )
         card.text((cx, top + col_h + 28), str(day["day"]), size=13, fill=MUTED, anchor="ma")
 
-    _footer(card, "Every signal is posted live, before the goal.")
+    _footer(card, words.get("cover_footer", ""))
     return card
 
 
-def _facts(data: Mapping[str, Any]) -> list[tuple[str, str]]:
-    out = []
-    if data.get("fastest") is not None:
-        fastest = int(data["fastest"])
-        out.append(
-            (
-                "Fastest goal",
-                "Same minute as the signal"
-                if fastest == 0
-                else f"{_mins(fastest)} after the signal",
-            )
-        )
-    if data.get("average_wait") is not None:
-        out.append(("Average wait for a goal", f"{data['average_wait']} min"))
-    worst = data.get("worst_day")
-    if worst:
-        out.append(
-            ("Toughest day", f"{_day_name(worst['day'])}, {worst['goals']} of {worst['total']}")
-        )
-    return out
+# ---------------------------------------------------------------- weekly: the calls
 
 
-# ---------------------------------------------------------------- calls
+def _calls(data: Mapping[str, Any], words: Mapping[str, str]) -> Card:
+    calls: Sequence[Mapping[str, Any]] = data["calls"][:3]
+    card = Card([(_flagged_colour(calls[0]), (40, 640)), (GOAL, (1140, 30))])
+    _header(card, words)
+    card.text((PAD, 104), words.get("calls_title", ""), size=40, weight=800)
+    card.text((W - PAD, 126), words.get("calls_sub", ""), size=16, fill=INK2, anchor="rm")
 
-
-def _calls(data: Mapping[str, Any], texts: Mapping[str, Any]) -> Card:
-    card = Card()
-    _header(card, data)
-    calls: Sequence[Mapping[str, Any]] = data["calls"]
-    stories: Sequence[str] = texts.get("calls") or []
-    title = "Three we got right" if len(calls) == 3 else "What we got right"
-    card.text((PAD, 108), title, size=40, weight=800)
-    card.text(
-        (W - PAD, 126),
-        "The side we flagged scored, soon after the signal.",
-        size=16,
-        fill=INK2,
-        anchor="rm",
-    )
-
-    col_w = (W - 2 * PAD) / len(calls)
+    gap_x = 18.0
+    tile_w = (W - 2 * PAD - gap_x * (len(calls) - 1)) / len(calls)
+    top, bottom = 166.0, 605.0
     for index, call in enumerate(calls):
-        x = PAD + col_w * index + (30 if index else 0)
-        inner = col_w - (60 if index else 30)
-        if index:
-            card.vline(PAD + col_w * index, 180, H - 76)
+        x0 = PAD + index * (tile_w + gap_x)
+        x1 = x0 + tile_w
+        inner = tile_w - 40
+        card.tile((x0, top, x1, bottom))
+        card.caps(
+            (x0 + tile_w / 2, top + 18), call.get("league") or "", size=11, fill=MUTED, anchor="m"
+        )
+        end = _versus(
+            card,
+            call,
+            cx=x0 + tile_w / 2,
+            y=top + 42,
+            crest=66,
+            spread=tile_w * 0.3,
+            score_size=38,
+            name_width=tile_w * 0.38,
+            minute_label=_goal_label(call),
+        )
         gap = int(call.get("gap") or 0)
-        num_w = card.text((x, 182), f"{gap} min", size=50, weight=800, fill=GOAL)
-        card.text((x + num_w + 10, 210), "from signal to goal", size=16, fill=INK2)
-        _timeline(
-            card, (x, x + inner, 268), signal=int(call["minute"]), goal=call.get("goal_minute")
+        flags = call.get("flags") or [call["minute"]]
+        big = "Same min" if gap == 0 else f"{gap} min"
+        label = (
+            "as the signal"
+            if gap == 0
+            else ("after the last signal" if len(flags) > 1 else "after the signal")
         )
-        when_w = card.text((x, 286), "Signal ", size=15, fill=INK2)
-        when_w += card.text((x + when_w, 286), f"{call['minute']}'", size=15, weight=700)
-        when_w += card.text((x + when_w, 286), "  →  Goal ", size=15, fill=INK2)
-        card.text((x + when_w, 286), f"{call.get('goal_minute')}'", size=15, weight=700)
-        y = card.wrap(
-            (x, 322),
-            f"{call['home']} v {call['away']}",
+        by = end + 22
+        big_w = card.text((x0 + 20, by), big, size=32, weight=800, fill=GOAL)
+        card.text((x0 + 20 + big_w + 8, by + 15), label, size=14, fill=INK2)
+        _timeline(card, (x0 + 20, x1 - 20, by + 56), flags=flags, goal=call.get("goal_minute"))
+        signal_text = "Signal " if len(flags) == 1 else "Signals "
+        sw = card.text((x0 + 20, by + 70), signal_text, size=14, fill=INK2)
+        card.text((x0 + 20 + sw, by + 70), " ".join(f"{m}'" for m in flags), size=14, weight=800)
+        gw = card.text(
+            (x1 - 20, by + 70), f"{call.get('goal_minute')}'", size=14, weight=800, anchor="ra"
+        )
+        card.text((x1 - 20 - gw, by + 70), "Goal ", size=14, fill=INK2, anchor="ra")
+        story_y = by + 98
+        max_lines = max(2, int((bottom - 14 - story_y) / (17 * 1.45)))
+        card.wrap(
+            (x0 + 20, story_y),
+            words.get(f"call_{index + 1}", ""),
             width=inner,
-            size=24,
-            weight=700,
-            leading=1.2,
-            max_lines=2,
+            size=17,
+            max_lines=max_lines,
         )
-        card.text((x, y + 2), str(call.get("league") or ""), size=14, fill=MUTED)
-        story = stories[index] if index < len(stories) else ""
-        card.wrap((x, y + 32), story, width=inner, size=18, leading=1.5, max_lines=6)
 
-    _footer(card, str(texts.get("honourable") or "Every signal is posted live, before the goal."))
+    _footer(card, words.get("calls_footer", ""))
     return card
 
 
-# ---------------------------------------------------------------- miss
+# ---------------------------------------------------------------- weekly: the miss
 
 
-def _miss(data: Mapping[str, Any], texts: Mapping[str, Any]) -> Card:
-    card = Card()
-    _header(card, data)
+def _miss(data: Mapping[str, Any], words: Mapping[str, str]) -> Card:
     miss: Mapping[str, Any] = data["miss"]
-    left_w, right = 640.0, 752.0
+    card = Card(
+        [
+            (_colour(miss.get("home_logo"), miss.get("home")), (40, 640)),
+            (_colour(miss.get("away_logo"), miss.get("away")), (1150, 20)),
+        ]
+    )
+    _header(card, words)
+    left_w, right = 650.0, 752.0
 
-    card.text((PAD, 112), "THE ONE THAT GOT AWAY", size=14, weight=700, fill=RED)
-    y = card.wrap(
-        (PAD, 136),
-        f"{miss['home']} v {miss['away']}",
-        width=left_w,
-        size=42,
-        weight=800,
-        leading=1.12,
-        max_lines=2,
+    card.caps((PAD, 112), words.get("miss_kicker", ""), size=14, fill=RED)
+    crest = 64.0
+    y = 136.0
+    card.paste(_crest(miss.get("home_logo"), miss.get("home"), crest), (PAD, y))
+    score = _clean(miss.get("settle_score") or miss.get("fire_score") or "")
+    score_w = card.width(score, size=28, weight=800)
+    card.text((PAD + crest + 12, y + crest / 2), score, size=28, weight=800, anchor="lm")
+    away_x = PAD + crest + 24 + score_w
+    card.paste(_crest(miss.get("away_logo"), miss.get("away"), crest), (away_x, y))
+    title_x = away_x + crest + 22
+    title_w = PAD + left_w - title_x
+    title = f"{miss.get('home')} v {miss.get('away')}"
+    size = card.fit(title, width=title_w, size=32, weight=800, smallest=22)
+    end = card.wrap(
+        (title_x, y + 4), title, width=title_w, size=size, weight=800, leading=1.1, max_lines=2
     )
     meta = " · ".join(
         p for p in (miss.get("league"), f"Signal at {miss['minute']}'", "No goal") if p
     )
-    card.text((PAD, y + 4), meta, size=16, fill=INK2)
-    _timeline(card, (PAD, PAD + left_w, y + 46), signal=int(miss["minute"]), goal=None)
+    card.wrap((title_x, end + 2), meta, width=title_w, size=14, fill=INK2, max_lines=1)
+
+    y = max(y + crest, end + 22) + 20
+    _timeline(card, (PAD, PAD + left_w, y), flags=miss.get("flags") or [miss["minute"]], goal=None)
     y = card.wrap(
-        (PAD, y + 68), str(texts.get("miss") or ""), width=left_w, size=20, leading=1.5, max_lines=5
+        (PAD, y + 22), words.get("miss", ""), width=left_w, size=19, leading=1.5, max_lines=5
     )
-    lesson = str(texts.get("lesson") or "").strip()
+
+    lesson = words.get("lesson", "").strip()
     if lesson:
         lines = card.lines(lesson, width=left_w - 36, size=20, weight=700, max_lines=3)
-        box_h = 48 + 27 * len(lines)
-        top = min(y + 14, H - 70 - box_h)
-        card.rect((PAD, top, PAD + left_w, top + box_h), fill=TRACK, radius=10)
-        card.text((PAD + 18, top + 16), "WHAT WE LEARNED", size=12, weight=700, fill=INK2)
+        box_h = 46 + 27 * len(lines)
+        top = min(y + 14, FOOT_Y - 16 - box_h)
+        card.tile((PAD, top, PAD + left_w, top + box_h), radius=14)
+        card.caps((PAD + 18, top + 16), words.get("lesson_label", ""), size=12, fill=MUTED)
         for i, line in enumerate(lines):
-            card.text((PAD + 18, top + 38 + 27 * i), line, size=20, weight=700)
+            card.text((PAD + 18, top + 36 + 27 * i), line, size=20, weight=700)
 
-    card.vline(right - 30, 112, H - 76)
     readout = _readout(miss)
+    ry = 112.0
     if readout:
-        big, small = readout
-        big_w = card.text((right, 106), big, size=60, weight=800)
+        big_w = card.text((right, ry - 6), readout, size=58, weight=800)
         card.wrap(
-            (right + big_w + 16, 118),
-            f"{small} at {miss['minute']}'. Our most confident signal this week.",
+            (right + big_w + 16, ry + 4),
+            words.get("readout_note", ""),
             width=W - PAD - right - big_w - 16,
             size=15,
             fill=INK2,
             leading=1.35,
             max_lines=3,
         )
-    _compare(card, miss, x0=right, x1=W - PAD, y=210)
-    _footer(card, "We post the misses too.")
+        ry += 82
+    card.hline(ry, right, W - PAD)
+    _compare(card, miss, x0=right, x1=W - PAD, y=ry + 18)
+    _footer(card, words.get("miss_footer", ""))
     return card
 
 
-def _readout(miss: Mapping[str, Any]) -> tuple[str, str] | None:
+def _readout(miss: Mapping[str, Any]) -> str | None:
     value = miss.get("value")
-    keys = miss.get("strategies") or []
-    for key in keys:
-        if key in STRATEGY_READOUT and value is not None:
-            fmt, label = STRATEGY_READOUT[key]
-            return fmt.format(v=float(value)), label
+    for key in miss.get("strategies") or []:
+        if key in READOUT and value is not None:
+            return READOUT[key].format(v=float(value))
     return None
 
 
@@ -484,21 +706,18 @@ def _compare(card: Card, miss: Mapping[str, Any], *, x0: float, x1: float, y: fl
     stats = miss.get("stats") or []
     if not stats:
         return
-    card.hline(y - 14, x0, x1)
-    card.text((x0, y), str(miss.get("team_name") or ""), size=14, weight=700)
-    card.text(
-        (x1, y), str(miss.get("other_name") or ""), size=14, weight=700, fill=INK2, anchor="ra"
-    )
+    card.text((x0, y), miss.get("team_name") or "", size=14, weight=800)
+    card.text((x1, y), miss.get("other_name") or "", size=14, weight=800, fill=INK2, anchor="ra")
     mid = (x0 + x1) / 2
-    row_y = y + 38
+    row_y = y + 34
     for stat in stats[:5]:
         own, other = int(stat["own"]), int(stat["other"])
         unit = "%" if stat.get("percent") else ""
-        card.text((x0, row_y), f"{own}{unit}", size=16, weight=700)
-        card.text((mid, row_y), str(stat["label"]), size=15, fill=INK2, anchor="ma")
-        card.text((x1, row_y), f"{other}{unit}", size=16, weight=700, anchor="ra")
+        card.text((x0, row_y), f"{own}{unit}", size=16, weight=800)
+        card.text((mid, row_y), stat["label"], size=15, fill=INK2, anchor="ma")
+        card.text((x1, row_y), f"{other}{unit}", size=16, weight=800, anchor="ra")
         total = max(own + other, 1)
-        by = row_y + 28
+        by = row_y + 26
         card.rect((x0, by, mid - 3, by + 7), fill=TRACK, radius=3.5)
         card.rect((mid + 3, by, x1, by + 7), fill=TRACK, radius=3.5)
         own_w = (mid - 3 - x0) * own / total
@@ -515,29 +734,117 @@ def _compare(card: Card, miss: Mapping[str, Any], *, x0: float, x1: float, y: fl
                 fill=INK if other > own else MISS,
                 radius=3.5,
             )
-        row_y += 58
+        row_y += 54
 
 
-# ---------------------------------------------------------------- words
+# ---------------------------------------------------------------- daily
 
 
-def _clean(value: str) -> str:
-    # Manrope has no prime glyph; 76' is how most football graphics write it anyway.
-    return str(value).replace("′", "'")
+def _daily(data: Mapping[str, Any], words: Mapping[str, str]) -> Card:
+    calls: Sequence[Mapping[str, Any]] = (data.get("calls") or [])[:4]
+    card = Card([(_flagged_colour(calls[0] if calls else None), (40, 640)), (GOAL, (1140, 30))])
+    _header(card, words)
+    left, lw, right = PAD, 360.0, 452.0
+
+    card.caps((left, 112), words.get("kicker", ""), size=14, fill=GOAL)
+    y = _headline(card, words, x=left, y=134, width=lw)
+    y = card.wrap(
+        (left, y + 8), words.get("cover_line", ""), width=lw, size=18, fill=INK2, max_lines=3
+    )
+
+    settled = int(data["goals"]) + int(data["misses"])
+    ring_y = max(y + 24, 430.0)
+    _ring(card, (left + 56, ring_y + 56), 46, int(data["goals"]) / settled if settled else 0)
+    card.wrap(
+        (left + 132, ring_y + 18),
+        words.get("fastest_title", ""),
+        width=lw - 132,
+        size=19,
+        weight=800,
+        leading=1.2,
+        max_lines=2,
+    )
+    card.wrap(
+        (left + 132, ring_y + 46),
+        words.get("fastest_line", ""),
+        width=lw - 132,
+        size=15,
+        fill=INK2,
+        leading=1.35,
+        max_lines=3,
+    )
+
+    if calls:
+        top, bottom, gap = 108.0, 605.0, 10.0
+        row_h = min(124.0, (bottom - top - gap * (len(calls) - 1)) / len(calls))
+        for index, call in enumerate(calls):
+            y0 = top + index * (row_h + gap)
+            card.tile((right, y0, W - PAD, y0 + row_h), radius=16)
+            crest = 44.0
+            cy = y0 + row_h / 2
+            card.paste(
+                _crest(call.get("home_logo"), call.get("home"), crest), (right + 16, cy - crest / 2)
+            )
+            card.text(
+                (right + 16 + crest + 31, cy),
+                _clean(call.get("settle_score") or ""),
+                size=22,
+                weight=800,
+                anchor="mm",
+            )
+            card.paste(
+                _crest(call.get("away_logo"), call.get("away"), crest),
+                (right + 16 + crest + 62, cy - crest / 2),
+            )
+            tx = right + 16 + 2 * crest + 84
+            tw = W - PAD - 18 - tx
+            name = call.get("team_name") or f"{call.get('home')} v {call.get('away')}"
+            name_w = card.text((tx, y0 + 14), name, size=17, weight=800)
+            card.text(
+                (tx + name_w + 8, y0 + 17),
+                call.get("league") or "",
+                size=13,
+                weight=600,
+                fill=MUTED,
+            )
+            pill = f"{' '.join(str(m) + chr(39) for m in call.get('flags') or [call['minute']])} → {call.get('goal_minute')}'"
+            pill_w = card.width(pill, size=13, weight=800) + 20
+            card.rect(
+                (W - PAD - 18 - pill_w, y0 + 40, W - PAD - 18, y0 + 62), fill=GOAL_SOFT, radius=11
+            )
+            card.text(
+                (W - PAD - 18 - pill_w / 2, y0 + 51),
+                pill,
+                size=13,
+                weight=800,
+                fill=GOAL,
+                anchor="mm",
+            )
+            _timeline(
+                card,
+                (tx, W - PAD - 30 - pill_w, y0 + 51),
+                flags=call.get("flags") or [call["minute"]],
+                goal=call.get("goal_minute"),
+                height=8,
+            )
+            card.wrap(
+                (tx, y0 + 70),
+                words.get(f"call_{index + 1}", ""),
+                width=tw,
+                size=14.5,
+                fill=INK2,
+                leading=1.38,
+                max_lines=2 if row_h >= 110 else 1,
+            )
+
+    _footer(card, words.get("day_footer", ""))
+    return card
 
 
-def _mins(gap: Any) -> str:
-    n = int(gap or 0)
-    return "1 min" if n == 1 else f"{n} min"
-
-
-def _day_name(short: str) -> str:
-    names = {"Mon": "Monday", "Tue": "Tuesday", "Wed": "Wednesday", "Thu": "Thursday"}
-    names |= {"Fri": "Friday", "Sat": "Saturday", "Sun": "Sunday"}
-    return names.get(short, short)
-
-
-def _week_span(data: Mapping[str, Any]) -> str:
-    first = date.fromisoformat(str(data["week_start"]))
-    last = date.fromisoformat(str(data["week_end"]))
-    return f"{first:%a} {first.day} {first:%b} – {last:%a} {last.day} {last:%b}"
+def _ring(card: Card, center: tuple[float, float], radius: float, share: float) -> None:
+    cx, cy = center
+    box = [_s(cx - radius), _s(cy - radius), _s(cx + radius), _s(cy + radius)]
+    card.draw.ellipse(box, outline=TRACK, width=_s(12))
+    if share > 0:
+        card.draw.arc(box, start=-90, end=-90 + 360 * min(share, 1.0), fill=GOAL, width=_s(12))
+    card.text((cx, cy), f"{round(share * 100)}%", size=22, weight=800, anchor="mm")

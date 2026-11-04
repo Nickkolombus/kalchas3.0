@@ -1,6 +1,9 @@
 from datetime import UTC, date, datetime
 
 from kalchas_core.recap import (
+    DAY_FIELDS,
+    WEEK_FIELDS,
+    build_daily,
     build_recap,
     call_story,
     caption_text,
@@ -8,6 +11,7 @@ from kalchas_core.recap import (
     group_signals,
     miss_notes,
     miss_story,
+    normalize_texts,
     week_bounds,
 )
 
@@ -236,7 +240,7 @@ def test_stats_are_from_the_flagged_side():
 def test_drafts_leave_the_lesson_empty_and_caption_adds_it():
     data = recap()
     assert data["texts"]["lesson"] == ""
-    assert len(data["texts"]["calls"]) == 3
+    assert all(data["texts"][f"call_{i}"] for i in (1, 2, 3))
     caption = caption_text(data, lesson="Lower-league form doesn't travel.")
     assert "4 of 6 signals found a goal." in caption
     assert "Lower-league form doesn't travel." in caption
@@ -284,3 +288,55 @@ def test_a_goal_in_the_signal_minute_is_worded_as_such():
     assert data["texts"]["cover_line"] == "The quickest goal came the same minute as the signal."
     assert "goal the same minute as the signal" in data["texts"]["x"]
     assert call_story(data["calls"][0]).endswith("They scored that same minute.")
+
+
+def test_every_field_has_a_draft_so_every_word_is_editable():
+    week = recap()
+    day = build_daily([OLIMPIA, NOAH, FAR], day=date(2026, 10, 28))
+    assert {key for key, *_ in WEEK_FIELDS} <= set(week["texts"])
+    assert {key for key, *_ in DAY_FIELDS} <= set(day["texts"])
+    assert week["texts"]["headline_number"] == "4 of 6"
+    assert week["texts"]["period_dates"] == "Mon 26 Oct – Sun 1 Nov"
+
+
+def test_daily_has_up_to_four_calls_and_no_miss():
+    data = build_daily([OLIMPIA, NOAH, FAR, BRAGANTINO, KOZAKKEN], day=date(2026, 10, 28))
+    assert data["kind"] == "day" and data["days"] == []
+    assert data["miss"] is None
+    assert [c["match_id"] for c in data["calls"]] == ["noah", "olimpia", "far", "brag"]
+    texts = data["texts"]
+    assert texts["period_dates"] == "Wednesday 28 Oct"
+    assert texts["fastest_title"] == "Fastest: 1 min"
+    assert texts["call_1"] == "Two goals down. We posted at 79′; they scored a minute later."
+    assert "yesterday" in texts["x"]
+
+
+def test_one_call_per_match_naming_every_signal():
+    first = {**NOAH, "minute": 60, "detail": {**NOAH["detail"]}}
+    data = build_recap([first, NOAH], week_start=WEEK)
+    assert len(data["calls"]) == 1
+    assert data["calls"][0]["flags"] == [60, 79]
+    assert data["texts"]["feature_line"] == "Flagged at 60′ and 79′ while 2–0 down. Goal at 80′."
+    assert data["texts"]["call_1"].endswith("We flagged them at 60′ and 79′. The goal came at 80′.")
+
+
+def test_crests_come_from_the_signal():
+    row = {
+        **FAR,
+        "payload": {
+            **FAR["payload"],
+            "home_logo": "https://x/h.png",
+            "away_logo": "https://x/a.png",
+        },
+    }
+    call = build_recap([row], week_start=WEEK)["calls"][0]
+    assert (call["home_logo"], call["away_logo"]) == ("https://x/h.png", "https://x/a.png")
+
+
+def test_old_drafts_keep_their_words_under_the_new_fields():
+    data = recap()
+    old = {"calls": ["a", "b", "c"], "honourable": "Hon.", "lesson": "L.", "cover_line": "Mine."}
+    texts = normalize_texts(old, data)
+    assert (texts["call_1"], texts["call_3"], texts["calls_footer"]) == ("a", "c", "Hon.")
+    assert texts["cover_line"] == "Mine." and texts["lesson"] == "L."
+    assert texts["kicker"] == "Every signal we sent"

@@ -113,7 +113,8 @@ async def _maybe_draft(bot: Bot, pool: Any, targets: RecapTargets, now: datetime
     ended = start + timedelta(days=7)
     async with pool.acquire() as conn:
         existing = await conn.fetchrow(
-            "SELECT status, created_at FROM weekly_recaps WHERE week_start = $1", week
+            "SELECT status, created_at FROM weekly_recaps WHERE kind = 'week' AND week_start = $1",
+            week,
         )
         if existing is not None and not (
             existing["status"] == "draft" and existing["created_at"] < ended
@@ -162,7 +163,7 @@ async def _post_approved(bot: Bot, pool: Any, targets: RecapTargets) -> None:
         discord = await fetch_discord_settings(conn) if recap else {}
     if recap is None:
         return
-    week = recap["week_start"]
+    week, kind = recap["week_start"], str(recap.get("kind") or "week")
     log: dict[str, Any] = dict(recap.get("post_log") or {})
     try:
         images = await asyncio.to_thread(render_recap_cards, recap["data"], recap["texts"])
@@ -175,8 +176,10 @@ async def _post_approved(bot: Bot, pool: Any, targets: RecapTargets) -> None:
     wanted = [name for name, on in (recap.get("channels") or {}).items() if on]
     done = all(log.get(name, {}).get("ok") for name in wanted if name in _POSTERS)
     async with pool.acquire() as conn:
-        await finish_post(conn, week, status="posted" if done else "failed", post_log=log)
-    logger.info("weekly recap for %s: %s", week, "posted" if done else f"failed {log}")
+        await finish_post(
+            conn, week, status="posted" if done else "failed", post_log=log, kind=kind
+        )
+    logger.info("%s recap for %s: %s", kind, week, "posted" if done else f"failed {log}")
 
 
 async def post_recap(
