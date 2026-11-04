@@ -1294,9 +1294,9 @@ function ScoreDigit({
       <span className="score-roll-track">
         <span>{from}</span>
         <span className="is-goal">{shown}</span>
-        <span>{from}</span>
         <span className="is-goal">{shown}</span>
-        <span>{from}</span>
+        <span className="is-goal">{shown}</span>
+        <span className="is-goal">{shown}</span>
         <span className="is-goal">{shown}</span>
       </span>
     </div>

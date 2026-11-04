@@ -1305,7 +1305,9 @@ body {
   color: var(--text);
 }
 
-/* Six faces: old-new-old-new-old-new. Each step is one sixth of the track. */
+/* Six faces: old, then the new score five times. The first step is the goal;
+   the rest keep rolling onto the same new number, so the old score never comes
+   back. Each step is one sixth of the track. */
 @keyframes score-roll {
   0% {
     transform: translateY(0);
