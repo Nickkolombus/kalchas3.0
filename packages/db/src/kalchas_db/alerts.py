@@ -94,7 +94,7 @@ WHERE o.alert_id = a.id
     LIMIT $1
     FOR UPDATE OF o2 SKIP LOCKED
   )
-RETURNING o.alert_id, o.state, o.decision, o.detail, o.evaluated_at,
+RETURNING o.alert_id, o.state, o.decision, o.detail, o.evaluated_at, a.match_id,
           a.strategy_key, a.team, a.home_team, a.away_team, a.value, a.payload,
           a.telegram_message_id, a.telegram_free_message_id, a.minute, a.score,
           a.discord_message_id, a.discord_free_message_id, a.twitter_tweet_id

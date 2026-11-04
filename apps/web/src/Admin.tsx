@@ -8,6 +8,7 @@ import { AdminResults, type ResultsInsights, type StrategyMeta } from "./AdminRe
 import { AdminTips } from "./AdminTips";
 import { AdminVisitors } from "./AdminVisitors";
 import { AdminMessages } from "./AdminMessages";
+import { AdminAlertText } from "./AdminAlertText";
 
 type WeightRow = {
   key: string;
@@ -68,7 +69,7 @@ const DEFAULT_DISCORD: DiscordState = {
   paid_enabled: true,
 };
 
-type Page = "overview" | "messages" | "results" | "visitors" | "strategies" | "board" | "recap" | "tips" | "discord";
+type Page = "overview" | "messages" | "results" | "visitors" | "strategies" | "board" | "recap" | "wording" | "tips" | "discord";
 
 const PAGES: Record<Page, { group: string; title: string }> = {
   overview: { group: "Today", title: "Overview" },
@@ -78,6 +79,7 @@ const PAGES: Record<Page, { group: string; title: string }> = {
   strategies: { group: "Strategy", title: "Strategies" },
   board: { group: "Strategy", title: "Board filters" },
   recap: { group: "Distribution", title: "Recaps" },
+  wording: { group: "Distribution", title: "Alert text" },
   tips: { group: "Distribution", title: "Tips feed" },
   discord: { group: "Distribution", title: "Discord" },
 };
@@ -156,6 +158,7 @@ const ICONS: Record<Page, ReactNode> = {
     </>
   ),
   tips: <path d="M3 3h10v7H7l-3 3v-3H3z" />,
+  wording: <path d="M3 4h10M3 7.5h10M3 11h6M11 10l1.5 1.5L15 9" />,
   discord: <path d="M2 8h3l2-5 2 10 2-5h3" />,
   recap: (
     <>
@@ -565,6 +568,7 @@ export function AdminApp() {
         <NavItem page="board" on={page === "board"} onClick={() => go("board")} />
         <div className="adm-nav-group">Distribution</div>
         <NavItem page="recap" on={page === "recap"} onClick={() => go("recap")} />
+        <NavItem page="wording" on={page === "wording"} onClick={() => go("wording")} />
         <NavItem page="tips" on={page === "tips"} onClick={() => go("tips")} />
         <NavItem page="discord" on={page === "discord"} onClick={() => go("discord")} />
         <div className="adm-side-foot">
@@ -643,6 +647,7 @@ export function AdminApp() {
             />
           ) : null}
           {page === "recap" ? <AdminRecap api={api} /> : null}
+          {page === "wording" ? <AdminAlertText api={api} /> : null}
           {page === "tips" ? <AdminTips api={api} /> : null}
           {page === "discord" ? (
             <DiscordPage

@@ -183,6 +183,121 @@ def format_outcome_html(row: Mapping[str, Any]) -> str:
     return f"{head}\n<b>{short}</b>"
 
 
+def alert_blocks(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    with_score: bool = False,
+) -> dict[str, str]:
+    """The pieces ``format_alert_html`` / ``format_joint_html`` are made of, as HTML.
+
+    Keys: ``versus`` (match line, firing team bold), ``strategy_lines`` (one
+    line per strategy) and ``stats`` (the stat lines, empty when there are none).
+    Templates place these; the wording inside them stays here.
+    """
+    if not rows:
+        return {"versus": "", "strategy_lines": "", "stats": ""}
+    if len(rows) == 1:
+        row = rows[0]
+        payload = _payload(row.get("payload"))
+        home = _esc(row.get("home_team"))
+        away = _esc(row.get("away_team"))
+        key = str(row.get("strategy_key") or "")
+        short = _esc(short_label_for(key))
+        name = _esc(ALERT_NAMES.get(key) or short)
+        side = _trigger_side(row, payload)
+        trigger = _trigger_name(side, home, away)
+        return {
+            "versus": _versus_line(
+                side,
+                home,
+                away,
+                _minute(row.get("minute")),
+                with_score=with_score,
+                score=row.get("score"),
+            ),
+            "strategy_lines": _title_line(short, name, row, key, payload, trigger=trigger),
+            "stats": "\n".join(_stat_block(key, payload, row.get("minute"))),
+        }
+    ordered = sorted(rows, key=_strategy_sort_key)
+    first = ordered[0]
+    merged = _merged_payload(ordered)
+    home = _esc(first.get("home_team"))
+    away = _esc(first.get("away_team"))
+    sides = {_trigger_side(row, _payload(row.get("payload"))) for row in ordered}
+    sides.discard("")
+    titles: list[str] = []
+    for row in ordered:
+        row_payload = _payload(row.get("payload"))
+        key = str(row.get("strategy_key") or "")
+        short = _esc(short_label_for(key))
+        name = _esc(ALERT_NAMES.get(key) or short)
+        trigger = _trigger_name(_trigger_side(row, row_payload), home, away)
+        titles.append(_title_line(short, name, row, key, row_payload, trigger=trigger))
+    span = joint_window_span([str(row.get("strategy_key") or "") for row in ordered])
+    window_key = "last_5min" if span == 5 else "last_10min"
+    return {
+        "versus": _versus_line(
+            "",
+            home,
+            away,
+            _minute(first.get("minute")),
+            with_score=with_score,
+            score=first.get("score"),
+            bold_sides=sides,
+        ),
+        "strategy_lines": "\n".join(titles),
+        "stats": "\n".join(
+            _window_stat_lines(merged.get(window_key), first.get("minute"), span=span)
+        ),
+    }
+
+
+def goal_blocks(row: Mapping[str, Any]) -> dict[str, str]:
+    """Pieces of a GOAL reply: ``lede`` (the fire lines), ``goal_line`` and the raw parts."""
+    detail = _payload(row.get("detail"))
+    payload = _payload(row.get("payload"))
+    if not payload.get("league") and detail.get("league"):
+        payload = {**payload, "league": detail.get("league")}
+    key = str(row.get("strategy_key") or "")
+    fire = _score(detail.get("fire_score"))
+    settle = _score(detail.get("settle_score"))
+    goal_at = _minute_int(detail.get("goal_minute"))
+    settle_at = _minute_int(detail.get("settle_minute"))
+    clock = _plain_minute(goal_at if goal_at is not None else settle_at)
+    head = f"GOAL at {clock}" if clock else "GOAL"
+    if fire and settle:
+        head = f"{head} · {fire} → {settle}"
+    elif settle:
+        head = f"{head} · {settle}"
+    fire_minute = row.get("minute")
+    if fire_minute is None:
+        fire_minute = detail.get("fire_minute")
+    lede = format_alert_html(
+        {
+            "home_team": row.get("home_team") or detail.get("home_team"),
+            "away_team": row.get("away_team") or detail.get("away_team"),
+            "minute": fire_minute,
+            "strategy_key": key,
+            "team": row.get("team") or detail.get("team"),
+            "value": row.get("value"),
+            "payload": payload,
+        },
+        compact=True,
+    )
+    return {
+        "lede": lede,
+        "goal_line": _esc(head),
+        "goal_minute": clock,
+        "fire_score": _esc(fire),
+        "settle_score": _esc(settle),
+    }
+
+
+def value_text(row: Mapping[str, Any]) -> str:
+    """The reading shown in a title line, e.g. ``8.4 / 12.0``. Plain text."""
+    return _value_over_ceiling(row.get("value"), key=str(row.get("strategy_key") or ""))
+
+
 def _success_window(row: Mapping[str, Any], detail: Mapping[str, Any]) -> int | None:
     if detail.get("infinite_ttl"):
         return None

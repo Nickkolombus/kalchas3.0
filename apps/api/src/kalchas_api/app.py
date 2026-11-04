@@ -24,6 +24,7 @@ from kalchas_football import apifootball_badge_url, https_asset_url
 from pydantic import BaseModel, Field
 
 from kalchas_api.admin import router as admin_router
+from kalchas_api.alert_templates import router as alert_templates_router
 from kalchas_api.contact import admin_router as contact_admin_router
 from kalchas_api.contact import public_router as contact_public_router
 from kalchas_api.recap import router as recap_router
@@ -1213,6 +1214,7 @@ def _mount_web_ui() -> None:
 
 
 app.include_router(admin_router)
+app.include_router(alert_templates_router)
 app.include_router(contact_admin_router)
 app.include_router(contact_public_router)
 app.include_router(recap_router)

@@ -5,12 +5,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from io import BytesIO
 from typing import Any, cast
 
 from telegram import Bot, ReactionTypeEmoji
-from telegram.error import TelegramError
+from telegram.error import BadRequest, TelegramError
 
 from kalchas_bot.banner import render_alert_photo
 from kalchas_bot.discord_channel import (
@@ -21,6 +22,13 @@ from kalchas_bot.discord_channel import (
 )
 from kalchas_bot.format import format_alert_html, format_joint_html, format_outcome_html
 from kalchas_bot.free_channel import allow_free_fire, gathering_open
+from kalchas_bot.templates import (
+    ChannelText,
+    Fallback,
+    Templates,
+    alert_texts,
+    goal_texts,
+)
 from kalchas_bot.twitter_channel import TwitterCredentials
 from kalchas_bot.twitter_queue import TwitterQueue
 
@@ -39,6 +47,7 @@ async def deliver_loop(
 ) -> None:
     """Claim pending outbox rows and send. Requires DATABASE_URL + migrated schema."""
     from kalchas_db import create_pool, get_pool
+    from kalchas_db.alert_templates import fetch_active_templates
     from kalchas_db.alerts import (
         claim_pending,
         claim_pending_outcomes,
@@ -56,6 +65,7 @@ async def deliver_loop(
         try:
             async with pool.acquire() as conn:
                 discord_settings = await fetch_discord_settings(conn)
+                templates = await fetch_active_templates(conn)
             async with pool.acquire() as conn:
                 rows = await claim_pending(conn)
             groups = _same_minute_groups(rows)
@@ -71,6 +81,7 @@ async def deliver_loop(
                         discord_bot_token=discord_bot_token,
                         discord_settings=discord_settings,
                         twitter=twitter_queue,
+                        templates=templates,
                     )
                 except Exception as exc:
                     logger.exception("send failed for match %s", group[0].get("match_id"))
@@ -88,6 +99,7 @@ async def deliver_loop(
                 discord_bot_token=discord_bot_token,
                 discord_settings=discord_settings,
                 twitter=twitter_queue,
+                templates=templates,
             )
         except Exception:
             logger.exception("delivery cycle failed")
@@ -132,6 +144,41 @@ async def _deliver_group(
     discord_bot_token: str | None = None,
     discord_settings: Mapping[str, Any] | None = None,
     twitter: TwitterQueue | None = None,
+    templates: Templates | None = None,
+) -> None:
+    rejected: list[Fallback] = []
+    try:
+        await _deliver_group_texts(
+            bot,
+            pool,
+            chat_id,
+            group,
+            free_chat_id=free_chat_id,
+            unlimited_until=unlimited_until,
+            discord_bot_token=discord_bot_token,
+            discord_settings=discord_settings,
+            twitter=twitter,
+            templates=templates,
+            rejected=rejected,
+        )
+    finally:
+        if rejected:
+            await _record_fallbacks(pool, rejected)
+
+
+async def _deliver_group_texts(
+    bot: Bot,
+    pool: Any,
+    chat_id: str,
+    group: Sequence[Mapping[str, Any]],
+    *,
+    free_chat_id: str | None,
+    unlimited_until: str | None,
+    discord_bot_token: str | None,
+    discord_settings: Mapping[str, Any] | None,
+    twitter: TwitterQueue | None,
+    templates: Templates | None,
+    rejected: list[Fallback],
 ) -> None:
     from kalchas_db.alerts import (
         attach_free_message,
@@ -151,19 +198,33 @@ async def _deliver_group(
     combined = [*posted, *group]
     joint = len(combined) > 1
     anchor = combined[0]
-    photo_bytes, caption, fallback = await _alert_payload(anchor, rows=combined if joint else None)
+    photo_bytes, builtin_caption, builtin_fallback = await _alert_payload(
+        anchor, rows=combined if joint else None
+    )
+    texts = alert_texts(
+        combined if joint else [anchor],
+        templates,
+        caption=builtin_caption,
+        fallback=builtin_fallback,
+    )
+    rejected.extend(texts.fallbacks)
+    paid = texts.paid
+    paid_retry = _retry_plan(paid, "paid", rejected)
+    caption, fallback = paid.caption, paid.fallback
     existing_id = _message_id(posted[0]) if posted else None
     if existing_id is not None:
-        await _edit_posted(bot, chat_id, existing_id, caption, fallback)
+        await _edit_posted(bot, chat_id, existing_id, caption, fallback, retry=paid_retry)
         message_id = existing_id
         discord_message_id = _message_id(posted[0], "discord_message_id")
         await _discord_edit_existing(
-            discord_bot_token, discord_settings, "paid", discord_message_id, caption
+            discord_bot_token, discord_settings, "paid", discord_message_id, texts.discord_paid
         )
     else:
-        message_id = await _send_alert(bot, chat_id, photo_bytes, caption, fallback)
+        message_id = await _send_alert(
+            bot, chat_id, photo_bytes, caption, fallback, retry=paid_retry
+        )
         discord_message_id = await _discord_send_new(
-            discord_bot_token, discord_settings, "paid", photo_bytes, caption
+            discord_bot_token, discord_settings, "paid", photo_bytes, texts.discord_paid
         )
     async with pool.acquire() as conn:
         for row in group:
@@ -172,6 +233,8 @@ async def _deliver_group(
                 await mark_discord_sent(conn, int(row["id"]), discord_message_id)
     if not free_chat_id:
         return
+    free = texts.free
+    free_retry = _retry_plan(free, "free", rejected)
     free_existing = next(
         (
             mid
@@ -182,7 +245,9 @@ async def _deliver_group(
     )
     if free_existing is not None:
         try:
-            await _edit_posted(bot, free_chat_id, free_existing, caption, fallback)
+            await _edit_posted(
+                bot, free_chat_id, free_existing, free.caption, free.fallback, retry=free_retry
+            )
             discord_free_existing = next(
                 (
                     mid
@@ -192,7 +257,11 @@ async def _deliver_group(
                 None,
             )
             await _discord_edit_existing(
-                discord_bot_token, discord_settings, "free", discord_free_existing, caption
+                discord_bot_token,
+                discord_settings,
+                "free",
+                discord_free_existing,
+                texts.discord_free,
             )
             # A tweet cannot be edited: the new strategy shares the original tweet
             # so its outcome still replies under it.
@@ -217,11 +286,13 @@ async def _deliver_group(
             alert_id=int(group[0]["id"]),
             free_chat_id=free_chat_id,
             photo_bytes=photo_bytes,
-            caption=caption,
-            fallback=fallback,
+            caption=free.caption,
+            fallback=free.fallback,
             unlimited_until=unlimited_until,
             discord_bot_token=discord_bot_token,
             discord_settings=discord_settings,
+            discord_caption=texts.discord_free,
+            retry=free_retry,
         )
     except Exception:
         logger.exception("free-channel send failed for match %s", first.get("match_id"))
@@ -241,7 +312,7 @@ async def _deliver_group(
     # Last step, and non-blocking: the queue posts it and records the tweet id.
     twitter.submit_alert(
         alert_ids=[int(row["id"]) for row in group],
-        caption=caption,
+        caption=free.caption,
         match_id=first.get("match_id"),
         photo_bytes=photo_bytes,
     )
@@ -257,6 +328,39 @@ async def _deliver_outcomes(
     discord_bot_token: str | None = None,
     discord_settings: Mapping[str, Any] | None = None,
     twitter: TwitterQueue | None = None,
+    templates: Templates | None = None,
+) -> None:
+    rejected: list[Fallback] = []
+    try:
+        await _deliver_outcome_batches(
+            bot,
+            pool,
+            chat_id,
+            rows,
+            free_chat_id=free_chat_id,
+            discord_bot_token=discord_bot_token,
+            discord_settings=discord_settings,
+            twitter=twitter,
+            templates=templates,
+            rejected=rejected,
+        )
+    finally:
+        if rejected:
+            await _record_fallbacks(pool, rejected)
+
+
+async def _deliver_outcome_batches(
+    bot: Bot,
+    pool: Any,
+    chat_id: str,
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    free_chat_id: str | None,
+    discord_bot_token: str | None,
+    discord_settings: Mapping[str, Any] | None,
+    twitter: TwitterQueue | None,
+    templates: Templates | None,
+    rejected: list[Fallback],
 ) -> None:
     from kalchas_db.alerts import (
         mark_outcome_failed,
@@ -291,31 +395,44 @@ async def _deliver_outcomes(
             tweet_text: str | None = None
             if action == "goal":
                 confirmed = [row for row in batch if str(row.get("state") or "") == "Confirmed"]
-                text = "\n\n".join(format_outcome_html(row) for row in confirmed)
-                await _reply_outcome(bot, chat_id, text, message_id)
+                goals = goal_texts(confirmed, templates)
+                rejected.extend(goals.fallbacks)
+                await _reply_outcome(
+                    bot,
+                    chat_id,
+                    goals.paid,
+                    message_id,
+                    retry=_goal_retry(goals.paid, goals.builtin, "paid", rejected),
+                )
                 await _react_on_fire(bot, chat_id, message_id, _GOAL_REACTIONS)
                 await _discord_reply_and_react(
                     discord_bot_token,
                     discord_settings,
                     "paid",
                     discord_message_id,
-                    text,
+                    goals.discord_paid,
                     _DISCORD_GOAL_EMOJI,
                 )
                 free_reply = _message_id(confirmed[0], "telegram_free_message_id")
                 discord_free_reply = _message_id(confirmed[0], "discord_free_message_id")
                 if free_chat_id and free_reply is not None:
-                    await _reply_outcome(bot, free_chat_id, text, free_reply)
+                    await _reply_outcome(
+                        bot,
+                        free_chat_id,
+                        goals.free,
+                        free_reply,
+                        retry=_goal_retry(goals.free, goals.builtin, "free", rejected),
+                    )
                     await _react_on_fire(bot, free_chat_id, free_reply, _GOAL_REACTIONS)
                 await _discord_reply_and_react(
                     discord_bot_token,
                     discord_settings,
                     "free",
                     discord_free_reply,
-                    text,
+                    goals.discord_free,
                     _DISCORD_GOAL_EMOJI,
                 )
-                tweet_text = f"✅ {text}"
+                tweet_text = f"✅ {goals.free}"
             elif action == "miss":
                 await _react_on_fire(bot, chat_id, message_id, _MISS_REACTIONS)
                 await _discord_react(
@@ -364,7 +481,78 @@ def _message_id(row: Mapping[str, Any], key: str = "telegram_message_id") -> int
         return None
 
 
+@dataclass(frozen=True)
+class _Retry:
+    """Built-in text to resend with if Telegram rejects a template's text."""
+
+    caption: str
+    fallback: str
+    channel: str
+    kind: str
+    rejected: list[Fallback]
+
+    def note(self, error: TelegramError) -> None:
+        logger.warning(
+            "Telegram rejected the %s %s template, sent built-in text: %s",
+            self.channel,
+            self.kind,
+            error,
+        )
+        self.rejected.append((self.channel, self.kind, f"Telegram rejected it: {error}"))
+
+
+def _retry_plan(text: ChannelText, channel: str, rejected: list[Fallback]) -> _Retry | None:
+    if not text.templated:
+        return None
+    caption, fallback = text.builtin
+    return _Retry(caption, fallback, channel, "alert", rejected)
+
+
+def _goal_retry(text: str, builtin: str, channel: str, rejected: list[Fallback]) -> _Retry | None:
+    if text == builtin:
+        return None
+    return _Retry(builtin, builtin, channel, "goal", rejected)
+
+
+async def _record_fallbacks(pool: Any, items: Sequence[Fallback]) -> None:
+    """Count each template that could not be used, for admin. Never raises."""
+    seen: set[tuple[str, str]] = set()
+    unique: list[Fallback] = []
+    for channel, kind, reason in items:
+        if (channel, kind) in seen:
+            continue
+        seen.add((channel, kind))
+        unique.append((channel, kind, reason))
+        logger.warning("%s %s template not used: %s", channel, kind, reason)
+    try:
+        from kalchas_db.alert_templates import record_fallback
+
+        async with pool.acquire() as conn:
+            for channel, kind, reason in unique:
+                await record_fallback(conn, channel, kind, reason)
+    except Exception:
+        logger.exception("could not record template fallbacks")
+
+
 async def _edit_posted(
+    bot: Bot,
+    chat_id: str,
+    message_id: int,
+    caption: str,
+    fallback: str,
+    *,
+    retry: _Retry | None = None,
+) -> None:
+    try:
+        await _edit_posted_once(bot, chat_id, message_id, caption, fallback)
+    except BadRequest as exc:
+        if retry is None:
+            raise
+        retry.note(exc)
+        await _edit_posted_once(bot, chat_id, message_id, retry.caption, retry.fallback)
+
+
+async def _edit_posted_once(
     bot: Bot,
     chat_id: str,
     message_id: int,
@@ -405,6 +593,8 @@ async def _try_send_free_fire(
     discord_bot_token: str | None = None,
     discord_settings: Mapping[str, Any] | None = None,
     now: datetime | None = None,
+    discord_caption: str | None = None,
+    retry: _Retry | None = None,
 ) -> tuple[int | None, int | None] | None:
     """Post to free only if gathering is open, or this worker wins the 60-minute slot.
 
@@ -420,10 +610,11 @@ async def _try_send_free_fire(
     )
 
     clock = now or datetime.now(UTC)
+    discord_text = caption if discord_caption is None else discord_caption
     if gathering_open(clock, unlimited_until):
-        free_id = await _send_alert(bot, free_chat_id, photo_bytes, caption, fallback)
+        free_id = await _send_alert(bot, free_chat_id, photo_bytes, caption, fallback, retry=retry)
         discord_free_id = await _discord_send_new(
-            discord_bot_token, discord_settings, "free", photo_bytes, caption
+            discord_bot_token, discord_settings, "free", photo_bytes, discord_text
         )
         async with pool.acquire() as conn:
             await mark_free_sent(conn, alert_id, free_id)
@@ -446,9 +637,11 @@ async def _try_send_free_fire(
                 last_free_at=last_free_at,
             ):
                 return None
-            free_id = await _send_alert(bot, free_chat_id, photo_bytes, caption, fallback)
+            free_id = await _send_alert(
+                bot, free_chat_id, photo_bytes, caption, fallback, retry=retry
+            )
             discord_free_id = await _discord_send_new(
-                discord_bot_token, discord_settings, "free", photo_bytes, caption
+                discord_bot_token, discord_settings, "free", photo_bytes, discord_text
             )
             await mark_free_sent(conn, alert_id, free_id)
             if discord_free_id is not None:
@@ -552,6 +745,24 @@ async def _send_alert(
     photo_bytes: bytes | None,
     caption: str,
     fallback: str,
+    *,
+    retry: _Retry | None = None,
+) -> int | None:
+    try:
+        return await _send_alert_once(bot, chat_id, photo_bytes, caption, fallback)
+    except BadRequest as exc:
+        if retry is None:
+            raise
+        retry.note(exc)
+        return await _send_alert_once(bot, chat_id, photo_bytes, retry.caption, retry.fallback)
+
+
+async def _send_alert_once(
+    bot: Bot,
+    chat_id: str,
+    photo_bytes: bytes | None,
+    caption: str,
+    fallback: str,
 ) -> int | None:
     if photo_bytes is not None:
         sent = await bot.send_photo(
@@ -597,6 +808,23 @@ async def _react_on_fire(
 
 
 async def _reply_outcome(
+    bot: Bot,
+    chat_id: str,
+    text: str,
+    reply_to: object,
+    *,
+    retry: _Retry | None = None,
+) -> None:
+    try:
+        await _reply_outcome_once(bot, chat_id, text, reply_to)
+    except BadRequest as exc:
+        if retry is None:
+            raise
+        retry.note(exc)
+        await _reply_outcome_once(bot, chat_id, retry.caption, reply_to)
+
+
+async def _reply_outcome_once(
     bot: Bot,
     chat_id: str,
     text: str,
