@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import kalchasMark from "./assets/kalchas-mark.png";
+import { BrandIdentity } from "./BrandHero";
 import { liveNote, liveVerdict } from "./WatchlistPicks";
 import { logVisitEvent, pingVisit, visitorId, type VisitEvent } from "./visit";
 
@@ -183,17 +183,23 @@ const WATCH_LABEL: { [K in Watch]: string } = {
 type Route =
   | { view: "day"; day: DayKey }
   | { view: "match"; day: DayKey; matchId: string }
-  | { view: "calendar"; month: string | null };
+  | { view: "calendar"; month: string | null }
+  | { view: "parlay"; day: DayKey };
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_MONTH = /^\d{4}-\d{2}$/;
+
+function isDayKey(part: string | undefined): part is string {
+  return part === "today" || part === "tomorrow" || ISO_DAY.test(part ?? "");
+}
 
 function parseRoute(pathname: string): Route {
   const parts = pathname.replace(/\/+$/, "").split("/").filter(Boolean);
   if (parts[0] === "calendar") {
     return { view: "calendar", month: parts[1] && ISO_MONTH.test(parts[1]) ? parts[1] : null };
   }
-  const day = parts[0] === "today" || parts[0] === "tomorrow" || ISO_DAY.test(parts[0] ?? "") ? parts[0] : "tomorrow";
+  if (parts[0] === "parlay") return { view: "parlay", day: isDayKey(parts[1]) ? parts[1] : "today" };
+  const day = isDayKey(parts[0]) ? parts[0] : "tomorrow";
   if (parts[1] && /^\d+$/.test(parts[1])) return { view: "match", day, matchId: parts[1] };
   return { view: "day", day };
 }
@@ -201,6 +207,7 @@ function parseRoute(pathname: string): Route {
 function routePath(route: Route): string {
   if (route.view === "calendar") return route.month ? `/calendar/${route.month}` : "/calendar";
   if (route.view === "match") return `/${route.day}/${route.matchId}`;
+  if (route.view === "parlay") return route.day === "today" ? "/parlay" : `/parlay/${route.day}`;
   return `/${route.day}`;
 }
 
@@ -209,6 +216,7 @@ const VISIT_PING_MS = 30_000;
 function visitEventFor(route: Route): VisitEvent | null {
   if (route.view === "match") return "wl_match";
   if (route.view === "calendar") return "wl_calendar";
+  if (route.view === "parlay") return null;
   if (route.day === "tomorrow") return "wl_tomorrow";
   return route.day === "today" ? null : "wl_past";
 }
@@ -216,7 +224,8 @@ function visitEventFor(route: Route): VisitEvent | null {
 export function isWatchlistPath(pathname: string): boolean {
   return (
     /^\/(today|tomorrow|\d{4}-\d{2}-\d{2})(\/\d+)?\/?$/.test(pathname) ||
-    /^\/calendar(\/\d{4}-\d{2})?\/?$/.test(pathname)
+    /^\/calendar(\/\d{4}-\d{2})?\/?$/.test(pathname) ||
+    /^\/parlay(\/(today|tomorrow|\d{4}-\d{2}-\d{2}))?\/?$/.test(pathname)
   );
 }
 
@@ -517,49 +526,242 @@ type Nav = {
   back: (route: Route) => void;
 };
 
-function DayNav({ day, data, nav }: { day: DayKey; data: WatchlistDay | null; nav: Nav }) {
-  const iso = data?.day;
-  const today = data?.today;
-  const prev = iso && (!data?.first_day || iso > data.first_day) ? addDays(iso, -1) : null;
-  const next = iso && today && iso < addDays(today, 1) ? addDays(iso, 1) : null;
-  const toDay = (target: string) => nav.go({ view: "day", day: today ? dayKey(target, today) : target });
-  const past = day !== "today" && day !== "tomorrow";
+/* ------------------------------------------------------ the date control */
+
+type DayBounds = { iso?: string; today?: string; first?: string | null };
+
+/** One day back and forward within the archive: from the first list to tomorrow. */
+function neighbours({ iso, today, first }: DayBounds): { prev: string | null; next: string | null } {
+  return {
+    prev: iso && (!first || iso > first) ? addDays(iso, -1) : null,
+    next: iso && today && iso < addDays(today, 1) ? addDays(iso, 1) : null,
+  };
+}
+
+/** ← and → step a day, as the arrows either side of the date do. */
+function useDayKeys(bounds: DayBounds, onPick: (iso: string) => void): void {
+  const { prev, next } = neighbours(bounds);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (isTyping(event) || event.altKey || event.metaKey || event.ctrlKey) return;
+      if (event.key === "ArrowLeft" && prev) onPick(prev);
+      else if (event.key === "ArrowRight" && next) onPick(next);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [prev, next, onPick]);
+}
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/** The month as calendar cells, Monday first; null pads the first and last week. */
+function monthCells(month: string): (string | null)[] {
+  const [y, m] = month.split("-").map(Number);
+  const lead = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7;
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const out: (string | null)[] = Array.from({ length: lead }, () => null);
+  for (let d = 1; d <= days; d += 1) out.push(`${month}-${String(d).padStart(2, "0")}`);
+  while (out.length % 7) out.push(null);
+  return out;
+}
+
+function MonthPicker({
+  selected,
+  today,
+  first,
+  onPick,
+  onWholeMonth,
+}: {
+  selected?: string;
+  today: string;
+  first?: string | null;
+  onPick: (iso: string) => void;
+  onWholeMonth: (month: string) => void;
+}) {
+  const [month, setMonth] = useState((selected ?? today).slice(0, 7));
+  const { data } = useJson<WatchlistMonth>(`/api/watchlist/month/${month}`);
+  const tomorrow = addDays(today, 1);
+  const firstMonth = first ? first.slice(0, 7) : null;
+  const canPrev = Boolean(firstMonth && month > firstMonth);
+  const canNext = month < tomorrow.slice(0, 7);
+  const byDay = useMemo(() => new Map((data?.days ?? []).map((d) => [d.day, d.summary])), [data]);
   return (
-    <nav className="wl-days" aria-label="Day">
-      <button type="button" className="wl-step" disabled={!prev} onClick={() => prev && toDay(prev)} aria-label="Previous day">
+    <div className="wl-mp">
+      <div className="wl-mp-head">
+        <button type="button" disabled={!canPrev} onClick={() => setMonth(addMonths(month, -1))} aria-label="Previous month">
+          ‹
+        </button>
+        <b>{monthLabel(month)}</b>
+        <button type="button" disabled={!canNext} onClick={() => setMonth(addMonths(month, 1))} aria-label="Next month">
+          ›
+        </button>
+      </div>
+      <div className="wl-mp-grid">
+        {WEEKDAYS.map((w) => (
+          <span key={w} className="wl-mp-wd" aria-hidden>
+            {w.slice(0, 2)}
+          </span>
+        ))}
+        {monthCells(month).map((iso, i) => {
+          if (!iso) return <span key={`blank-${i}`} />;
+          const summary = byDay.get(iso);
+          const n = Number(iso.slice(8));
+          const cls = `wl-mp-day${iso === today ? " is-today" : ""}${iso === selected ? " on" : ""}`;
+          if (!summary) {
+            return (
+              <span key={iso} className={cls}>
+                {n}
+              </span>
+            );
+          }
+          const picks = addTally(summary.strong_tally, summary.look_tally);
+          const share = picks.settled ? picks.landed / picks.settled : null;
+          return (
+            <button
+              key={iso}
+              type="button"
+              className={`${cls} has`}
+              onClick={() => onPick(iso)}
+              aria-label={`${longDay(iso)}${picks.settled ? `: ${picks.landed} of ${picks.settled} picks landed` : ""}`}
+            >
+              {n}
+              {share != null ? (
+                <small className={share >= 0.6 ? "is-good" : share < 0.45 ? "is-poor" : ""}>
+                  {picks.landed}/{picks.settled}
+                </small>
+              ) : (
+                <small>{iso === today ? "today" : iso === tomorrow ? "next" : ""}</small>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <div className="wl-mp-foot">
+        <span>Picks landed, of those played</span>
+        <a href={`/calendar/${month}`} onClick={linkTo(() => onWholeMonth(month))}>
+          Whole month →
+        </a>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The one date control: ‹ the day before, the date itself (opens the month,
+ * with Today and Tomorrow on top), the day after ›.
+ */
+function DateControl({
+  day,
+  bounds,
+  onPick,
+  onWholeMonth,
+}: {
+  day: DayKey;
+  bounds: DayBounds;
+  onPick: (iso: string) => void;
+  onWholeMonth: (month: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const { iso } = bounds;
+  const today = bounds.today ?? new Date().toISOString().slice(0, 10);
+  const { prev, next } = neighbours(bounds);
+
+  useEffect(() => setOpen(false), [day]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: PointerEvent) => {
+      if (box.current && !box.current.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const pick = (target: string) => {
+    setOpen(false);
+    onPick(target);
+  };
+  const tag = day === "today" ? "Today" : day === "tomorrow" ? "Tomorrow" : null;
+  const label = iso ? dayLabel(iso) : (tag ?? (ISO_DAY.test(day) ? dayLabel(day) : ""));
+  return (
+    <div className="wl-date" ref={box}>
+      <button type="button" className="wl-date-step" disabled={!prev} onClick={() => prev && pick(prev)} aria-label="Previous day">
         ‹
       </button>
-      {past && iso ? (
-        <span className="wl-chip on" aria-current="page">
-          {dayLabel(iso)}
-        </span>
-      ) : null}
-      {(["today", "tomorrow"] as const).map((d) => (
-        <a
-          key={d}
-          href={`/${d}`}
-          className={`wl-chip${day === d ? " on" : ""}`}
-          aria-current={day === d ? "page" : undefined}
-          onClick={linkTo(() => nav.go({ view: "day", day: d }))}
-          onPointerEnter={() => prefetch(`/api/watchlist/day/${d}`)}
-        >
-          {d === "today" ? "Today" : "Tomorrow"}
-        </a>
-      ))}
-      <button type="button" className="wl-step" disabled={!next} onClick={() => next && toDay(next)} aria-label="Next day">
-        ›
-      </button>
-      <a
-        href={iso ? `/calendar/${iso.slice(0, 7)}` : "/calendar"}
-        className="wl-chip wl-chip-cal"
-        onClick={linkTo(() => nav.go({ view: "calendar", month: iso ? iso.slice(0, 7) : null }))}
+      <button
+        type="button"
+        className={`wl-date-mid${open ? " on" : ""}`}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={() => setOpen((v) => !v)}
       >
         <CalendarIcon />
-        Calendar
+        <span>{label}</span>
+        {tag && iso ? <em>{tag}</em> : null}
+        <i className="wl-date-chev" aria-hidden />
+      </button>
+      <button type="button" className="wl-date-step" disabled={!next} onClick={() => next && pick(next)} aria-label="Next day">
+        ›
+      </button>
+      {open ? (
+        <div className="wl-date-pop" role="dialog" aria-label="Pick a day">
+          <div className="wl-date-quick">
+            {(
+              [
+                [today, "Today"],
+                [addDays(today, 1), "Tomorrow"],
+              ] as const
+            ).map(([target, name]) => (
+              <button key={name} type="button" className={iso === target ? "on" : ""} onClick={() => pick(target)}>
+                {name}
+              </button>
+            ))}
+          </div>
+          <MonthPicker selected={iso} today={today} first={bounds.first} onPick={pick} onWholeMonth={onWholeMonth} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** The links between the three pages, beside the masthead. Live board is the
+ * home page, a full page load as it always was. */
+function PageSwitch({ route, nav }: { route: Route; nav: Nav }) {
+  const day = route.view === "calendar" ? "today" : route.day;
+  const onList = route.view !== "parlay";
+  return (
+    <nav className="wl-switch" aria-label="Pages">
+      <a href="/">
+        <i className="wl-switch-live" aria-hidden />
+        Live board
+      </a>
+      <a
+        href={`/${day}`}
+        className={onList ? "on" : ""}
+        aria-current={onList ? "page" : undefined}
+        onClick={linkTo(() => nav.go({ view: "day", day }))}
+      >
+        Watchlist
+      </a>
+      <a
+        href={routePath({ view: "parlay", day })}
+        className={onList ? "" : "on"}
+        aria-current={onList ? undefined : "page"}
+        onClick={linkTo(() => nav.go({ view: "parlay", day }))}
+      >
+        Parlay
       </a>
     </nav>
   );
 }
+
 
 /* ------------------------------------------------------------------ list */
 
@@ -811,18 +1013,15 @@ function DayView({
     if (data.day < addDays(data.today, 1)) prefetch(`/api/watchlist/day/${dayKey(addDays(data.day, 1), data.today)}`);
   }, [data?.day, data?.today, data?.first_day]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (isTyping(event) || !data?.day || !data.today || event.altKey || event.metaKey || event.ctrlKey) return;
-      if (event.key === "ArrowLeft" && (!data.first_day || data.day > data.first_day)) {
-        nav.go({ view: "day", day: dayKey(addDays(data.day, -1), data.today) });
-      } else if (event.key === "ArrowRight" && data.day < addDays(data.today, 1)) {
-        nav.go({ view: "day", day: dayKey(addDays(data.day, 1), data.today) });
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [data?.day, data?.today, data?.first_day, nav]);
+  const bounds = useMemo<DayBounds>(
+    () => ({ iso: data?.day, today: data?.today, first: data?.first_day }),
+    [data?.day, data?.today, data?.first_day],
+  );
+  const toDay = useCallback(
+    (iso: string) => nav.go({ view: "day", day: bounds.today ? dayKey(iso, bounds.today) : iso }),
+    [nav, bounds.today],
+  );
+  useDayKeys(bounds, toDay);
 
   const byId = useMemo(() => new Map((data?.matches ?? []).map((m) => [m.match_id, m])), [data]);
   const leagueByKey = useMemo(() => new Map((data?.leagues ?? []).map((l) => [l.key, l])), [data]);
@@ -847,7 +1046,15 @@ function DayView({
   return (
     <>
       <div className="wl-intro">
-        <h1>{dayTitle(day, data?.day ?? (ISO_DAY.test(day) ? day : undefined))}</h1>
+        <div className="wl-head">
+          <h1>{dayTitle(day, data?.day ?? (ISO_DAY.test(day) ? day : undefined))}</h1>
+          <DateControl
+            day={day}
+            bounds={bounds}
+            onPick={toDay}
+            onWholeMonth={(month) => nav.go({ view: "calendar", month })}
+          />
+        </div>
         <p>
           {past
             ? "The list as it stood before kick-off, with each match's score and whether its patterns landed."
@@ -857,7 +1064,6 @@ function DayView({
 
       <div className="wl-card">
         <div className="wl-bar">
-          <DayNav day={day} data={data} nav={nav} />
           {ready && data.matches.length ? (
             <div className="wl-filters" role="group" aria-label="Filter">
               {(
@@ -1076,9 +1282,330 @@ function leagueName(day: WatchlistDay, key: string): string {
   return day.leagues.find((l) => l.key === key)?.name ?? "";
 }
 
-/* -------------------------------------------------------------- calendar */
+/* ---------------------------------------------------------------- parlay */
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+type ParlayStyle = "safer" | "balanced" | "bolder";
+
+type ParlayLeg = {
+  match_id: string;
+  kickoff: string;
+  league: string;
+  country: string;
+  home: TeamRef;
+  away: TeamRef;
+  watch: Watch;
+  market: string;
+  label: string;
+  price: number;
+  hit: number;
+  n: number;
+  brief: string;
+  score: number;
+  result?: RowResult | null;
+  outcome?: Outcome | null;
+  outcome_note?: string;
+};
+
+type ParlayDay = {
+  status: "ready" | "preparing" | "none";
+  day: string;
+  today: string;
+  first_day?: string | null;
+  legs: ParlayLeg[];
+  order: { [K in ParlayStyle]: string[] };
+  unpriced: { match_id: string; home: string; away: string; tags: string[] }[];
+};
+
+const PARLAY_MIN = 3;
+const PARLAY_PRESETS = [3, 5, 8, 12, 18];
+const PARLAY_STYLES: { key: ParlayStyle; name: string; desc: string }[] = [
+  { key: "safer", name: "Safer", desc: "Shortest prices first, and only legs that came in at least 7 times in 10 recently." },
+  { key: "balanced", name: "Balanced", desc: "The strongest patterns of the day, in the order the watchlist ranks them." },
+  {
+    key: "bolder",
+    name: "Bolder",
+    desc: "Legs whose recent record beats the price by the most. Longer odds, less likely to all come in.",
+  },
+];
+
+/** "about 1 in 14" from the combined decimal odds. */
+function oneIn(odds: number): string {
+  if (odds < 2) return "better than even";
+  const n = Math.round(odds);
+  if (n >= 10_000) return `about 1 in ${Math.round(n / 1000).toLocaleString()},000`;
+  if (n >= 1000) return `about 1 in ${(Math.round(n / 100) * 100).toLocaleString()}`;
+  return `about 1 in ${n}`;
+}
+
+/** Where the slip stands once games are played. */
+function parlayState(legs: ParlayLeg[]): string | null {
+  const missed = legs.filter((l) => l.outcome === "missed").length;
+  const landed = legs.filter((l) => l.outcome === "landed").length;
+  if (missed) return `Lost: ${missed} of ${legs.length} ${missed === 1 ? "leg" : "legs"} missed.`;
+  if (landed === legs.length) return `Came in: all ${legs.length} legs landed.`;
+  if (landed) return `${landed} of ${legs.length} landed so far, none missed.`;
+  return null;
+}
+
+function Record({ leg }: { leg: ParlayLeg }) {
+  const share = leg.n ? Math.round((leg.hit / leg.n) * 100) : 0;
+  return (
+    <span className="wl-rec" title={`Happened in ${leg.hit} of the two teams' last ${leg.n} games`}>
+      <i aria-hidden>
+        <i style={{ width: `${share}%` }} />
+      </i>
+      {leg.hit} of {leg.n}
+    </span>
+  );
+}
+
+function ParlayView({
+  day,
+  legs: wanted,
+  setLegs,
+  style,
+  setStyle,
+  nav,
+  onReady,
+}: {
+  day: DayKey;
+  legs: number;
+  setLegs: (n: number) => void;
+  style: ParlayStyle;
+  setStyle: (s: ParlayStyle) => void;
+  nav: Nav;
+  onReady: () => void;
+}) {
+  const { data, error, loading } = useJson<ParlayDay>(`/api/watchlist/parlay/${day}`);
+  useEffect(() => {
+    if (data) onReady();
+  }, [data, onReady]);
+
+  const bounds = useMemo<DayBounds>(
+    () => ({ iso: data?.day, today: data?.today, first: data?.first_day }),
+    [data?.day, data?.today, data?.first_day],
+  );
+  const toDay = useCallback(
+    (iso: string) => nav.go({ view: "parlay", day: bounds.today ? dayKey(iso, bounds.today) : iso }),
+    [nav, bounds.today],
+  );
+  useDayKeys(bounds, toDay);
+
+  const ready = data?.status === "ready";
+  const byId = useMemo(() => new Map((data?.legs ?? []).map((l) => [l.match_id, l])), [data]);
+  const order = data?.order?.[style] ?? [];
+  const most = order.length;
+  const n = Math.max(Math.min(wanted, most), Math.min(PARLAY_MIN, most));
+  const legs = order
+    .slice(0, n)
+    .map((id) => byId.get(id))
+    .filter((l): l is ParlayLeg => Boolean(l))
+    .sort((a, b) => a.kickoff.localeCompare(b.kickoff) || a.match_id.localeCompare(b.match_id));
+  const odds = legs.reduce((total, l) => total * l.price, 1);
+  const looks = legs.filter((l) => l.watch === "look").length;
+  const strongPriced = data ? data.legs.filter((l) => l.watch === "strong").length : 0;
+  const strongLeftOver = data
+    ? data.legs.filter((l) => l.watch === "strong" && !legs.some((x) => x.match_id === l.match_id)).length
+    : 0;
+  const past = day !== "today" && day !== "tomorrow";
+  const state = parlayState(legs);
+  const lost = legs.some((l) => l.outcome === "missed");
+  const won = legs.length > 0 && legs.every((l) => l.outcome === "landed");
+  const settled = lost || won;
+  const iso = data?.day ?? (ISO_DAY.test(day) ? day : undefined);
+  const title = day === "today" ? "Today's parlay" : day === "tomorrow" ? "Tomorrow's parlay" : iso ? `Parlay for ${longDay(iso)}` : "Parlay";
+  const styleInfo = PARLAY_STYLES.find((s) => s.key === style) ?? PARLAY_STYLES[1];
+
+  return (
+    <>
+      <div className="wl-intro">
+        <div className="wl-head">
+          <h1>{title}</h1>
+          <DateControl
+            day={day}
+            bounds={bounds}
+            onPick={toDay}
+            onWholeMonth={(month) => nav.go({ view: "calendar", month })}
+          />
+        </div>
+        <p>
+          {past
+            ? "The parlay as the list stood before kick-off, and how each leg went."
+            : "The strongest picks on the watchlist added up into one bet: one leg per match, each from its strongest pattern that bookmakers price."}
+        </p>
+      </div>
+
+      <div className="wl-card">
+        {loading ? <p className="wl-empty">Loading…</p> : null}
+        {error ? <p className="wl-empty">The parlay is unavailable right now. Try again in a minute.</p> : null}
+        {data?.status === "preparing" ? (
+          <p className="wl-empty">The list for this day is still being put together. Check back in a few minutes.</p>
+        ) : null}
+        {data?.status === "none" ? <p className="wl-empty">No watchlist was made for {longDay(data.day)}.</p> : null}
+        {ready && most < PARLAY_MIN ? (
+          <p className="wl-empty">
+            Not enough strong picks with a bookmaker price on this day to make a parlay of {PARLAY_MIN}.
+          </p>
+        ) : null}
+
+        {ready && most >= PARLAY_MIN ? (
+          <>
+            <div className={`wl-par-sum${lost ? " is-missed" : won ? " is-landed" : ""}`}>
+              <div className="wl-par-big">
+                <small>{plural(legs.length, "leg")} · combined odds</small>
+                <b>{odds.toFixed(2)}</b>
+              </div>
+              <p>
+                {state ? <strong className="wl-par-state">{state} </strong> : null}
+                {settled
+                  ? `Bookmakers rated all ${legs.length} landing ${oneIn(odds)}.`
+                  : `All ${legs.length} have to land. At these prices bookmakers rate that ${oneIn(odds)}.`}{" "}
+                Each leg shows how often it happened in the two teams' recent games.
+                {looks ? ` ${plural(looks, "leg")} from Worth a look, added to reach ${legs.length}.` : ""}
+              </p>
+              {lost ? null : (
+                <div className="wl-par-big is-side">
+                  <small>{won ? "A 10 stake returned" : "A 10 stake returns"}</small>
+                  <b>{(10 * odds).toFixed(2)}</b>
+                </div>
+              )}
+            </div>
+
+            <div className="wl-par-ctl">
+              <span className="wl-par-field">
+                <label id="wl-par-n">Legs</label>
+                <span className="wl-stepper-n" role="group" aria-labelledby="wl-par-n">
+                  <button type="button" disabled={n <= PARLAY_MIN} onClick={() => setLegs(n - 1)} aria-label="One leg fewer">
+                    −
+                  </button>
+                  <b aria-live="polite">{n}</b>
+                  <button type="button" disabled={n >= most} onClick={() => setLegs(n + 1)} aria-label="One leg more">
+                    +
+                  </button>
+                </span>
+              </span>
+              <span className="wl-par-field">
+                <label>Quick</label>
+                <span className="wl-seg" role="group" aria-label="Number of legs">
+                  {PARLAY_PRESETS.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      className={n === p ? "on" : ""}
+                      aria-pressed={n === p}
+                      disabled={p > most}
+                      onClick={() => setLegs(p)}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </span>
+              </span>
+              <span className="wl-par-field">
+                <label>Style</label>
+                <span className="wl-seg" role="group" aria-label="Style">
+                  {PARLAY_STYLES.map((s) => (
+                    <button
+                      key={s.key}
+                      type="button"
+                      className={style === s.key ? "on" : ""}
+                      aria-pressed={style === s.key}
+                      onClick={() => setStyle(s.key)}
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                </span>
+              </span>
+              <p className="wl-par-desc">
+                {styleInfo.desc}
+                {most < 18 ? ` Up to ${most} legs in this style on this day.` : ""}
+              </p>
+            </div>
+
+            <ol className="wl-legs">
+              {legs.map((l, i) => (
+                <li key={l.match_id}>
+                  <a
+                    className={`wl-leg${l.outcome ? ` is-${l.outcome}` : ""}`}
+                    href={`/${day}/${l.match_id}`}
+                    onClick={linkTo(() => nav.go({ view: "match", day, matchId: l.match_id }))}
+                    onPointerEnter={() => prefetch(`/api/watchlist/match/${l.match_id}`)}
+                  >
+                    <span className="wl-leg-n">{i + 1}</span>
+                    <span className="wl-leg-time">
+                      {l.result ? (
+                        <b>{l.result.status === "off" ? "Off" : scoreText(l.result) || l.result.label}</b>
+                      ) : (
+                        clock(l.kickoff)
+                      )}
+                    </span>
+                    <span className="wl-leg-body">
+                      <span className="wl-leg-match">
+                        <Crest src={l.home.badge} name={l.home.name} size={16} />
+                        <span>
+                          {l.home.name} v {l.away.name}
+                        </span>
+                        <small>{l.league}</small>
+                      </span>
+                      <span className="wl-leg-mkt">
+                        {l.label}
+                        {l.watch === "look" ? <small> · Worth a look</small> : null}
+                      </span>
+                      <span className="wl-leg-why">
+                        {l.outcome ? (
+                          <>
+                            <OutcomeMark outcome={l.outcome} /> {l.outcome_note}
+                          </>
+                        ) : (
+                          l.brief
+                        )}
+                      </span>
+                    </span>
+                    <Record leg={l} />
+                    <span className="wl-leg-price">{l.price.toFixed(2)}</span>
+                  </a>
+                </li>
+              ))}
+            </ol>
+
+            {data.unpriced.length || strongLeftOver ? (
+              <details className="wl-par-out">
+                <summary>Left out ({data.unpriced.length + (strongLeftOver ? 1 : 0)})</summary>
+                <ul>
+                  {data.unpriced.map((m) => (
+                    <li key={m.match_id}>
+                      <a href={`/${day}/${m.match_id}`} onClick={linkTo(() => nav.go({ view: "match", day, matchId: m.match_id }))}>
+                        {m.home} v {m.away}
+                      </a>
+                      : a strong watch, but its patterns ({m.tags.join(", ")}) have no bookmaker price we hold.
+                    </li>
+                  ))}
+                  {strongLeftOver ? (
+                    <li>
+                      {plural(strongLeftOver, "more strong pick")} with a price, outside this {styleInfo.name.toLowerCase()}{" "}
+                      {plural(legs.length, "leg")}
+                      {style === "safer" ? " or below its 7-in-10 bar" : style === "bolder" ? " or below its bar" : ""}.
+                    </li>
+                  ) : null}
+                </ul>
+              </details>
+            ) : null}
+
+            <p className="wl-foot">
+              One leg per match, from Strong watch first ({strongPriced} with a price on this day), then Worth a look.
+              Only markets with a bookmaker price we hold: goals over or under 2.5, both teams to score, or a clear
+              favourite to win. Prices are from when the list was made and may have moved. Kick-off times in your time
+              zone.
+            </p>
+          </>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+/* -------------------------------------------------------------- calendar */
 
 function CalendarView({ month, nav, onReady }: { month: string | null; nav: Nav; onReady: () => void }) {
   // Without a month in the address, the board's current month; the API says which.
@@ -1114,16 +1641,7 @@ function CalendarView({ month, nav, onReady }: { month: string | null; nav: Nav;
   });
 
   const byDay = useMemo(() => new Map((data?.days ?? []).map((d) => [d.day, d.summary])), [data]);
-  const cells = useMemo(() => {
-    const [y, m] = shownMonth.split("-").map(Number);
-    const first = new Date(Date.UTC(y, m - 1, 1));
-    const lead = (first.getUTCDay() + 6) % 7; // Monday first
-    const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
-    const out: (string | null)[] = Array.from({ length: lead }, () => null);
-    for (let d = 1; d <= days; d += 1) out.push(`${shownMonth}-${String(d).padStart(2, "0")}`);
-    while (out.length % 7) out.push(null);
-    return out;
-  }, [shownMonth]);
+  const cells = useMemo(() => monthCells(shownMonth), [shownMonth]);
 
   const totals = useMemo(() => {
     let top = { landed: 0, settled: 0 };
@@ -1918,6 +2436,11 @@ type HistoryState = { scroll?: number; from?: string } | null;
 function titleFor(route: Route): string {
   if (route.view === "calendar") return "Watchlist calendar · Kalchas";
   if (route.view === "match") return "Match research · Kalchas";
+  if (route.view === "parlay") {
+    if (route.day === "today") return "Today's parlay · Kalchas";
+    if (route.day === "tomorrow") return "Tomorrow's parlay · Kalchas";
+    return `Parlay · ${dayLabel(route.day)} · Kalchas`;
+  }
   if (route.day === "today") return "Today's watchlist · Kalchas";
   if (route.day === "tomorrow") return "Tomorrow's watchlist · Kalchas";
   return `Watchlist · ${dayLabel(route.day)} · Kalchas`;
@@ -1926,6 +2449,8 @@ function titleFor(route: Route): string {
 export function WatchlistApp() {
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname));
   const [filter, setFilter] = useState<Filter>("all");
+  const [parlayLegs, setParlayLegs] = useState(5);
+  const [parlayStyle, setParlayStyle] = useState<ParlayStyle>("balanced");
   const [layout, setLayoutState] = useState<Layout>(savedLayout);
   const setLayout = useCallback((next: Layout) => {
     setLayoutState(next);
@@ -2032,6 +2557,18 @@ export function WatchlistApp() {
   let page: ReactNode;
   if (route.view === "calendar") {
     page = <CalendarView month={route.month} nav={nav} onReady={onReady} />;
+  } else if (route.view === "parlay") {
+    page = (
+      <ParlayView
+        day={route.day}
+        legs={parlayLegs}
+        setLegs={setParlayLegs}
+        style={parlayStyle}
+        setStyle={setParlayStyle}
+        nav={nav}
+        onReady={onReady}
+      />
+    );
   } else if (route.view === "match") {
     page = (
       <MatchView
@@ -2061,23 +2598,11 @@ export function WatchlistApp() {
 
   return (
     <div className="wl-shell">
-      <header className="wl-top">
-        <a className="wl-brand" href="/">
-          <img src={kalchasMark} alt="" width={28} height={28} />
-          Kalchas
-        </a>
-        <nav className="wl-topnav">
-          <a
-            href="/calendar"
-            className={route.view === "calendar" ? "on" : ""}
-            onClick={linkTo(() => nav.go({ view: "calendar", month: null }))}
-          >
-            Calendar
-          </a>
-          <a className="wl-live" href="/">
-            Live board →
-          </a>
-        </nav>
+      <header className="hero wl-hero">
+        <div className="hero-left">
+          <BrandIdentity heading={false} />
+        </div>
+        <PageSwitch route={route} nav={nav} />
       </header>
       {page}
     </div>

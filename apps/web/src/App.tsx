@@ -24,6 +24,7 @@ import { ContactLink, SiteFooter } from "./ContactForm";
 import { GoalAlertToggle } from "./GoalAlertToggle";
 import { useGoalAlerts } from "./goalAlerts";
 import kalchasMark from "./assets/kalchas-mark.png";
+import { BrandIdentity } from "./BrandHero";
 
 const TELEGRAM_FREE_JOIN_URL = "https://t.me/Kalchas_Tips_Free";
 const TELEGRAM_PAID_JOIN_URL = "https://im.page/kalchas";
@@ -3013,42 +3014,32 @@ export function App() {
     <div className="shell">
       <header className="hero">
         <div className="hero-left">
-          <div className="identity">
-            <img className="mark" src={kalchasMark} alt="" width={96} height={96} />
-            <div className="identity-text">
-              <p className="brand">Kalchas</p>
-              <h1>Live Match Intelligence</h1>
-              <p className="lede">
-                Live board of pressure and goal signals, free on this site. Free
-                Telegram: Mon-Thu GMT, one alert per hour. Every fire goes to
-                the full feed.
-              </p>
-              <div className="hero-joins">
-                <a
-                  className="hero-telegram"
-                  href={TELEGRAM_FREE_JOIN_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => logJoinClick(visitor, "tg_free")}
-                >
-                  Join free alerts
-                  <span>Mon-Thu GMT, 1 per hour</span>
-                </a>
-                <a
-                  className="hero-telegram hero-telegram-paid"
-                  href={TELEGRAM_PAID_JOIN_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => logJoinClick(visitor, "tg_paid")}
-                >
-                  Join full feed
-                  <span>€2.99 a week</span>
-                </a>
-                <span className="hero-sep" aria-hidden />
-                <WatchlistButton />
-              </div>
+          <BrandIdentity>
+            <div className="hero-joins">
+              <a
+                className="hero-telegram"
+                href={TELEGRAM_FREE_JOIN_URL}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => logJoinClick(visitor, "tg_free")}
+              >
+                Join free alerts
+                <span>Mon-Thu GMT, 1 per hour</span>
+              </a>
+              <a
+                className="hero-telegram hero-telegram-paid"
+                href={TELEGRAM_PAID_JOIN_URL}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => logJoinClick(visitor, "tg_paid")}
+              >
+                Join full feed
+                <span>€2.99 a week</span>
+              </a>
+              <span className="hero-sep" aria-hidden />
+              <WatchlistButton />
             </div>
-          </div>
+          </BrandIdentity>
           <div className="hero-filters">
             <label className="filter-check">
               <input

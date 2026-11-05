@@ -354,7 +354,8 @@ body {
   text-decoration: none;
 }
 
-.hero h1 {
+.hero h1,
+.hero .hero-title {
   font-family: var(--font-display);
   font-size: clamp(1.5rem, 3vw, 2.15rem);
   font-weight: 650;

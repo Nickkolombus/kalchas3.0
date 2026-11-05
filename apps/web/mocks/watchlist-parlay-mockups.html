@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Watchlist and parlay mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --bg: #071018;
+  --surface: #0c1520;
+  --surface-2: #121d29;
+  --surface-3: #18242f;
+  --border: rgba(232, 220, 196, 0.1);
+  --border-2: rgba(232, 220, 196, 0.18);
+  --text: #f2ebe0;
+  --text-2: #b7b0a3;
+  --muted: #7d776c;
+  --strong: #2fd39a;
+  --look: #e6b450;
+  --loss: #e0685f;
+  --track: rgba(255, 255, 255, 0.07);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: #04090e;
+  color: var(--text);
+  font-family: "Sora", system-ui, sans-serif;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+button { font: inherit; color: inherit; }
+a { color: inherit; text-decoration: none; }
+
+/* ---------- mockup chrome (not part of the design) ---------- */
+.mk-bar {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; flex-wrap: wrap; gap: 0.6rem 1.2rem; align-items: center;
+  padding: 0.7rem 1rem; background: #f4efe6; color: #1b1a17;
+  font-size: 0.85rem; border-bottom: 1px solid #d9d2c4;
+}
+.mk-bar b { font-weight: 700; }
+.mk-seg { display: inline-flex; border: 1px solid #b9b1a2; border-radius: 7px; overflow: hidden; }
+.mk-seg button { border: 0; background: none; padding: 0.4rem 0.8rem; cursor: pointer; color: #1b1a17; }
+.mk-seg button.on { background: #1b1a17; color: #f4efe6; }
+.mk-note {
+  max-width: 1160px; margin: 1.2rem auto 0; padding: 0 1rem;
+  color: #c9c2b4; font-size: 0.86rem; line-height: 1.6;
+}
+.mk-note h2 { color: var(--text); font-size: 1.05rem; margin: 0 0 0.3rem; }
+.mk-note ul { margin: 0.3rem 0 0; padding-left: 1.1rem; }
+.mk-frame {
+  container-type: inline-size;
+  max-width: 1160px; margin: 1rem auto 2.5rem;
+  background: var(--bg); border: 1px solid #1d2a36; border-radius: 12px;
+  overflow: hidden;
+}
+.mk-frame.is-phone { max-width: 390px; }
+.mk-hide { display: none !important; }
+
+/* ---------- shared page parts ---------- */
+.pg { padding: 0 1.25rem 2.5rem; }
+.logo { display: inline-flex; align-items: center; gap: 0.55rem; font-weight: 700; font-size: 1rem; }
+.logo i {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #8f8a6e, #4b4a3a 60%, #2a2c25);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+}
+.intro h1 { margin: 0 0 0.35rem; font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; }
+.intro p { margin: 0 0 1.1rem; color: var(--text-2); font-size: 0.88rem; line-height: 1.55; max-width: 70ch; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.bar { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; justify-content: space-between; padding: 0.75rem 0.9rem; border-bottom: 1px solid var(--border); }
+.pills { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.pill {
+  border: 1px solid var(--border); background: none; border-radius: 999px;
+  padding: 0.3rem 0.7rem; font-size: 0.8rem; color: var(--text-2); cursor: pointer; white-space: nowrap;
+}
+.pill.on { color: var(--text); border-color: var(--border-2); background: var(--surface-2); }
+.gap { width: 1px; background: var(--border); margin: 0 0.25rem; }
+.sec-h { margin: 0; padding: 0.9rem 1rem 0.5rem; font-size: 0.95rem; font-weight: 700; }
+.pick {
+  display: grid; grid-template-columns: 1.4rem minmax(0,1fr) auto; gap: 0.8rem;
+  margin: 0 0.9rem 0.5rem; padding: 0.8rem 0.95rem; background: var(--surface-2); border-radius: 8px;
+}
+.pick-n { color: var(--muted); font-weight: 600; font-size: 1.05rem; }
+.pick-t { font-weight: 700; display: flex; flex-wrap: wrap; gap: 0.2rem 0.45rem; align-items: center; }
+.pick-t small { color: var(--muted); font-weight: 400; font-size: 0.78rem; }
+.pick p { margin: 0.25rem 0 0.45rem; font-size: 0.86rem; color: var(--text-2); }
+.pick p b { color: var(--text); }
+.pick-time { font-weight: 700; font-size: 0.9rem; }
+.tag { display: inline-block; font-size: 0.73rem; color: var(--text-2); background: rgba(255,255,255,0.06); border-radius: 5px; padding: 0.12rem 0.45rem; margin: 0 0.25rem 0.25rem 0; }
+.crest { width: 16px; height: 16px; border-radius: 3px; object-fit: contain; flex: none; }
+.slot-h { padding: 0.55rem 1rem; font-size: 0.8rem; font-weight: 700; color: var(--text-2); border-top: 1px solid var(--border); background: rgba(255,255,255,0.015); }
+.row {
+  display: grid; grid-template-columns: 3.3rem minmax(0, 1.2fr) auto minmax(0, 1.5fr) 7rem;
+  gap: 0.9rem; align-items: center; padding: 0.65rem 1rem; border-top: 1px solid var(--border); font-size: 0.86rem;
+}
+.row-t { font-weight: 600; }
+.row-teams div { display: flex; gap: 0.4rem; align-items: center; font-weight: 600; }
+.row-teams small { color: var(--muted); font-size: 0.72rem; font-weight: 400; }
+.odds { display: flex; gap: 0.25rem; }
+.odds span { display: grid; text-align: center; min-width: 2.6rem; padding: 0.2rem 0.3rem; border-radius: 5px; background: var(--surface-2); font-size: 0.78rem; }
+.odds b { font-size: 0.62rem; color: var(--muted); font-weight: 500; }
+.row-why { color: var(--text-2); font-size: 0.82rem; line-height: 1.4; }
+.watch { font-size: 0.76rem; font-weight: 700; display: inline-flex; gap: 0.35rem; align-items: center; justify-self: end; white-space: nowrap; }
+.watch i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.watch.strong { color: var(--strong); } .watch.look { color: var(--look); } .watch.quiet { color: var(--muted); }
+@container (max-width: 700px) {
+  .row { grid-template-columns: 3rem minmax(0,1fr) auto; }
+  .row .odds, .row .row-why { display: none; }
+  .pick { grid-template-columns: minmax(0,1fr) auto; }
+  .pick-n { display: none; }
+  .intro h1 { font-size: 1.4rem; }
+  .pg { padding: 0 0.9rem 2rem; }
+}
+
+/* calendar month grid (both directions) */
+.month { padding: 0.8rem; width: 19.5rem; }
+.month-h { display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 0.88rem; margin-bottom: 0.55rem; }
+.month-h button { border: 1px solid var(--border); background: none; border-radius: 6px; width: 1.8rem; height: 1.8rem; cursor: pointer; color: var(--text-2); }
+.month-h button:disabled { opacity: 0.35; cursor: default; }
+.mgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.mgrid .wd { font-size: 0.66rem; color: var(--muted); text-align: center; padding-bottom: 0.2rem; }
+.mday {
+  height: 2.5rem; border-radius: 6px; display: grid; place-items: center; align-content: center; gap: 1px;
+  font-size: 0.8rem; color: var(--muted); border: 1px solid transparent; background: none; padding: 0;
+}
+.mday.has { color: var(--text); background: var(--surface-2); cursor: pointer; }
+.mday.has:hover { border-color: var(--border-2); }
+.mday.on { border-color: var(--text); }
+.mday small { font-size: 0.58rem; color: var(--text-2); }
+.mday small.good { color: var(--strong); } .mday small.bad { color: var(--loss); }
+.month-f { display: flex; justify-content: space-between; align-items: center; margin-top: 0.6rem; font-size: 0.74rem; color: var(--muted); }
+.month-f a { color: var(--text-2); text-decoration: underline; text-underline-offset: 2px; }
+
+/* parlay parts (both directions) */
+.leg-mkt { font-weight: 700; }
+.price { font-weight: 700; font-size: 0.95rem; }
+.rec { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.74rem; color: var(--text-2); white-space: nowrap; }
+.rec i { display: inline-block; width: 46px; height: 5px; border-radius: 3px; background: var(--track); position: relative; overflow: hidden; }
+.rec i u { position: absolute; inset: 0 auto 0 0; background: var(--strong); }
+.fill-note { font-size: 0.7rem; color: var(--look); font-weight: 600; }
+input[type=range] { width: 100%; accent-color: var(--strong); }
+
+/* ================= Direction A: tabs + week strip ================= */
+.a-top { display: flex; align-items: center; gap: 2rem; padding: 0 1.25rem; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; }
+.a-tabs { display: flex; gap: 0.2rem; }
+.a-tabs a {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 1.05rem 0.75rem 0.95rem; font-size: 0.88rem; font-weight: 600; color: var(--text-2);
+  border-bottom: 2px solid transparent; cursor: pointer;
+}
+.a-tabs a:hover { color: var(--text); }
+.a-tabs a.on { color: var(--text); border-bottom-color: var(--strong); }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--loss); box-shadow: 0 0 0 3px rgba(224,104,95,0.18); }
+.a-top .logo { padding: 0.9rem 0; }
+
+.a-strip-wrap { position: relative; padding: 0.75rem 0.9rem; border-bottom: 1px solid var(--border); }
+.a-strip { display: flex; align-items: stretch; gap: 0.35rem; }
+.a-step { flex: none; width: 2.1rem; border: 1px solid var(--border); background: none; border-radius: 8px; cursor: pointer; color: var(--text-2); font-size: 1.05rem; }
+.a-step:disabled { opacity: 0.35; cursor: default; }
+.a-days { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(4.6rem, 1fr); gap: 0.35rem; flex: 1; overflow-x: auto; scrollbar-width: none; }
+.a-day {
+  display: grid; gap: 0.15rem; justify-items: start; padding: 0.45rem 0.6rem; border-radius: 8px;
+  border: 1px solid var(--border); background: none; cursor: pointer; text-align: left; min-width: 0;
+}
+.a-day .wk { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.a-day .dt { font-weight: 700; font-size: 0.9rem; }
+.a-day .sm { font-size: 0.68rem; color: var(--text-2); display: flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
+.a-day .sm i { width: 28px; height: 4px; border-radius: 2px; background: var(--track); position: relative; overflow: hidden; }
+.a-day .sm i u { position: absolute; inset: 0 auto 0 0; background: var(--strong); }
+.a-day.on { background: var(--surface-3); border-color: var(--border-2); box-shadow: inset 0 -2px 0 var(--strong); }
+.a-day.off { opacity: 0.4; cursor: default; }
+.a-cal {
+  flex: none; display: inline-flex; align-items: center; gap: 0.45rem; padding: 0 0.8rem;
+  border: 1px solid var(--border); background: none; border-radius: 8px; cursor: pointer; color: var(--text-2); font-size: 0.82rem; font-weight: 600;
+}
+.a-cal.on { color: var(--text); border-color: var(--border-2); background: var(--surface-3); }
+.a-pop { position: absolute; right: 0.9rem; top: calc(100% - 0.3rem); z-index: 5; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: 10px; box-shadow: 0 18px 40px rgba(0,0,0,0.45); }
+.a-filters { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; justify-content: space-between; padding: 0.65rem 0.9rem; border-bottom: 1px solid var(--border); }
+@container (max-width: 700px) {
+  .a-top { gap: 0.8rem; padding: 0 0.9rem; }
+  .a-top .logo span { display: none; }
+  .a-tabs a { padding: 1rem 0.5rem 0.9rem; font-size: 0.82rem; }
+  .a-days { grid-auto-columns: 4.3rem; }
+  .a-cal span { display: none; }
+  .a-pop { left: 0.5rem; right: 0.5rem; }
+  .a-pop .month { width: auto; }
+}
+
+/* Direction A parlay: controls + slip */
+.a-par { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr); gap: 1rem; align-items: start; }
+.a-ctl { padding: 1rem; display: grid; gap: 1.1rem; }
+.a-ctl h3 { margin: 0 0 0.45rem; font-size: 0.82rem; color: var(--text-2); font-weight: 600; }
+.a-n { display: flex; align-items: baseline; justify-content: space-between; }
+.a-n b { font-size: 1.6rem; }
+.a-ticks { display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--muted); margin-top: 0.15rem; }
+.a-style { display: grid; gap: 0.35rem; }
+.a-style button {
+  display: grid; gap: 0.1rem; text-align: left; border: 1px solid var(--border); background: none; border-radius: 8px;
+  padding: 0.55rem 0.7rem; cursor: pointer;
+}
+.a-style button b { font-size: 0.86rem; }
+.a-style button span { font-size: 0.74rem; color: var(--text-2); line-height: 1.4; }
+.a-style button.on { border-color: var(--strong); background: rgba(47,211,154,0.06); }
+.a-how { margin: 0; padding-left: 1.05rem; font-size: 0.78rem; color: var(--text-2); line-height: 1.55; }
+.a-slip-h { display: flex; justify-content: space-between; align-items: baseline; padding: 0.9rem 1rem 0.6rem; border-bottom: 1px solid var(--border); }
+.a-slip-h b { font-size: 0.95rem; }
+.a-slip-h span { font-size: 0.76rem; color: var(--muted); }
+.a-leg { display: grid; grid-template-columns: 2.8rem minmax(0,1fr) auto; gap: 0.75rem; align-items: center; padding: 0.6rem 1rem; border-bottom: 1px solid var(--border); }
+.a-leg .t { font-size: 0.8rem; color: var(--text-2); font-weight: 600; }
+.a-leg .m { font-size: 0.8rem; color: var(--text-2); display: flex; gap: 0.35rem; align-items: center; margin-top: 0.1rem; min-width: 0; }
+.a-leg .m span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a-leg .r { display: grid; justify-items: end; gap: 0.2rem; }
+.a-total { padding: 0.95rem 1rem 1.05rem; display: grid; gap: 0.6rem; background: var(--surface-2); }
+.a-total-row { display: flex; justify-content: space-between; align-items: baseline; }
+.a-total-row b { font-size: 1.7rem; }
+.a-total p { margin: 0; font-size: 0.8rem; color: var(--text-2); line-height: 1.5; }
+.a-stake { display: flex; gap: 0.5rem; align-items: center; font-size: 0.8rem; color: var(--text-2); }
+.a-stake input { width: 4.5rem; background: var(--surface); border: 1px solid var(--border-2); border-radius: 6px; color: var(--text); padding: 0.3rem 0.45rem; font: inherit; }
+@container (max-width: 760px) { .a-par { grid-template-columns: 1fr; } }
+
+/* ================= Direction B: one date button ================= */
+.b-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.9rem 1.25rem; margin-bottom: 1.2rem; }
+.b-nav { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
+.b-nav a { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.42rem 0.9rem; border-radius: 7px; font-size: 0.84rem; font-weight: 600; color: var(--text-2); cursor: pointer; }
+.b-nav a:hover { color: var(--text); }
+.b-nav a.on { background: var(--surface-3); color: var(--text); box-shadow: 0 0 0 1px var(--border-2); }
+.b-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 0.8rem 1.5rem; margin-bottom: 0.5rem; }
+.b-head h1 { margin: 0; font-size: 1.75rem; letter-spacing: -0.02em; }
+.b-sub { margin: 0 0 1.1rem; color: var(--text-2); font-size: 0.88rem; line-height: 1.55; max-width: 72ch; }
+.b-date { position: relative; display: inline-flex; border: 1px solid var(--border-2); border-radius: 9px; background: var(--surface); }
+.b-date > button { border: 0; background: none; cursor: pointer; color: var(--text-2); }
+.b-date .st { width: 2.3rem; font-size: 1.05rem; }
+.b-date .st:disabled { opacity: 0.35; cursor: default; }
+.b-date .mid {
+  display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.85rem; color: var(--text); font-weight: 600; font-size: 0.88rem;
+  border-left: 1px solid var(--border); border-right: 1px solid var(--border); white-space: nowrap;
+}
+.b-date .mid em { font-style: normal; font-size: 0.72rem; font-weight: 700; color: var(--strong); background: rgba(47,211,154,0.1); padding: 0.1rem 0.4rem; border-radius: 4px; }
+.b-date .mid .chev { color: var(--muted); font-size: 0.7rem; }
+.b-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: 10px; box-shadow: 0 18px 40px rgba(0,0,0,0.45); }
+.b-quick { display: flex; gap: 0.35rem; padding: 0.8rem 0.8rem 0; }
+.b-quick button { flex: 1; border: 1px solid var(--border); background: none; border-radius: 7px; padding: 0.4rem; cursor: pointer; font-size: 0.8rem; font-weight: 600; color: var(--text-2); }
+.b-quick button.on { color: var(--text); border-color: var(--text); }
+@container (max-width: 700px) {
+  .b-top { padding: 0.75rem 0.9rem; }
+  .b-top .logo span { display: none; }
+  .b-nav a { padding: 0.4rem 0.6rem; font-size: 0.8rem; }
+  .b-head h1 { font-size: 1.4rem; }
+  .b-date { width: 100%; }
+  .b-date .mid { flex: 1; justify-content: center; }
+  .b-pop { left: 0; right: 0; }
+  .b-pop .month { width: auto; }
+}
+
+/* Direction B parlay: ticket */
+.b-sum { display: grid; grid-template-columns: auto 1fr auto; gap: 1.2rem; align-items: center; padding: 1.1rem 1.1rem; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.b-big { display: grid; }
+.b-big small { font-size: 0.72rem; color: var(--muted); }
+.b-big b { font-size: 2.1rem; line-height: 1.1; }
+.b-sum p { margin: 0; font-size: 0.84rem; color: var(--text-2); line-height: 1.5; }
+.b-sum p strong { color: var(--text); }
+.b-ctl { display: flex; flex-wrap: wrap; gap: 0.7rem 1.4rem; align-items: center; padding: 0.75rem 1.1rem; border-bottom: 1px solid var(--border); }
+.b-ctl label { font-size: 0.76rem; color: var(--muted); margin-right: 0.4rem; }
+.b-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.b-seg button { border: 0; background: none; padding: 0.35rem 0.7rem; font-size: 0.8rem; cursor: pointer; color: var(--text-2); }
+.b-seg button + button { border-left: 1px solid var(--border); }
+.b-seg button.on { background: var(--surface-3); color: var(--text); font-weight: 700; }
+.b-stepper { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 8px; }
+.b-stepper button { border: 0; background: none; width: 2rem; height: 2rem; cursor: pointer; color: var(--text-2); font-size: 1rem; }
+.b-stepper b { min-width: 2.2rem; text-align: center; }
+.b-styledesc { flex-basis: 100%; font-size: 0.76rem; color: var(--text-2); margin-top: -0.2rem; }
+.b-leg { display: grid; grid-template-columns: 1.5rem 3rem minmax(0, 1fr) auto 3.4rem; gap: 0.8rem; align-items: center; padding: 0.7rem 1.1rem; border-bottom: 1px solid var(--border); }
+.b-leg .n { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
+.b-leg .t { font-weight: 600; font-size: 0.82rem; color: var(--text-2); }
+.b-leg .mt { display: flex; align-items: center; gap: 0.4rem; font-size: 0.86rem; font-weight: 600; min-width: 0; }
+.b-leg .mt span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b-leg .why { font-size: 0.76rem; color: var(--text-2); margin-top: 0.15rem; }
+.b-leg .mk { font-size: 0.82rem; font-weight: 700; margin-top: 0.15rem; }
+.b-leg .price { text-align: right; }
+.b-out { padding: 0.8rem 1.1rem 1rem; }
+.b-out summary { cursor: pointer; font-size: 0.82rem; color: var(--text-2); font-weight: 600; }
+.b-out ul { margin: 0.5rem 0 0; padding-left: 1.1rem; font-size: 0.78rem; color: var(--text-2); line-height: 1.6; }
+@container (max-width: 700px) {
+  .b-sum { grid-template-columns: 1fr; gap: 0.5rem; }
+  .b-leg { grid-template-columns: 2.6rem minmax(0,1fr) 3rem; }
+  .b-leg .n, .b-leg .recw { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="mk-bar">
+  <b>Watchlist + parlay mockups</b>
+  <span class="mk-seg" id="pickDir">
+    <button data-v="a" class="on">A · Tabs and a week strip</button>
+    <button data-v="b">B · One date button</button>
+  </span>
+  <span class="mk-seg" id="pickWidth">
+    <button data-v="desk" class="on">Desktop</button>
+    <button data-v="phone">Phone</button>
+  </span>
+  <span style="color:#6b6558">Real data: watchlist for Fri 6 Nov. Click the tabs, arrows, days and calendar.</span>
+</div>
+
+<div class="mk-note" id="noteA">
+  <h2>A · Tabs and a week strip</h2>
+  The header becomes a row of tabs (Live board, Watchlist, Parlay) with the logo on the left; the active tab is underlined.
+  The calendar stops being a separate place in the header: the date control is a week of days, each showing how its picks went,
+  with ‹ › to step and a Calendar button at the end that opens the month right there.
+  <ul>
+    <li>You see the last few days' results without opening anything.</li>
+    <li>The parlay page splits into controls on the left and the slip on the right.</li>
+  </ul>
+</div>
+<div class="mk-note mk-hide" id="noteB">
+  <h2>B · One date button</h2>
+  A quieter header: logo on the left, one switch for Live board / Watchlist / Parlay on the right.
+  The date sits beside the page title as a single control: ‹ <i>Fri 6 Nov · Today</i> ›. Clicking the date opens the month,
+  with Today and Tomorrow at the top, so arrows, quick days and the calendar are one thing.
+  <ul>
+    <li>Takes the least space, works the same on a phone.</li>
+    <li>The parlay page is one column: the price and what it means first, then the legs in kick-off order.</li>
+  </ul>
+</div>
+
+<div class="mk-frame" id="frame"></div>
+
+<script>
+const DATA = {"today": "2026-11-06", "counts": {"all": 230, "strong": 18, "look": 20}, "picks": [{"id": "841462", "ko": "2026-11-06T22:00:00+03:00", "watch": "strong", "headline": "Expect goals.", "reason": "Over 2.5 goals in all 6 and 9 of 10 of their last games.", "tags": ["Over 2.5", "Over 3.5", "Both score: Yes"], "odds": {"home": 1.44, "draw": 4.8, "away": 4.4}, "league": "Premier League 2 - Group Stage", "country": "England", "home": {"name": "Sunderland U21", "badge": "https://apiv3.apifootball.com/badges/13945_sunderland-u21.jpg", "position": 7}, "away": {"name": "Blackburn U21", "badge": "https://apiv3.apifootball.com/badges/26308_blackburn-rovers-u21.jpg", "position": 22}}, {"id": "738428", "ko": "2026-11-06T13:00:00+03:00", "watch": "strong", "headline": "Both teams to score looks unlikely.", "reason": "Both teams scored in just 9 of 20 of their last games.", "tags": ["Both score: No", "Penalty history", "Struggles to score"], "odds": {"home": 2.24, "draw": 3.65, "away": 2.51}, "league": "Youth Championship", "country": "Russia", "home": {"name": "Nizhny Novgorod U19", "badge": "https://apiv3.apifootball.com/badges/19461_nizhny-novgorod-u19.jpg", "position": 14}, "away": {"name": "Rubin Kazan U19", "badge": "https://apiv3.apifootball.com/badges/10088_rubin-kazan-u19.jpg", "position": 15}}, {"id": "808318", "ko": "2026-11-06T15:00:00+03:00", "watch": "strong", "headline": "Expect goals.", "reason": "Over 2.5 goals in 7 of 9 and all 9 of their last games.", "tags": ["Over 2.5", "Home over 1.5", "Strong favourite"], "odds": {"home": 1.12, "draw": 6.5, "away": 12.0}, "league": "Ligat Ha'al", "country": "Israel", "home": {"name": "Maccabi Tel Aviv", "badge": "https://apiv3.apifootball.com/badges/105_maccabi-tel-aviv.jpg", "position": 1}, "away": {"name": "Maccabi Petah Tikva", "badge": "https://apiv3.apifootball.com/badges/4798_maccabi-petah-tikva.jpg", "position": 9}}, {"id": "841736", "ko": "2026-11-06T19:40:00+03:00", "watch": "strong", "headline": "Al Shabab to score twice or more.", "reason": "Al Shabab scored 2+ in 4 of 7; Al Tadamon let in 2+ in all 7.", "tags": ["Home over 1.5", "First-half goals", "Over 2.5"], "odds": {"home": 2.5, "draw": 3.1, "away": 2.45}, "league": "Premier League", "country": "Kuwait", "home": {"name": "Al Shabab", "badge": "https://apiv3.apifootball.com/badges/5179_al-shabab.jpg", "position": 8}, "away": {"name": "Al Tadamon", "badge": "https://apiv3.apifootball.com/badges/5184_al-tadhamon.jpg", "position": 12}}, {"id": "805699", "ko": "2026-11-06T22:00:00+03:00", "watch": "strong", "headline": "A red card is a real chance.", "reason": "A red card in 4 of 10 and 3 of 10 of their last games.", "tags": ["Red card risk", "Away over 1.5", "Over 4.5 cards"], "odds": {"home": 4.5, "draw": 4.33, "away": 1.57}, "league": "Eerste Divisie", "country": "Netherlands", "home": {"name": "Dordrecht", "badge": "https://apiv3.apifootball.com/badges/5474_dordrecht.jpg", "position": 19}, "away": {"name": "NAC Breda", "badge": "https://apiv3.apifootball.com/badges/5513_nac-breda.jpg", "position": 13}}], "rows": [{"id": "825992", "ko": "2026-11-06T02:00:00+03:00", "watch": "strong", "headline": "Necaxa W struggle to score.", "reason": "Necaxa W failed to score in 8 of 10.", "tags": ["Struggles to score", "Both score: No", "No clean sheet"], "odds": {"home": 10.0, "draw": 5.0, "away": 1.2}, "league": "Liga MX Femenil", "country": "Mexico", "home": {"name": "Necaxa W", "badge": "https://apiv3.apifootball.com/badges/10990_necaxa-w.jpg", "position": 9}, "away": {"name": "Atlas W", "badge": "https://apiv3.apifootball.com/badges/10988_atlas-w.jpg", "position": 6}}, {"id": "785170", "ko": "2026-11-06T02:00:00+03:00", "watch": "look", "headline": "Goals tend to come before half-time.", "reason": "A first-half goal in 9 of 10 and all 10 of their last games.", "tags": ["First-half goals", "Red card risk", "Scoring streak"], "odds": {"home": 2.9, "draw": 3.0, "away": 2.15}, "league": "Primera División", "country": "Costa Rica", "home": {"name": "Inter San Carlos", "badge": "https://apiv3.apifootball.com/badges/36173_inter-san-carlos.jpg", "position": 7}, "away": {"name": "Cartagines", "badge": "https://apiv3.apifootball.com/badges/2287_cartagines.jpg", "position": 2}}, {"id": "862553", "ko": "2026-11-06T02:00:00+03:00", "watch": "quiet", "headline": "", "reason": "", "tags": ["Red card risk", "Both score: Yes", "Over 4.5 cards"], "odds": {"home": 1.18, "draw": 5.0, "away": 13.0}, "league": "Copa de la División Profesional - Quarter-finals", "country": "Bolivia", "home": {"name": "Bolivar", "badge": "https://apiv3.apifootball.com/badges/548_bolivar.jpg", "position": null}, "away": {"name": "Real Potosi", "badge": "https://apiv3.apifootball.com/badges/1649_real-potosi.jpg", "position": null}}, {"id": "859998", "ko": "2026-11-06T02:15:00+03:00", "watch": "quiet", "headline": "", "reason": "", "tags": ["Over 4.5 cards", "No clean sheet"], "odds": {"home": 1.85, "draw": 3.2, "away": 3.75}, "league": "Liga Nacional", "country": "Honduras", "home": {"name": "Choloma", "badge": null, "position": 8}, "away": {"name": "Atletico Independiente", "badge": null, "position": 10}}, {"id": "858984", "ko": "2026-11-06T03:00:00+03:00", "watch": "strong", "headline": "Expect plenty of cards.", "reason": "5+ cards in 5 of 10 and 8 of 9 of their last games.", "tags": ["Over 4.5 cards", "Strong favourite", "Both score: No"], "odds": {"home": 1.25, "draw": 4.6, "away": 11.0}, "league": "Copa Ecuador - Semi-finals", "country": "Ecuador", "home": {"name": "Ind. del Valle", "badge": "https://apiv3.apifootball.com/badges/543_independiente-valle.jpg", "position": null}, "away": {"name": "Delfin", "badge": "https://apiv3.apifootball.com/badges/567_delfin.jpg", "position": null}}, {"id": "865594", "ko": "2026-11-06T03:00:00+03:00", "watch": "quiet", "headline": "", "reason": "", "tags": ["Both score: Yes"], "odds": {"home": 1.5, "draw": 3.5, "away": 5.8}, "league": "Primera B - Clausura - Quadrangular", "country": "Colombia", "home": {"name": "U. Magdalena", "badge": "https://apiv3.apifootball.com/badges/9453_union-magdalena.jpg", "position": 8}, "away": {"name": "Ind. Valle del Cauca", "badge": null, "position": 9}}, {"id": "865915", "ko": "2026-11-06T03:00:00+03:00", "watch": "quiet", "headline": "", "reason": "", "tags": ["Both score: Yes"], "odds": {"home": 3.5, "draw": 3.5, "away": 1.75}, "league": "Premier League", "country": "Jamaica", "home": {"name": "Arnett Gardens", "badge": "https://apiv3.apifootball.com/badges/5038_arnett-gardens.jpg", "position": 8}, "away": {"name": "Mount Pleasant", "badge": "https://apiv3.apifootball.com/badges/5033_mount-pleasant-academy.jpg", "position": 7}}, {"id": "714687", "ko": "2026-11-06T03:30:00+03:00", "watch": "quiet", "headline": "", "reason": "", "tags": ["First-half goals", "Over 2.5", "Home over 1.5"], "odds": {"home": 1.73, "draw": 3.8, "away": 4.0}, "league": "Serie A", "country": "Brazil", "home": {"name": "Cruzeiro", "badge": "https://apiv3.apifootball.com/badges/1745_cruzeiro.jpg", "position": 3}, "away": {"name": "Bahia", "badge": "https://apiv3.apifootball.com/badges/1985_bahia.jpg", "position": 6}}, {"id": "865560", "ko": "2026-11-06T04:00:00+03:00", "watch": "quiet", "headline": "", "reason": "", "tags": ["Red card risk", "Scoring streak"], "odds": {"home": 2.9, "draw": 2.88, "away": 2.4}, "league": "Liga de Expansión MX - Quarter-finals", "country": "Mexico", "home": {"name": "Cancun", "badge": "https://apiv3.apifootball.com/badges/5371_cancun.jpg", "position": 5}, "away": {"name": "Piratas", "badge": null, "position": 4}}], "legs": [{"id": "785170", "watch": "look", "kickoff": "02:00", "home": "Inter San Carlos", "away": "Cartagines", "hb": "https://apiv3.apifootball.com/badges/36173_inter-san-carlos.jpg", "league": "Primera División", "country": "Costa Rica", "market": "Over 2.5 goals", "key": "over_2_5", "price": 1.9, "pscore": 0.198, "mscore": 0.484, "hit": 12, "n": 20, "brief": "Over 2.5 goals in 5 of 10 and 7 of 10 of their last games.", "ko": "2026-11-06T02:00:00+03:00"}, {"id": "825992", "watch": "strong", "kickoff": "02:00", "home": "Necaxa W", "away": "Atlas W", "hb": "https://apiv3.apifootball.com/badges/10990_necaxa-w.jpg", "league": "Liga MX Femenil", "country": "Mexico", "market": "Both teams score: No", "key": "btts_no", "price": 1.8, "pscore": 0.31, "mscore": 0.577, "hit": 14, "n": 20, "brief": "Both teams scored in just 6 of 20 of their last games.", "ko": "2026-11-06T02:00:00+03:00"}, {"id": "858984", "watch": "strong", "kickoff": "03:00", "home": "Ind. del Valle", "away": "Delfin", "hb": "https://apiv3.apifootball.com/badges/543_independiente-valle.jpg", "league": "Copa Ecuador - Semi-finals", "country": "Ecuador", "market": "Ind. del Valle to win", "key": "favourite_home", "price": 1.25, "pscore": 0.25, "mscore": 0.618, "hit": 6, "n": 10, "brief": "Ind. del Valle at 1.25, 6 of 10 wins lately.", "ko": "2026-11-06T03:00:00+03:00"}, {"id": "825993", "watch": "strong", "kickoff": "04:06", "home": "Queretaro W", "away": "Toluca W", "hb": "https://apiv3.apifootball.com/badges/10985_queretaro-w.jpg", "league": "Liga MX Femenil", "country": "Mexico", "market": "Toluca W to win", "key": "favourite_away", "price": 1.3, "pscore": 0.25, "mscore": 0.599, "hit": 6, "n": 10, "brief": "Toluca W at 1.30, 6 of 10 wins lately.", "ko": "2026-11-06T04:06:00+03:00"}, {"id": "859999", "watch": "look", "kickoff": "04:30", "home": "Marathon", "away": "Platense", "hb": "https://apiv3.apifootball.com/badges/296_marathon.jpg", "league": "Liga Nacional", "country": "Honduras", "market": "Both teams score", "key": "btts_yes", "price": 1.91, "pscore": 0.182, "mscore": 0.48, "hit": 11, "n": 20, "brief": "Both teams scored in 5 of 10 and 6 of 10 of their last games.", "ko": "2026-11-06T04:30:00+03:00"}, {"id": "738428", "watch": "strong", "kickoff": "13:00", "home": "Nizhny Novgorod U19", "away": "Rubin Kazan U19", "hb": "https://apiv3.apifootball.com/badges/19461_nizhny-novgorod-u19.jpg", "league": "Youth Championship", "country": "Russia", "market": "Both teams score: No", "key": "btts_no", "price": 3.2, "pscore": 0.553, "mscore": 0.702, "hit": 11, "n": 20, "brief": "Both teams scored in just 9 of 20 of their last games.", "ko": "2026-11-06T13:00:00+03:00"}, {"id": "795485", "watch": "look", "kickoff": "14:00", "home": "Obolon", "away": "Livyi Bereg", "hb": "https://apiv3.apifootball.com/badges/7777_fc-obolon-kyiv.jpg", "league": "Premier League", "country": "Ukraine", "market": "Under 2.5 goals", "key": "under_2_5", "price": 1.6, "pscore": 0.465, "mscore": 0.465, "hit": 13, "n": 19, "brief": "Under 2.5 goals in 6 of 10 and 7 of 9 of their last games.", "ko": "2026-11-06T14:00:00+03:00"}, {"id": "795486", "watch": "strong", "kickoff": "14:00", "home": "Polissya Zhytomyr", "away": "Veres-Rivne", "hb": "https://apiv3.apifootball.com/badges/7780_polissya.jpg", "league": "Premier League", "country": "Ukraine", "market": "Polissya Zhytomyr to win", "key": "favourite_home", "price": 1.22, "pscore": 0.35, "mscore": 0.563, "hit": 8, "n": 10, "brief": "Polissya Zhytomyr at 1.22, 8 of 10 wins lately.", "ko": "2026-11-06T14:00:00+03:00"}, {"id": "840459", "watch": "strong", "kickoff": "14:30", "home": "Hapoel Ihud Bnei Jatt", "away": "Ironi Nesher", "hb": null, "league": "Liga Alef - North", "country": "Israel", "market": "Ironi Nesher to win", "key": "favourite_away", "price": 1.25, "pscore": 0.339, "mscore": 0.55, "hit": 7, "n": 9, "brief": "Ironi Nesher at 1.25, 7 of 9 wins lately.", "ko": "2026-11-06T14:30:00+03:00"}, {"id": "808318", "watch": "strong", "kickoff": "15:00", "home": "Maccabi Tel Aviv", "away": "Maccabi Petah Tikva", "hb": "https://apiv3.apifootball.com/badges/105_maccabi-tel-aviv.jpg", "league": "Ligat Ha'al", "country": "Israel", "market": "Over 2.5 goals", "key": "over_2_5", "price": 1.33, "pscore": 0.585, "mscore": 0.686, "hit": 16, "n": 18, "brief": "Over 2.5 goals in 7 of 9 and all 9 of their last games.", "ko": "2026-11-06T15:00:00+03:00"}, {"id": "856551", "watch": "look", "kickoff": "15:00", "home": "Sepahan", "away": "Malavan", "hb": "https://apiv3.apifootball.com/badges/373_sepahan.jpg", "league": "Persian Gulf Pro League", "country": "Iran", "market": "Sepahan to win", "key": "favourite_home", "price": 1.29, "pscore": 0.25, "mscore": 0.523, "hit": 6, "n": 10, "brief": "Sepahan at 1.29, 6 of 10 wins lately.", "ko": "2026-11-06T15:00:00+03:00"}, {"id": "808532", "watch": "look", "kickoff": "16:00", "home": "Kiryat Yam", "away": "SC Ashdod", "hb": "https://apiv3.apifootball.com/badges/27680_kiryat-yam-sc.jpg", "league": "Liga Leumit", "country": "Israel", "market": "Over 2.5 goals", "key": "over_2_5", "price": 1.5, "pscore": 0.402, "mscore": 0.522, "hit": 16, "n": 20, "brief": "Over 2.5 goals in 9 of 10 and 7 of 10 of their last games.", "ko": "2026-11-06T16:00:00+03:00"}, {"id": "864660", "watch": "look", "kickoff": "17:00", "home": "CR Beni Thour", "away": "Magra", "hb": null, "league": "Ligue 2", "country": "Algeria", "market": "Over 2.5 goals", "key": "over_2_5", "price": 2.38, "pscore": 0.385, "mscore": 0.468, "hit": 10, "n": 15, "brief": "Over 2.5 goals in 6 of 7 and 4 of 8 of their last games.", "ko": "2026-11-06T17:00:00+03:00"}, {"id": "864664", "watch": "strong", "kickoff": "17:00", "home": "Skikda", "away": "Telaghema", "hb": "https://apiv3.apifootball.com/badges/812_jsm-skikda.jpg", "league": "Ligue 2", "country": "Algeria", "market": "Both teams score", "key": "btts_yes", "price": 2.53, "pscore": 0.283, "mscore": 0.584, "hit": 9, "n": 15, "brief": "Both teams scored in 3 of 7 and 6 of 8 of their last games.", "ko": "2026-11-06T17:00:00+03:00"}, {"id": "841736", "watch": "strong", "kickoff": "19:40", "home": "Al Shabab", "away": "Al Tadamon", "hb": "https://apiv3.apifootball.com/badges/5179_al-shabab.jpg", "league": "Premier League", "country": "Kuwait", "market": "Over 2.5 goals", "key": "over_2_5", "price": 1.7, "pscore": 0.182, "mscore": 0.681, "hit": 9, "n": 14, "brief": "Over 2.5 goals in 4 of 7 and 5 of 7 of their last games.", "ko": "2026-11-06T19:40:00+03:00"}, {"id": "717361", "watch": "look", "kickoff": "20:00", "home": "Djurgarden W", "away": "Hacken W", "hb": "https://apiv3.apifootball.com/badges/507_djurgrden-w.jpg", "league": "Damallsvenskan", "country": "Sweden", "market": "Hacken W to win", "key": "favourite_away", "price": 1.2, "pscore": 0.4, "mscore": 0.515, "hit": 9, "n": 10, "brief": "Hacken W at 1.20, 9 of 10 wins lately.", "ko": "2026-11-06T20:00:00+03:00"}, {"id": "779422", "watch": "look", "kickoff": "20:00", "home": "Dukla Prague", "away": "Pribram", "hb": "https://apiv3.apifootball.com/badges/2627_dukla-praha.jpg", "league": "FNL", "country": "Czech Republic", "market": "Over 2.5 goals", "key": "over_2_5", "price": 1.73, "pscore": 0.391, "mscore": 0.502, "hit": 17, "n": 20, "brief": "Over 2.5 goals in 8 of 10 and 9 of 10 of their last games.", "ko": "2026-11-06T20:00:00+03:00"}, {"id": "796986", "watch": "look", "kickoff": "20:00", "home": "Antalyaspor", "away": "Bursaspor", "hb": "https://apiv3.apifootball.com/badges/7695_antalyaspor.jpg", "league": "1. Lig", "country": "Turkey", "market": "Over 2.5 goals", "key": "over_2_5", "price": 1.8, "pscore": 0.429, "mscore": 0.506, "hit": 15, "n": 20, "brief": "Over 2.5 goals in 6 of 10 and 9 of 10 of their last games.", "ko": "2026-11-06T20:00:00+03:00"}, {"id": "821056", "watch": "look", "kickoff": "20:30", "home": "Bayern Munich W", "away": "Werder Bremen W", "hb": "https://apiv3.apifootball.com/badges/31_bayern-munchen-w.jpg", "league": "Frauen Bundesliga", "country": "Germany", "market": "Bayern Munich W to win", "key": "favourite_home", "price": 1.12, "pscore": 0.45, "mscore": 0.538, "hit": 8, "n": 8, "brief": "Bayern Munich W at 1.12, all 8 wins lately.", "ko": "2026-11-06T20:30:00+03:00"}, {"id": "715201", "watch": "look", "kickoff": "21:00", "home": "Barracas Central", "away": "Racing Club", "hb": "https://apiv3.apifootball.com/badges/945_barracas-central.jpg", "league": "Liga Profesional Argentina - Clausura", "country": "Argentina", "market": "Both teams score", "key": "btts_yes", "price": 1.95, "pscore": 0.315, "mscore": 0.488, "hit": 14, "n": 20, "brief": "Both teams scored in 6 of 10 and 8 of 10 of their last games.", "ko": "2026-11-06T21:00:00+03:00"}, {"id": "819681", "watch": "look", "kickoff": "21:00", "home": "Parndorf", "away": "Wienerberger", "hb": "https://apiv3.apifootball.com/badges/1099_parndorf.jpg", "league": "Regionalliga - East", "country": "Austria", "market": "Both teams score: No", "key": "btts_no", "price": 1.5, "pscore": 0.409, "mscore": 0.544, "hit": 13, "n": 20, "brief": "Both teams scored in just 7 of 20 of their last games.", "ko": "2026-11-06T21:00:00+03:00"}, {"id": "819505", "watch": "strong", "kickoff": "21:30", "home": "SK Rapid", "away": "Wolfsberger AC", "hb": "https://apiv3.apifootball.com/badges/118_rapid.jpg", "league": "Bundesliga", "country": "Austria", "market": "SK Rapid to win", "key": "favourite_home", "price": 1.25, "pscore": 0.4, "mscore": 0.598, "hit": 9, "n": 10, "brief": "SK Rapid at 1.25, 9 of 10 wins lately.", "ko": "2026-11-06T21:30:00+03:00"}, {"id": "819683", "watch": "look", "kickoff": "21:30", "home": "Kremser", "away": "Leobendorf", "hb": "https://apiv3.apifootball.com/badges/36145_krems--rehberg.jpg", "league": "Regionalliga - East", "country": "Austria", "market": "Over 2.5 goals", "key": "over_2_5", "price": 1.57, "pscore": 0.153, "mscore": 0.496, "hit": 14, "n": 20, "brief": "Over 2.5 goals in 7 of 10 and 7 of 10 of their last games.", "ko": "2026-11-06T21:30:00+03:00"}, {"id": "801433", "watch": "strong", "kickoff": "22:00", "home": "Jadran Dekani", "away": "NK Bistrica", "hb": "https://apiv3.apifootball.com/badges/6725_dekani.jpg", "league": "2. SNL", "country": "Slovenia", "market": "Under 2.5 goals", "key": "under_2_5", "price": 1.8, "pscore": 0.572, "mscore": 0.572, "hit": 15, "n": 20, "brief": "Under 2.5 goals in 9 of 10 and 6 of 10 of their last games.", "ko": "2026-11-06T22:00:00+03:00"}, {"id": "805699", "watch": "strong", "kickoff": "22:00", "home": "Dordrecht", "away": "NAC Breda", "hb": "https://apiv3.apifootball.com/badges/5474_dordrecht.jpg", "league": "Eerste Divisie", "country": "Netherlands", "market": "Over 2.5 goals", "key": "over_2_5", "price": 1.48, "pscore": 0.264, "mscore": 0.625, "hit": 14, "n": 20, "brief": "Over 2.5 goals in 8 of 10 and 6 of 10 of their last games.", "ko": "2026-11-06T22:00:00+03:00"}, {"id": "810620", "watch": "look", "kickoff": "22:00", "home": "Dijon", "away": "Red Star", "hb": "https://apiv3.apifootball.com/badges/3825_dijon.jpg", "league": "Ligue 2", "country": "France", "market": "Both teams score", "key": "btts_yes", "price": 1.53, "pscore": 0.421, "mscore": 0.489, "hit": 16, "n": 20, "brief": "Both teams scored in 9 of 10 and 7 of 10 of their last games.", "ko": "2026-11-06T22:00:00+03:00"}, {"id": "810891", "watch": "strong", "kickoff": "22:00", "home": "Chambly", "away": "Chantilly", "hb": "https://apiv3.apifootball.com/badges/3810_chambly-oise.jpg", "league": "National 2 - Group A", "country": "France", "market": "Over 2.5 goals", "key": "over_2_5", "price": 1.4, "pscore": 0.422, "mscore": 0.605, "hit": 11, "n": 15, "brief": "Over 2.5 goals in 6 of 8 and 5 of 7 of their last games.", "ko": "2026-11-06T22:00:00+03:00"}, {"id": "835135", "watch": "look", "kickoff": "22:00", "home": "RFC Liege U21", "away": "K. Lierse S.K. U21", "hb": "https://apiv3.apifootball.com/badges/32838_rfc-de-liege-u21.jpg", "league": "Reserve Pro League", "country": "Belgium", "market": "Over 2.5 goals", "key": "over_2_5", "price": 1.22, "pscore": 0.437, "mscore": 0.483, "hit": 11, "n": 13, "brief": "Over 2.5 goals in 4 of 6 and all 7 of their last games.", "ko": "2026-11-06T22:00:00+03:00"}, {"id": "841459", "watch": "look", "kickoff": "22:00", "home": "Nottingham U21", "away": "Leicester U21", "hb": "https://apiv3.apifootball.com/badges/26316_nottingham-forest-u21.jpg", "league": "Premier League 2 - Group Stage", "country": "England", "market": "Over 2.5 goals", "key": "over_2_5", "price": 1.4, "pscore": 0.427, "mscore": 0.492, "hit": 12, "n": 16, "brief": "Over 2.5 goals in 5 of 6 and 7 of 10 of their last games.", "ko": "2026-11-06T22:00:00+03:00"}, {"id": "841462", "watch": "strong", "kickoff": "22:00", "home": "Sunderland U21", "away": "Blackburn U21", "hb": "https://apiv3.apifootball.com/badges/13945_sunderland-u21.jpg", "league": "Premier League 2 - Group Stage", "country": "England", "market": "Over 2.5 goals", "key": "over_2_5", "price": 1.25, "pscore": 0.732, "mscore": 0.851, "hit": 15, "n": 16, "brief": "Over 2.5 goals in all 6 and 9 of 10 of their last games.", "ko": "2026-11-06T22:00:00+03:00"}, {"id": "781115", "watch": "look", "kickoff": "22:15", "home": "Aarau", "away": "Wil", "hb": "https://apiv3.apifootball.com/badges/7417_aarau.jpg", "league": "Challenge League", "country": "Switzerland", "market": "Both teams score", "key": "btts_yes", "price": 1.44, "pscore": 0.417, "mscore": 0.469, "hit": 15, "n": 20, "brief": "Both teams scored in all 10 and 5 of 10 of their last games.", "ko": "2026-11-06T22:15:00+03:00"}, {"id": "794635", "watch": "strong", "kickoff": "22:45", "home": "Cambrian United", "away": "Barry", "hb": "https://apiv3.apifootball.com/badges/8083_cambrian-united.jpg", "league": "Premier League", "country": "Wales", "market": "Over 2.5 goals", "key": "over_2_5", "price": 1.5, "pscore": 0.501, "mscore": 0.608, "hit": 16, "n": 20, "brief": "Over 2.5 goals in 8 of 10 and 8 of 10 of their last games.", "ko": "2026-11-06T22:45:00+03:00"}, {"id": "794637", "watch": "strong", "kickoff": "22:45", "home": "Haverfordwest", "away": "Cardiff Metropolitan", "hb": "https://apiv3.apifootball.com/badges/8081_haverfordwest-county.jpg", "league": "Premier League", "country": "Wales", "market": "Under 2.5 goals", "key": "under_2_5", "price": 2.08, "pscore": 0.449, "mscore": 0.552, "hit": 10, "n": 20, "brief": "Under 2.5 goals in 6 of 10 and 4 of 10 of their last games.", "ko": "2026-11-06T22:45:00+03:00"}, {"id": "794638", "watch": "look", "kickoff": "22:45", "home": "Holywell", "away": "Airbus", "hb": "https://apiv3.apifootball.com/badges/8437_holywell.jpg", "league": "Premier League", "country": "Wales", "market": "Both teams score", "key": "btts_yes", "price": 1.55, "pscore": 0.336, "mscore": 0.476, "hit": 13, "n": 20, "brief": "Both teams scored in 7 of 10 and 6 of 10 of their last games.", "ko": "2026-11-06T22:45:00+03:00"}, {"id": "794639", "watch": "strong", "kickoff": "22:45", "home": "Llandudno", "away": "TNS", "hb": "https://apiv3.apifootball.com/badges/8073_llandudno.jpg", "league": "Premier League", "country": "Wales", "market": "TNS to win", "key": "favourite_away", "price": 1.12, "pscore": 0.4, "mscore": 0.578, "hit": 9, "n": 10, "brief": "TNS at 1.12, 9 of 10 wins lately.", "ko": "2026-11-06T22:45:00+03:00"}], "days": [{"day": "2026-11-02", "matches": 182, "strong": 10, "look": 37, "strong_tally": {"landed": 7, "settled": 10}, "look_tally": {"landed": 21, "settled": 36}}, {"day": "2026-11-03", "matches": 165, "strong": 10, "look": 10, "strong_tally": {"landed": 4, "settled": 10}, "look_tally": {"landed": 4, "settled": 10}}, {"day": "2026-11-04", "matches": 133, "strong": 10, "look": 10, "strong_tally": {"landed": 9, "settled": 10}, "look_tally": {"landed": 7, "settled": 9}}, {"day": "2026-11-05", "matches": 91, "strong": 10, "look": 10, "strong_tally": {"landed": 2, "settled": 6}, "look_tally": {"landed": 5, "settled": 7}}, {"day": "2026-11-06", "matches": 230, "strong": 18, "look": 20, "strong_tally": {"landed": 0, "settled": 0}, "look_tally": {"landed": 0, "settled": 0}}, {"day": "2026-11-07", "matches": 405, "strong": 20, "look": 20, "strong_tally": {"landed": 0, "settled": 0}, "look_tally": {"landed": 0, "settled": 0}}], "first": "2026-11-02", "unpriced": [{"home": "Penrhyncoch", "away": "Caersws FC", "tags": ["Late goals", "Struggles to score", "Away over 1.5"]}]};
+
+/* ------------------------------------------------------------ helpers */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+const addDays = (iso, n) => { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const wk = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short" });
+const dnum = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+const longDay = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+const crest = (src) => (src ? `<img class="crest" src="${esc(src)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : "");
+const TODAY = DATA.today;
+const TOMORROW = addDays(TODAY, 1);
+const dayInfo = new Map(DATA.days.map((d) => [d.day, d]));
+const tally = (d) => { const l = d.strong_tally.landed + d.look_tally.landed, s = d.strong_tally.settled + d.look_tally.settled; return { l, s }; };
+
+const state = { dir: "a", phone: false, page: "watchlist", day: TODAY, cal: false, filter: "all", n: 5, style: "balanced", stake: 10 };
+
+function dayName(iso) {
+  if (iso === TODAY) return "Today";
+  if (iso === TOMORROW) return "Tomorrow";
+  return wk(iso);
+}
+
+/* ------------------------------------------------------------ parlay rule */
+const STYLES = {
+  safer: { name: "Safer", desc: "Shortest prices first, and only legs that landed in at least 7 of 10 recent games." },
+  balanced: { name: "Balanced", desc: "The strongest patterns of the day, the same order the watchlist uses." },
+  bolder: { name: "Bolder", desc: "Legs where recent games say it happens more often than the price suggests. Longer odds." },
+};
+function legsFor(n, style) {
+  const rate = (l) => l.hit / l.n;
+  const chance = (l) => 1 / l.price;
+  let pool = DATA.legs.slice();
+  if (style === "safer") pool = pool.filter((l) => rate(l) >= 0.7);
+  if (style === "bolder") pool = pool.filter((l) => rate(l) >= 0.55);
+  const key = {
+    safer: (l) => chance(l) * 2 + l.pscore,
+    balanced: (l) => l.pscore,
+    bolder: (l) => rate(l) - chance(l) + l.pscore * 0.3,
+  }[style];
+  const order = (a, b) => key(b) - key(a);
+  const strong = pool.filter((l) => l.watch === "strong").sort(order);
+  const look = pool.filter((l) => l.watch === "look").sort(order);
+  const picked = strong.concat(look).slice(0, n);
+  return picked.sort((a, b) => a.ko.localeCompare(b.ko));
+}
+const combined = (legs) => legs.reduce((p, l) => p * l.price, 1);
+function oneIn(odds) {
+  if (odds < 1.6) return "better than evens";
+  const n = Math.round(odds);
+  return n >= 1000 ? `about 1 in ${Math.round(n / 100) * 100}` : `about 1 in ${n}`;
+}
+const rec = (l) => `<span class="rec"><i><u style="width:${Math.round((l.hit / l.n) * 100)}%"></u></i>${l.hit} of ${l.n}</span>`;
+function leftOut(n, style) {
+  const used = new Set(legsFor(n, style).map((l) => l.id));
+  const items = DATA.unpriced.map((m) => `${esc(m.home)} v ${esc(m.away)}: its patterns (${esc(m.tags.join(", "))}) have no bookmaker price we hold.`);
+  const notUsed = DATA.legs.filter((l) => l.watch === "strong" && !used.has(l.id));
+  if (notUsed.length) items.push(`${notUsed.length} more strong ${notUsed.length === 1 ? "pick" : "picks"} with a price, below the cut for this length and style.`);
+  return items;
+}
+
+/* ------------------------------------------------------------ month grid */
+function monthGrid() {
+  const month = TODAY.slice(0, 7);
+  const [y, m] = month.split("-").map(Number);
+  const lead = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7;
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  let cells = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((w) => `<div class="wd">${w}</div>`).join("");
+  for (let i = 0; i < lead; i++) cells += `<div></div>`;
+  for (let d = 1; d <= days; d++) {
+    const iso = `${month}-${String(d).padStart(2, "0")}`;
+    const info = dayInfo.get(iso);
+    if (!info) { cells += `<div class="mday">${d}</div>`; continue; }
+    const t = tally(info);
+    const share = t.s ? t.l / t.s : null;
+    const sub = t.s ? `<small class="${share >= 0.6 ? "good" : share < 0.45 ? "bad" : ""}">${t.l}/${t.s}</small>` : `<small>${iso === TODAY ? "today" : iso === TOMORROW ? "next" : ""}</small>`;
+    cells += `<button class="mday has${iso === state.day ? " on" : ""}" data-day="${iso}">${d}${sub}</button>`;
+  }
+  return `<div class="month">
+    <div class="month-h"><button disabled>‹</button>November 2026<button disabled>›</button></div>
+    <div class="mgrid">${cells}</div>
+    <div class="month-f"><span>Green: most picks landed</span><a href="#" data-go="fullcal">Whole month →</a></div>
+  </div>`;
+}
+
+/* ------------------------------------------------------------ watchlist body (shared) */
+function watchBody() {
+  const info = dayInfo.get(state.day);
+  const isToday = state.day === TODAY;
+  if (!isToday) {
+    const t = tally(info);
+    return `<p style="padding:1.4rem 1rem;margin:0;color:var(--text-2)">${esc(longDay(state.day))}: ${info.matches} matches, ${info.strong} strong watch and ${info.look} worth a look.
+    ${t.s ? `${t.l} of ${t.s} picks landed.` : "Not played yet."} <span style="color:var(--muted)">(The mockup only carries today's full list.)</span></p>`;
+  }
+  const picks = state.filter === "all" ? `<h2 class="sec-h">5 to have open</h2>` + DATA.picks.map((m, i) => `
+    <div class="pick"><span class="pick-n">${i + 1}</span><div>
+      <div class="pick-t">${crest(m.home.badge)}${esc(m.home.name)} v ${esc(m.away.name)} <small>${esc(m.league)}</small></div>
+      <p><b>${esc(m.headline)}</b> ${esc(m.reason)}</p>
+      <div>${m.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+    </div><span class="pick-time">${clock(m.ko)}</span></div>`).join("") : "";
+  const rows = DATA.rows.filter((m) => state.filter === "all" || m.watch === state.filter);
+  let list = "", slot = "";
+  for (const m of rows) {
+    const at = clock(m.ko);
+    if (at !== slot) { slot = at; list += `<div class="slot-h">${at}</div>`; }
+    const o = m.odds || {};
+    list += `<div class="row"><span class="row-t">${at}</span>
+      <div class="row-teams"><div>${crest(m.home.badge)}${esc(m.home.name)}</div><div>${crest(m.away.badge)}${esc(m.away.name)}</div><small>${esc(m.country)} · ${esc(m.league)}</small></div>
+      <div class="odds"><span><b>1</b>${(o.home || 0).toFixed(2)}</span><span><b>X</b>${(o.draw || 0).toFixed(2)}</span><span><b>2</b>${(o.away || 0).toFixed(2)}</span></div>
+      <div class="row-why">${esc(m.reason || "Nothing stands out against the league norm.")}</div>
+      <span class="watch ${m.watch}"><i></i>${m.watch === "strong" ? "Strong watch" : m.watch === "look" ? "Worth a look" : "Quiet"}</span></div>`;
+  }
+  return picks + list + `<p style="margin:0;padding:0.8rem 1rem;color:var(--muted);font-size:0.76rem;border-top:1px solid var(--border)">…the rest of the day's 230 matches, as now.</p>`;
+}
+function filters() {
+  const c = DATA.counts;
+  const f = [["all", `All ${c.all}`], ["strong", `Strong watch ${c.strong}`], ["look", `Worth a look ${c.look}`]];
+  return `<div class="pills">${f.map(([k, l]) => `<button class="pill${state.filter === k ? " on" : ""}" data-filter="${k}">${l}</button>`).join("")}</div>
+    <div class="pills"><button class="pill on">By time</button><button class="pill">By league</button></div>`;
+}
+const INTRO = "Every match bookmakers price, checked for the same patterns: both teams scoring, goals, late goals, first-half goals, clean sheets and scoring runs. Each team's last 10 games are compared with their league's average, and the matches where something stands out come first.";
+function titleFor(iso) {
+  if (iso === TODAY) return "Today's watchlist";
+  if (iso === TOMORROW) return "Tomorrow's watchlist";
+  return `Watchlist for ${longDay(iso)}`;
+}
+
+/* ================================================================ A */
+function aHeader() {
+  const tab = (k, label, extra = "") => `<a class="${state.page === k ? "on" : ""}" data-page="${k}">${extra}${label}</a>`;
+  return `<header class="a-top">
+    <span class="logo"><i></i><span>Kalchas</span></span>
+    <nav class="a-tabs">${tab("live", "Live board", '<span class="live-dot"></span>')}${tab("watchlist", "Watchlist")}${tab("parlay", "Parlay")}</nav>
+  </header>`;
+}
+function aStrip() {
+  const first = DATA.first;
+  const days = [];
+  for (let i = -4; i <= 1; i++) days.push(addDays(TODAY, i));
+  const html = days.map((iso) => {
+    const info = dayInfo.get(iso);
+    if (!info) return `<div class="a-day off"><span class="wk">${wk(iso)}</span><span class="dt">${dnum(iso)}</span><span class="sm">No list</span></div>`;
+    const t = tally(info);
+    const sm = t.s
+      ? `<span class="sm"><i><u style="width:${Math.round((t.l / t.s) * 100)}%"></u></i>${t.l}/${t.s} landed</span>`
+      : `<span class="sm">${info.strong} strong</span>`;
+    return `<button class="a-day${iso === state.day ? " on" : ""}" data-day="${iso}"><span class="wk">${iso === TODAY ? "Today" : iso === TOMORROW ? "Tomorrow" : wk(iso)}</span><span class="dt">${dnum(iso)}</span>${sm}</button>`;
+  }).join("");
+  return `<div class="a-strip-wrap">
+    <div class="a-strip">
+      <button class="a-step" data-step="-1" ${state.day <= first ? "disabled" : ""} aria-label="Previous day">‹</button>
+      <div class="a-days">${html}</div>
+      <button class="a-step" data-step="1" ${state.day >= TOMORROW ? "disabled" : ""} aria-label="Next day">›</button>
+      <button class="a-cal${state.cal ? " on" : ""}" data-cal>${CAL_ICON}<span>November</span> ▾</button>
+    </div>
+    ${state.cal ? `<div class="a-pop">${monthGrid()}</div>` : ""}
+  </div>`;
+}
+function aWatchlist() {
+  return `<div class="pg"><div class="intro"><h1>${titleFor(state.day)}</h1><p>${INTRO}</p></div>
+    <div class="card">${aStrip()}<div class="a-filters">${filters()}</div>${watchBody()}</div></div>`;
+}
+function aParlay() {
+  const legs = legsFor(state.n, state.style);
+  const odds = combined(legs);
+  const looks = legs.filter((l) => l.watch === "look").length;
+  const strongN = DATA.legs.filter((l) => l.watch === "strong").length;
+  return `<div class="pg"><div class="intro"><h1>Today's parlay</h1>
+    <p>Built from today's watchlist: one leg per match, each from its strongest pattern that bookmakers price. Change how many legs and how bold it is; the slip updates.</p></div>
+    <div class="a-par">
+      <div class="card a-ctl">
+        <div><h3>How many legs</h3>
+          <div class="a-n"><b>${state.n}</b><span style="font-size:0.76rem;color:var(--muted)">${strongN} strong picks have a price today</span></div>
+          <input type="range" min="3" max="18" value="${state.n}" data-n>
+          <div class="a-ticks"><span>3</span><span>6</span><span>9</span><span>12</span><span>15</span><span>18</span></div>
+        </div>
+        <div><h3>Style</h3><div class="a-style">${Object.entries(STYLES).map(([k, s]) => `<button class="${state.style === k ? "on" : ""}" data-style="${k}"><b>${s.name}</b><span>${s.desc}</span></button>`).join("")}</div></div>
+        <div><h3>How legs are picked</h3><ul class="a-how">
+          <li>Only Strong watch matches, topped up from Worth a look when there aren't enough.</li>
+          <li>One market per match, so two legs never lean on the same game.</li>
+          <li>Only markets with a bookmaker price we hold: goals over or under 2.5, both teams to score, or a clear favourite to win. Patterns like red cards or late goals stay on the watchlist.</li>
+        </ul></div>
+      </div>
+      <div class="card">
+        <div class="a-slip-h"><b>${state.n} legs</b><span>In kick-off order</span></div>
+        ${legs.map((l) => `<div class="a-leg"><span class="t">${clock(l.ko)}</span>
+          <div><div class="leg-mkt">${esc(l.market)}</div><div class="m">${crest(l.hb)}<span>${esc(l.home)} v ${esc(l.away)}</span></div>
+          ${l.watch === "look" ? `<div class="fill-note">Worth a look, added to reach ${state.n}</div>` : ""}</div>
+          <div class="r"><span class="price">${l.price.toFixed(2)}</span>${rec(l)}</div></div>`).join("")}
+        <div class="a-total">
+          <div class="a-total-row"><span style="color:var(--text-2);font-size:0.85rem">Combined odds</span><b>${odds.toFixed(2)}</b></div>
+          <p>All ${state.n} have to land. At these prices bookmakers rate that ${oneIn(odds)}.${looks ? ` ${looks} ${looks === 1 ? "leg comes" : "legs come"} from Worth a look.` : ""}</p>
+          <div class="a-stake">Stake <input type="number" min="1" value="${state.stake}" data-stake> returns <b style="color:var(--text)">${(state.stake * odds).toFixed(2)}</b></div>
+        </div>
+      </div>
+    </div></div>`;
+}
+
+/* ================================================================ B */
+function bHeader() {
+  const tab = (k, label, extra = "") => `<a class="${state.page === k ? "on" : ""}" data-page="${k}">${extra}${label}</a>`;
+  return `<header class="b-top"><span class="logo"><i></i><span>Kalchas</span></span>
+    <nav class="b-nav">${tab("live", "Live board", '<span class="live-dot"></span>')}${tab("watchlist", "Watchlist")}${tab("parlay", "Parlay")}</nav></header>`;
+}
+function bDate() {
+  const tag = state.day === TODAY ? "<em>Today</em>" : state.day === TOMORROW ? "<em>Tomorrow</em>" : "";
+  return `<div class="b-date">
+    <button class="st" data-step="-1" ${state.day <= DATA.first ? "disabled" : ""} aria-label="Previous day">‹</button>
+    <button class="mid" data-cal>${CAL_ICON}${wk(state.day)} ${dnum(state.day)} ${tag}<span class="chev">▾</span></button>
+    <button class="st" data-step="1" ${state.day >= TOMORROW ? "disabled" : ""} aria-label="Next day">›</button>
+    ${state.cal ? `<div class="b-pop"><div class="b-quick">
+      <button class="${state.day === TODAY ? "on" : ""}" data-day="${TODAY}">Today</button>
+      <button class="${state.day === TOMORROW ? "on" : ""}" data-day="${TOMORROW}">Tomorrow</button></div>${monthGrid()}</div>` : ""}
+  </div>`;
+}
+function bWatchlist() {
+  return `<div class="pg"><div class="b-head"><h1>${titleFor(state.day)}</h1>${bDate()}</div>
+    <p class="b-sub">${INTRO}</p>
+    <div class="card"><div class="bar">${filters()}</div>${watchBody()}</div></div>`;
+}
+function bParlay() {
+  const legs = legsFor(state.n, state.style);
+  const odds = combined(legs);
+  const looks = legs.filter((l) => l.watch === "look").length;
+  const out = leftOut(state.n, state.style);
+  return `<div class="pg"><div class="b-head"><h1>Today's parlay</h1>${bDate()}</div>
+    <p class="b-sub">The strongest picks on today's watchlist, one market per match, added up into one bet.</p>
+    <div class="card">
+      <div class="b-sum">
+        <div class="b-big"><small>${state.n} legs · combined</small><b>${odds.toFixed(2)}</b></div>
+        <p>All ${state.n} have to land. Bookmakers rate that <strong>${oneIn(odds)}</strong>.
+        Each leg shows how often it happened in the two teams' recent games.${looks ? ` ${looks} ${looks === 1 ? "leg is" : "legs are"} Worth a look, added to reach ${state.n}.` : ""}</p>
+        <div class="b-big" style="text-align:right"><small>10 returns</small><b style="font-size:1.25rem">${(10 * odds).toFixed(2)}</b></div>
+      </div>
+      <div class="b-ctl">
+        <span><label>Legs</label><span class="b-stepper"><button data-dn="-1" aria-label="Fewer">−</button><b>${state.n}</b><button data-dn="1" aria-label="More">+</button></span></span>
+        <span><label>Quick</label><span class="b-seg">${[3, 5, 8, 12, 18].map((n) => `<button class="${state.n === n ? "on" : ""}" data-setn="${n}">${n}</button>`).join("")}</span></span>
+        <span><label>Style</label><span class="b-seg">${Object.entries(STYLES).map(([k, s]) => `<button class="${state.style === k ? "on" : ""}" data-style="${k}">${s.name}</button>`).join("")}</span></span>
+        <span class="b-styledesc">${STYLES[state.style].desc}</span>
+      </div>
+      ${legs.map((l, i) => `<div class="b-leg"><span class="n">${i + 1}</span><span class="t">${clock(l.ko)}</span>
+        <div><div class="mt">${crest(l.hb)}<span>${esc(l.home)} v ${esc(l.away)}</span></div>
+        <div class="mk">${esc(l.market)}${l.watch === "look" ? ' <span class="fill-note">· Worth a look</span>' : ""}</div>
+        <div class="why">${esc(l.brief)}</div></div>
+        <span class="recw">${rec(l)}</span><span class="price">${l.price.toFixed(2)}</span></div>`).join("")}
+      <details class="b-out"><summary>Left out today (${out.length})</summary><ul>${out.map((x) => `<li>${x}</li>`).join("")}</ul></details>
+    </div></div>`;
+}
+
+/* ------------------------------------------------------------ live board placeholder */
+function livePage() {
+  return `<div class="pg"><div class="intro"><h1>Live board</h1><p>The existing live board, unchanged. It gets the same header, so moving between the three pages feels like one site.</p></div></div>`;
+}
+
+const CAL_ICON = `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg>`;
+
+function render() {
+  const f = $("#frame");
+  f.classList.toggle("is-phone", state.phone);
+  const a = state.dir === "a";
+  $("#noteA").classList.toggle("mk-hide", !a);
+  $("#noteB").classList.toggle("mk-hide", a);
+  const head = a ? aHeader() : bHeader();
+  const body = state.page === "live" ? livePage() : state.page === "parlay" ? (a ? aParlay() : bParlay()) : a ? aWatchlist() : bWatchlist();
+  f.innerHTML = head + body;
+}
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("button, a");
+  if (!t) { if (state.cal) { state.cal = false; render(); } return; }
+  if (t.closest("#pickDir")) { state.dir = t.dataset.v; state.cal = false; [...t.parentNode.children].forEach((b) => b.classList.toggle("on", b === t)); render(); return; }
+  if (t.closest("#pickWidth")) { state.phone = t.dataset.v === "phone"; [...t.parentNode.children].forEach((b) => b.classList.toggle("on", b === t)); render(); return; }
+  if (!t.closest("#frame")) return;
+  e.preventDefault();
+  const d = t.dataset;
+  if (d.page) { state.page = d.page; state.cal = false; }
+  else if (d.day) { state.day = d.day; state.cal = false; if (state.page === "parlay") state.page = "watchlist"; }
+  else if (d.step) { const next = addDays(state.day, Number(d.step)); if (dayInfo.has(next)) state.day = next; state.cal = false; }
+  else if (d.cal !== undefined) state.cal = !state.cal;
+  else if (d.filter) state.filter = d.filter;
+  else if (d.style) state.style = d.style;
+  else if (d.setn) state.n = Number(d.setn);
+  else if (d.dn) state.n = Math.max(3, Math.min(18, state.n + Number(d.dn)));
+  else if (d.go === "fullcal") { state.cal = false; alert("Opens the full results calendar (today's /calendar page)."); }
+  else return;
+  render();
+});
+document.addEventListener("input", (e) => {
+  if (e.target.matches("[data-n]")) { state.n = Number(e.target.value); render(); $("[data-n]").focus(); }
+  if (e.target.matches("[data-stake]")) { state.stake = Math.max(1, Number(e.target.value) || 1); const v = e.target.value; render(); const s = $("[data-stake]"); s.focus(); s.value = v; }
+});
+render();
+</script>
+</body>
+</html>

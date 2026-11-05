@@ -538,6 +538,100 @@ def watchlist_live(day: str) -> dict[str, LiveScore]:
         return scores
 
 
+class ParlayLeg(BaseModel):
+    match_id: str
+    kickoff: str
+    league: str
+    country: str
+    home: TeamRef
+    away: TeamRef
+    watch: Watch
+    market: str
+    label: str
+    price: float
+    hit: int
+    n: int
+    brief: str
+    score: float
+    result: RowResult | None = None
+    outcome: Outcome | None = None
+    outcome_note: str = ""
+
+
+class Unpriced(BaseModel):
+    match_id: str
+    home: str
+    away: str
+    tags: list[str]
+
+
+class ParlayOrder(BaseModel):
+    safer: list[str] = []
+    balanced: list[str] = []
+    bolder: list[str] = []
+
+
+class ParlayDay(BaseModel):
+    status: Literal["ready", "preparing", "none"]
+    day: str
+    today: str
+    first_day: str | None = None
+    legs: list[ParlayLeg] = []
+    order: ParlayOrder = ParlayOrder()
+    unpriced: list[Unpriced] = []
+
+
+PARLAY_TTL_SEC = 60.0
+_parlays: dict[str, tuple[float, dict]] = {}
+_parlay_lock = threading.Lock()
+
+
+def _parlay_for(dsn: str, date_str: str) -> dict:
+    """The day's legs, built from every match page of that day. Kept for a
+    minute: a day has a few hundred pages and the slider never re-asks."""
+    from kalchas_core.watchlist.parlay import build
+    from kalchas_db.watchlist import load_watchlist_matches_on
+
+    hit = _parlays.get(date_str)
+    if hit and time.monotonic() - hit[0] < PARLAY_TTL_SEC:
+        return hit[1]
+    with _parlay_lock:
+        hit = _parlays.get(date_str)
+        if hit and time.monotonic() - hit[0] < PARLAY_TTL_SEC:
+            return hit[1]
+        pages = load_watchlist_matches_on(dsn, date_str)
+        built = build(pages) if pages else {}
+        _parlays[date_str] = (time.monotonic(), built)
+        return built
+
+
+@router.get("/parlay/{day}", response_model=ParlayDay)
+def watchlist_parlay(day: str) -> ParlayDay:
+    """Every leg the day's parlay can use, with the order each style takes them."""
+    from kalchas_db.watchlist import first_watchlist_day
+
+    date_str = resolve_day(day)
+    today = board_today().isoformat()
+    try:
+        dsn = _dsn()
+        built = _parlay_for(dsn, date_str)
+        first = first_watchlist_day(dsn)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _unavailable(exc) from exc
+    if not built:
+        return ParlayDay(
+            status="none" if date_str < today else "preparing",
+            day=date_str,
+            today=today,
+            first_day=first,
+        )
+    return ParlayDay.model_validate(
+        {**built, "status": "ready", "day": date_str, "today": today, "first_day": first}
+    )
+
+
 @router.get("/match/{match_id}", response_model=MatchResearch)
 def watchlist_match(match_id: str) -> MatchResearch:
     from kalchas_db.watchlist import load_watchlist_match
