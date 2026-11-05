@@ -987,6 +987,47 @@
   background: var(--text-2);
 }
 
+/* player shots */
+
+.wl-shots-team + .wl-shots-team {
+  margin-top: 1.1rem;
+}
+
+.wl-shots-team .wl-shots-n {
+  margin: 0.2rem 0 0.4rem;
+}
+
+.wl-shots tbody tr.wl-shots-player th {
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wl-shots-cell b {
+  display: block;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.wl-shots-cell small {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.wl-shots-cell.is-high b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.wl-shots tbody tr.wl-shots-run td {
+  border-top: 0;
+  padding-top: 0;
+  font-size: 0.76rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 /* form */
 
 .wl-form-row {

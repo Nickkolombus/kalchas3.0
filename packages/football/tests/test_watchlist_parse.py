@@ -264,3 +264,47 @@ def test_cards_count_the_90_minutes_and_missing_data_stays_unknown() -> None:
     assert (without["cards"], without["red_card"]) == (None, None)
     (result,) = parse_results([{**base, "cards": cards}])
     assert result["cards"] == 2
+
+
+def _player(key: str, minutes: str, shots: str, on: str) -> dict[str, str]:
+    return {
+        "player_key": key,
+        "player_name": f"P{key}",
+        "player_minutes_played": minutes,
+        "player_total_shots": shots,
+        "player_shots_on_goal": on,
+    }
+
+
+def test_player_shots_ride_along_for_players_who_got_on() -> None:
+    base = {
+        "match_id": "9",
+        "match_date": "2026-10-31",
+        "match_status": "Finished",
+        "match_hometeam_id": "10",
+        "match_awayteam_id": "20",
+        "match_hometeam_score": "1",
+        "match_awayteam_score": "0",
+    }
+    covered = {
+        **base,
+        "player_stats": {
+            "home": [_player("1", "90", "4", "2"), _player("2", "0", "0", "0")],
+            "away": [_player("3", "23", "0", "0")],
+        },
+    }
+    [row] = parse_team_fixtures([covered])
+    assert row["players"] == {"home": [["1", "P1", 90, 4, 2]], "away": [["3", "P3", 23, 0, 0]]}
+
+
+def test_matches_the_provider_has_no_player_data_for_carry_none() -> None:
+    uncovered = {
+        "match_id": "9",
+        "match_date": "2026-10-31",
+        "match_status": "Finished",
+        "match_hometeam_id": "10",
+        "match_awayteam_id": "20",
+        "player_stats": {"home": [_player("1", "0", "0", "0")], "away": []},
+    }
+    [row] = parse_team_fixtures([uncovered])
+    assert "players" not in row

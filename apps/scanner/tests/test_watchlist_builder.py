@@ -105,7 +105,9 @@ class FakeClient:
         self.calls.append(("results", day))
         return self.results
 
-    def get_league_fixtures(self, league_id: int, *, days_back: int) -> list[dict[str, Any]]:
+    def get_league_fixtures(
+        self, league_id: int, *, days_back: int, player_stats: bool = False
+    ) -> list[dict[str, Any]]:
         self.calls.append(("league", league_id))
         if league_id == 7:
             if self.cup_budget_spent:
@@ -113,7 +115,9 @@ class FakeClient:
             return [played("c1", 8, 9, 1, 0, 20)]
         return self.league
 
-    def get_team_fixtures(self, team_id: int, *, days_back: int) -> list[dict[str, Any]]:
+    def get_team_fixtures(
+        self, team_id: int, *, days_back: int, player_stats: bool = False
+    ) -> list[dict[str, Any]]:
         self.calls.append(("team", team_id))
         return [played(f"t{team_id}-{i}", team_id, 200 + i, 3, 2, 28 - i) for i in range(10)]
 
@@ -325,3 +329,28 @@ def test_a_match_the_live_board_saw_end_settles_straight_away() -> None:
     # ...but the live board says it's over, so it settles now.
     assert b.settle_day(DAY, now=DURING, finished={"100"}) == 1
     assert page(b, "100")["result"]["label"] == "FT"
+
+
+def test_player_shots_come_from_the_competition_and_reach_wider_only_where_covered() -> None:
+    client = FakeClient()
+    for row in client.league:
+        if row["home_team_id"] == 1:
+            row["players"] = {"home": [["k9", "Nine", 90, 3, 1]], "away": []}
+    b = builder(client)
+    b.build_day(DAY, now=BEFORE)
+    shots = page(b, "100")["shots"]
+    assert shots["home"]["source"] == "competition"
+    assert shots["home"]["players"][0]["name"] == "Nine"
+    assert shots["home"]["players"][0]["shots"] == [3] * 10
+    # The league has player data but team 2 has none there: one wider look,
+    # which has none either.
+    assert ("team", 2) in client.calls
+    assert shots["away"] is None
+
+
+def test_competitions_without_player_data_cost_no_extra_calls() -> None:
+    client = FakeClient()
+    b = builder(client)
+    b.build_day(DAY, now=BEFORE)
+    assert ("team", 1) not in client.calls and ("team", 2) not in client.calls
+    assert page(b, "100")["shots"] is None

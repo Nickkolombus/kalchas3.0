@@ -42,11 +42,13 @@ from kalchas_core.watchlist import (
     build_match_research,
     build_team_profile,
     cap_levels,
+    has_covered_games,
     is_settled,
     league_norms,
     match_result,
     played_game,
     settle_page,
+    team_shots,
 )
 from kalchas_football import FootballAPIClient, RateLimitBudgetExceeded
 
@@ -78,6 +80,9 @@ once; this caps a heavy first build and the rest come at the next one."""
 MEETING_HOURS = 365 * 24
 MIN_COMPETITION_GAMES = 6
 """Fewer league/cup games than this and a team's profile uses all competitions."""
+SHOT_COMPETITION_GAMES = 10
+"""Covered games in the competition before player shots stop reaching for
+the team's games in all competitions."""
 
 SKIP_STATUS = frozenset({"FT", "AET", "PEN", "PST", "CANC", "AWD"})
 DEFAULT_TIMEZONE = "+03:00"
@@ -283,7 +288,9 @@ class WatchlistBuilder:
             f"wl_league_{league_id}",
             LEAGUE_HISTORY_HOURS,
             lambda: {
-                "fixtures": self.client.get_league_fixtures(league_id, days_back=HISTORY_DAYS)
+                "fixtures": self.client.get_league_fixtures(
+                    league_id, days_back=HISTORY_DAYS, player_stats=True
+                )
             },
         )
         return None if block is None else list(block.get("fixtures") or [])
@@ -292,9 +299,32 @@ class WatchlistBuilder:
         block = self._cached(
             f"wl_team_{team_id}",
             TEAM_HISTORY_HOURS,
-            lambda: {"fixtures": self.client.get_team_fixtures(team_id, days_back=HISTORY_DAYS)},
+            lambda: {
+                "fixtures": self.client.get_team_fixtures(
+                    team_id, days_back=HISTORY_DAYS, player_stats=True
+                )
+            },
         )
         return None if block is None else list(block.get("fixtures") or [])
+
+    def _shots(
+        self, history: list[dict[str, Any]], team_id: int, source: str
+    ) -> dict[str, Any] | None:
+        """The team's shooters. From the competition when it has enough
+        covered games; otherwise from all competitions, fetched only if the
+        profile already did or the provider covers this competition at all
+        (most competitions it doesn't, and a call per team there would be
+        wasted budget)."""
+        here = team_shots(history, team_id) if source != "all" else None
+        if source != "all" and (
+            (here and here["games"] >= SHOT_COMPETITION_GAMES) or not has_covered_games(history)
+        ):
+            return here
+        wider = self._team_history(team_id)
+        found = team_shots(wider, team_id, source="all") if wider else None
+        if found is None or (here and here["games"] >= found["games"]):
+            return here
+        return found
 
     def _table(self, league_id: int) -> list[dict[str, Any]]:
         block = self._cached(
@@ -469,6 +499,10 @@ class WatchlistBuilder:
                 "table": tables[league_id],
                 "league_record": by_league_record.get((fx["country_name"], fx["league_name"])),
                 "overall_record": overall,
+                "shots": {
+                    "home": self._shots(history, int(fx["home_team_id"]), home_source),
+                    "away": self._shots(history, int(fx["away_team_id"]), away_source),
+                },
             }
             research = build_match_research(fx, **inputs)
             if research["watch"] != "quiet":

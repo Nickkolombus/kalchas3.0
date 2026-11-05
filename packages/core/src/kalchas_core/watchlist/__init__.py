@@ -42,6 +42,7 @@ from kalchas_core.watchlist.results import (
     settle,
     settle_page,
 )
+from kalchas_core.watchlist.shots import has_covered_games, team_shots
 
 __all__ = [
     "NO_RESULT",
@@ -58,6 +59,7 @@ __all__ = [
     "cap_levels",
     "day_cap",
     "day_summary",
+    "has_covered_games",
     "is_played",
     "is_settled",
     "league_key",
@@ -73,6 +75,7 @@ __all__ = [
     "shortlist",
     "table_slice",
     "team_games",
+    "team_shots",
     "timing_bucket",
     "timing_note",
     "watch_level",

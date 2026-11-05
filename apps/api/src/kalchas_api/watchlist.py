@@ -284,6 +284,33 @@ class MatchResult(BaseModel):
     goals: list[Goal] = []
 
 
+class ShotLine(BaseModel):
+    stat: Literal["shots", "on_target"]
+    at_least: int
+    hits: int
+
+
+class ShooterOut(BaseModel):
+    name: str
+    apps: int
+    minutes: int
+    shots: list[int]
+    per_90: float
+    on_target_per_90: float
+    lines: list[ShotLine]
+
+
+class TeamShots(BaseModel):
+    games: int
+    source: Literal["competition", "all"]
+    players: list[ShooterOut]
+
+
+class ShotsPair(BaseModel):
+    home: TeamShots | None = None
+    away: TeamShots | None = None
+
+
 class MatchResearch(BaseModel):
     match_id: str
     day: str
@@ -302,6 +329,7 @@ class MatchResearch(BaseModel):
     timing: Timing
     h2h: H2HOut | None = None
     table: list[TableRow]
+    shots: ShotsPair | None = None
     result: MatchResult | None = None
 
 

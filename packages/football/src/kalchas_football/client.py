@@ -893,8 +893,47 @@ def parse_team_fixtures(data: Any) -> list[dict[str, Any]]:
                 "goal_events": _h2h_goal_events(row),
                 "corners": _corners(row),
                 **_regular_cards(row),
+                **({"players": players} if (players := player_shot_lines(row)) else {}),
             }
         )
+    return out
+
+
+def player_shot_lines(row: dict[str, Any]) -> dict[str, list[list[Any]]] | None:
+    """Who played and how many shots each had, from ``withPlayerStats=1``.
+
+    ``{"home": [[player_key, name, minutes, shots, on_target], ...], "away": ...}``,
+    players who got on the pitch only. Compact lists because a league's
+    120 days of these sit in ``panel_cache``.
+
+    `None` when the provider has no player data for the match: it then lists
+    every player with 0 minutes and 0 shots, which must not read as a
+    player who played and didn't shoot.
+    """
+    block = row.get("player_stats")
+    if not isinstance(block, dict):
+        return None
+    out: dict[str, list[list[Any]]] = {}
+    for side in ("home", "away"):
+        lines: list[list[Any]] = []
+        for p in block.get(side) or []:
+            if not isinstance(p, dict):
+                continue
+            minutes = _coerce_int(p.get("player_minutes_played"))
+            if minutes <= 0:
+                continue
+            lines.append(
+                [
+                    str(p.get("player_key") or p.get("player_name") or ""),
+                    str(p.get("player_name") or ""),
+                    minutes,
+                    _coerce_int(p.get("player_total_shots")),
+                    _coerce_int(p.get("player_shots_on_goal")),
+                ]
+            )
+        out[side] = lines
+    if not out["home"] and not out["away"]:
+        return None
     return out
 
 
@@ -1248,8 +1287,12 @@ class FootballAPIClient:
         team_id: int,
         *,
         days_back: int = 120,
+        player_stats: bool = False,
     ) -> list[dict[str, Any]]:
         """``action=get_events&team_id=`` over a date range. Newest first.
+
+        ``player_stats`` adds each match's players and their shots
+        (``players``, see `player_shot_lines`); same call, bigger response.
 
         ``get_events`` needs ``from``/``to`` -- there is no "last N fixtures"
         shape on this provider, so this reaches back `days_back` days and
@@ -1271,10 +1314,14 @@ class FootballAPIClient:
 
         today = datetime.now(UTC).date()
         start = today - timedelta(days=days_back)
-        data = self._get(
-            "get_events",
-            {"team_id": tid, "from": start.isoformat(), "to": today.isoformat()},
-        )
+        params: dict[str, Any] = {
+            "team_id": tid,
+            "from": start.isoformat(),
+            "to": today.isoformat(),
+        }
+        if player_stats:
+            params["withPlayerStats"] = "1"
+        data = self._get("get_events", params)
         fixtures = parse_team_fixtures(data)
         fixtures.sort(key=lambda row: str(row.get("match_date") or ""), reverse=True)
         return fixtures
@@ -1304,11 +1351,14 @@ class FootballAPIClient:
         data = self._get("get_odds", {"from": day, "to": day})
         return odds_markets_from_provider_rows(data)
 
-    def get_league_fixtures(self, league_id: int, *, days_back: int = 120) -> list[dict[str, Any]]:
+    def get_league_fixtures(
+        self, league_id: int, *, days_back: int = 120, player_stats: bool = False
+    ) -> list[dict[str, Any]]:
         """A league's fixtures over the last ``days_back`` days, newest first.
 
         One call covers every team in the league, which is what keeps a
-        whole day's watchlist inside the hourly budget.
+        whole day's watchlist inside the hourly budget. ``player_stats`` as
+        in `get_team_fixtures`.
         """
         from datetime import UTC, datetime, timedelta
 
@@ -1317,10 +1367,14 @@ class FootballAPIClient:
             return []
         today = datetime.now(UTC).date()
         start = today - timedelta(days=days_back)
-        data = self._get(
-            "get_events",
-            {"league_id": lid, "from": start.isoformat(), "to": today.isoformat()},
-        )
+        params: dict[str, Any] = {
+            "league_id": lid,
+            "from": start.isoformat(),
+            "to": today.isoformat(),
+        }
+        if player_stats:
+            params["withPlayerStats"] = "1"
+        data = self._get("get_events", params)
         fixtures = parse_team_fixtures(data)
         fixtures.sort(key=lambda row: str(row.get("match_date") or ""), reverse=True)
         return fixtures

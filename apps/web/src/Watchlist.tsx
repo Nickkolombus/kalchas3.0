@@ -157,8 +157,20 @@ export type MatchResearch = {
     meetings: { match_date: string; home_team: string; away_team: string; home_score: number; away_score: number }[];
   } | null;
   table: { position: number; team_id: number; team: string; played: number; goal_difference: number; points: number }[];
+  shots?: { home?: TeamShots | null; away?: TeamShots | null } | null;
   result?: MatchResult | null;
 };
+type ShotLine = { stat: "shots" | "on_target"; at_least: number; hits: number };
+type Shooter = {
+  name: string;
+  apps: number;
+  minutes: number;
+  shots: number[];
+  per_90: number;
+  on_target_per_90: number;
+  lines: ShotLine[];
+};
+type TeamShots = { games: number; source: "competition" | "all"; players: Shooter[] };
 
 const WATCH_LABEL: { [K in Watch]: string } = {
   strong: "Strong watch",
@@ -1328,6 +1340,99 @@ function TimingChart({ research }: { research: MatchResearch }) {
   );
 }
 
+function lineLabel(line: ShotLine): string {
+  if (line.stat === "on_target") return `${line.at_least}+ on target`;
+  return `${line.at_least}+ ${line.at_least === 1 ? "shot" : "shots"}`;
+}
+
+/** Decimal odds a record implies on its own: 31 of 35 → 1.13. */
+function fairOdds(hits: number, games: number): string {
+  return hits > 0 ? (games / hits).toFixed(2) : "–";
+}
+
+function PlayerShots({ research }: { research: MatchResearch }) {
+  const pair = research.shots;
+  if (!pair || (!pair.home && !pair.away)) return null;
+  const league = research.league.name.split(" - ")[0];
+  return (
+    <section className="wl-sec">
+      <h3>Player shots</h3>
+      <p className="wl-sub">
+        Each team's most frequent shooters who are still in the side. Every game they got on the pitch counts, sub
+        appearances too. Odds are the fair decimal price each record implies: a bookmaker offering more is paying
+        above the record.
+      </p>
+      {(["home", "away"] as const).map((side) => {
+        const team = research[side];
+        const shots = pair[side];
+        if (!shots) {
+          return (
+            <div key={side} className="wl-shots-team">
+              <div className="wl-who">
+                <Crest src={team.badge} name={team.name} />
+                {team.name}
+              </div>
+              <p className="wl-sub">No player shots from the provider for {team.name}'s recent games.</p>
+            </div>
+          );
+        }
+        const lines = shots.players[0]?.lines ?? [];
+        return (
+          <div key={side} className="wl-shots-team">
+            <div className="wl-who">
+              <Crest src={team.badge} name={team.name} />
+              {team.name}
+            </div>
+            <p className="wl-sub wl-shots-n">
+              Last {shots.games} games with player data, {shots.source === "all" ? "all competitions" : league}.
+            </p>
+            <div className="wl-table-wrap">
+              <table className="wl-ptable wl-shots">
+                <thead>
+                  <tr>
+                    <th />
+                    <th className="wl-num">Per 90</th>
+                    {lines.map((l) => (
+                      <th key={`${l.stat}${l.at_least}`} className="wl-num">
+                        {lineLabel(l)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {shots.players.map((p) => [
+                    <tr key={p.name} className="wl-shots-player">
+                      <th scope="row">{p.name}</th>
+                      <td className="wl-num">{p.per_90.toFixed(1)}</td>
+                      {p.lines.map((l) => (
+                        <td
+                          key={`${l.stat}${l.at_least}`}
+                          className={`wl-num wl-shots-cell${l.hits / p.apps >= 0.8 ? " is-high" : ""}`}
+                          title={`${lineLabel(l)} in ${l.hits} of ${p.apps} games`}
+                        >
+                          <b>{fairOdds(l.hits, p.apps)}</b>
+                          <small>
+                            {l.hits}/{p.apps}
+                          </small>
+                        </td>
+                      ))}
+                    </tr>,
+                    <tr key={`${p.name}-run`} className="wl-shots-run">
+                      <td colSpan={2 + p.lines.length}>
+                        Shots, newest first: {p.shots.join(", ")}
+                      </td>
+                    </tr>,
+                  ])}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 function backLabel(day: DayKey, iso?: string): string {
   if (day === "today") return "Today";
   if (day === "tomorrow") return "Tomorrow";
@@ -1515,6 +1620,8 @@ export function ResearchBody({ data, live, footer }: { data: MatchResearch; live
           <p className="wl-sub">Goals for and against in each team's recent games, by part of the match.</p>
           <TimingChart research={data} />
         </section>
+
+        <PlayerShots research={data} />
       </div>
 
       <div className="wl-col">

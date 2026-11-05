@@ -198,9 +198,11 @@ def build_match_research(
     league_record: Mapping[str, Any] | None,
     overall_record: Mapping[str, Any] | None,
     meetings: Sequence[PlayedGame] = (),
+    shots: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The research page for one match. ``h2h`` is an oriented H2H payload
-    (``kalchas_core.h2h.orient_h2h_payload``)."""
+    (``kalchas_core.h2h.orient_h2h_payload``); ``shots`` is ``{"home", "away"}``
+    from `kalchas_core.watchlist.shots.team_shots`, either side `None`."""
     league = league_label(fixture)
     if "all" in (home_source, away_source):
         norms = default_norms()
@@ -250,6 +252,9 @@ def build_match_research(
         },
         "h2h": _h2h_out(h2h),
         "table": table_slice(table, [home.team_id, away.team_id]) if table else [],
+        "shots": {"home": shots.get("home"), "away": shots.get("away")}
+        if shots and (shots.get("home") or shots.get("away"))
+        else None,
         "record": {
             "league": _record_out(league_record),
             "overall": _record_out(overall_record),
