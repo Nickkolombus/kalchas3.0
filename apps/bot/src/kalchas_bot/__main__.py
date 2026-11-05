@@ -39,7 +39,20 @@ async def health(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.effective_message.reply_text("ok")
 
 
+def _maybe_start_goal_push(application: Application) -> None:
+    """Browser goal alerts: independent of the Telegram channels."""
+    from kalchas_bot.push_goals import push_goals_loop, vapid_private_key
+
+    dsn = os.environ.get("DATABASE_URL")
+    key = vapid_private_key()
+    if not dsn or not key:
+        logger.info("goal push worker idle (DATABASE_URL and VAPID_PRIVATE_KEY required)")
+        return
+    application.bot_data["push_task"] = asyncio.create_task(push_goals_loop(dsn, key))
+
+
 async def _maybe_start_delivery(application: Application) -> None:
+    _maybe_start_goal_push(application)
     chat_id = paid_chat_id()
     if not chat_id or not os.environ.get("DATABASE_URL"):
         logger.info("delivery worker idle (TIPS_CHANNEL_ID and DATABASE_URL required)")

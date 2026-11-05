@@ -2970,3 +2970,62 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Goal alerts switch on the Pinned shelf. */
+.goal-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: 0.4rem;
+  padding: 0.18rem 0.55rem;
+  border: 1px solid rgba(var(--pin-rgb), 0.42);
+  border-radius: 999px;
+  background: transparent;
+  color: rgb(var(--pin-rgb));
+  font: inherit;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.goal-alert:hover:not(:disabled) {
+  background: rgba(var(--pin-rgb), 0.1);
+}
+
+.goal-alert.is-on {
+  background: rgba(var(--pin-rgb), 0.16);
+  border-color: rgba(var(--pin-rgb), 0.7);
+}
+
+.goal-alert:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.goal-alert:focus-visible {
+  outline: 2px solid rgb(var(--pin-rgb));
+  outline-offset: 2px;
+}
+
+.goal-alert-note {
+  border-style: dashed;
+  color: var(--muted);
+  cursor: default;
+}
+
+.goal-alert-bell {
+  flex: none;
+}
+
+.goal-alert-wrap {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.goal-alert-tip {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}

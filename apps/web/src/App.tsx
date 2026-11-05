@@ -21,6 +21,8 @@ import { PickBox, PickTag, SpyglassIcon, WatchlistButton, usePick } from "./Watc
 import { logVisitEvent, visitorId } from "./visit";
 import { MatchOverlay } from "./MatchPanel";
 import { ContactLink, SiteFooter } from "./ContactForm";
+import { GoalAlertToggle } from "./GoalAlertToggle";
+import { useGoalAlerts } from "./goalAlerts";
 import kalchasMark from "./assets/kalchas-mark.png";
 
 const TELEGRAM_FREE_JOIN_URL = "https://t.me/Kalchas_Tips_Free";
@@ -2455,6 +2457,7 @@ function MobileBoard({
   feed,
   presence,
   visitor,
+  goalAlerts,
 }: {
   display: LiveMatch[];
   liveTotal: number;
@@ -2473,6 +2476,7 @@ function MobileBoard({
   feed: { state: string; copy: { label: string; title: string; body: string } };
   presence: Presence | null;
   visitor: string;
+  goalAlerts: ReturnType<typeof useGoalAlerts>;
 }) {
   const [tab, setTab] = useState<MobileTab>("live");
   const [lens, setLens] = useState<MobileLens>("signals");
@@ -2599,9 +2603,14 @@ function MobileBoard({
           </div>
 
           <div className="m-board">
-            {tab === "live" && pinnedCount > 0 ? (
+            {(tab === "live" || tab === "pinned") && pinnedCount > 0 ? (
               <div className="m-pin-cap">
                 ★ Pinned · {pinnedCount} <em>stay on top while live</em>
+                <GoalAlertToggle
+                  state={goalAlerts.state}
+                  onEnable={() => void goalAlerts.enable()}
+                  onDisable={() => void goalAlerts.disable()}
+                />
               </div>
             ) : null}
             {rows.map((m, idx) => {
@@ -2753,6 +2762,7 @@ export function App() {
   const [feedStatus, setFeedStatus] = useState<FeedStatus | null>(null);
   const [recentAlerts, setRecentAlerts] = useState<RecentAlert[]>([]);
   const [favorites, setFavorites] = useState<Set<string>>(() => loadFavorites());
+  const goalAlerts = useGoalAlerts(favorites);
   const [sortKey, setSortKey] = useState<SortKey>("kscore");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [search, setSearch] = useState("");
@@ -2987,6 +2997,7 @@ export function App() {
           oddsByMatch={oddsByMatch}
           goalFlashes={goalFlashes}
           onOpenMatch={setSelectedId}
+          goalAlerts={goalAlerts}
           feed={feed}
           presence={presence}
           visitor={visitor}
@@ -3248,6 +3259,11 @@ export function App() {
                 <td colSpan={22}>
                   <span className="pin-cap-label">
                     ★ Pinned · {pinnedCount} <em>stay on top while live</em>
+                    <GoalAlertToggle
+                      state={goalAlerts.state}
+                      onEnable={() => void goalAlerts.enable()}
+                      onDisable={() => void goalAlerts.disable()}
+                    />
                   </span>
                 </td>
               </tr>

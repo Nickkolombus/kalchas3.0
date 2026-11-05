@@ -9,6 +9,7 @@ dependencies = [
     "httpx>=0.27",
     "kalchas-core",
     "kalchas-db",
+    "pywebpush>=2.0",
 ]
 
 

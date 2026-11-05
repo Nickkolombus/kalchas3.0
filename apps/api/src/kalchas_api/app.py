@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 import os
 import threading
 import time
@@ -27,6 +28,7 @@ from kalchas_api.admin import router as admin_router
 from kalchas_api.alert_templates import router as alert_templates_router
 from kalchas_api.contact import admin_router as contact_admin_router
 from kalchas_api.contact import public_router as contact_public_router
+from kalchas_api.push import router as push_router
 from kalchas_api.recap import router as recap_router
 from kalchas_api.signals import (
     goals_from_events,
@@ -1177,6 +1179,8 @@ def _mount_web_ui() -> None:
     index = dist / "index.html"
     if not index.is_file():
         return
+    # The home-screen manifest (iPhone push needs the site installed).
+    mimetypes.add_type("application/manifest+json", ".webmanifest")
 
     assets = dist / "assets"
     if assets.is_dir():
@@ -1217,6 +1221,7 @@ app.include_router(admin_router)
 app.include_router(alert_templates_router)
 app.include_router(contact_admin_router)
 app.include_router(contact_public_router)
+app.include_router(push_router)
 app.include_router(recap_router)
 app.include_router(tips_admin_router)
 app.include_router(tips_public_router)
