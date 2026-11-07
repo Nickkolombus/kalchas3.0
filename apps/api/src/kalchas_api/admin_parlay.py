@@ -39,6 +39,12 @@ STYLE_BLURBS: dict[str, str] = {
     "bolder": "Legs whose recent record beats the price by the most. Longer odds, less likely to all come in.",
 }
 
+STYLE_NATURE: dict[str, str] = {
+    "safer": "A cautious slip: short prices on picks that have come in at least 7 times in 10 lately.",
+    "balanced": "A middle-ground slip: the day's strongest patterns, neither the safest nor the longest odds.",
+    "bolder": "A riskier slip: longer odds on picks whose recent form beats the price. Less likely to all land.",
+}
+
 CHANNEL_KEYS = ("x", "telegram_free", "telegram_paid", "discord_free", "discord_paid")
 
 
@@ -190,13 +196,15 @@ def _default_caption(composed: dict[str, Any], legs: list[dict[str, Any]]) -> st
         "Nightly" if slot == "nightly" else "Tomorrow's" if slot == "tomorrow" else "Today's"
     )
     lines = [
-        f"{slot_word} Kalchas {style} parlay",
+        f"{slot_word} Kalchas parlay",
+        STYLE_NATURE.get(style, STYLE_NATURE["balanced"]),
+        "",
         f"{len(legs)} legs · combined {combined:.2f}",
         f"A 10 stake returns {returns_for(legs):.2f}",
     ]
     if slot == "nightly":
         lines.append(WINDOW_LABEL)
-    lines.extend(["", "Full research: kalchas.live/parlay"])
+    lines.extend(["", "kalchas.live", "For research/enthusiast purposes only"])
     return "\n".join(lines)
 
 

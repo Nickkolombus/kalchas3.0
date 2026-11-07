@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any
 
@@ -195,3 +196,43 @@ def test_post_fans_out(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> N
     body = res.json()
     assert body["ok"] is True
     assert body["post_log"]["x"]["ok"] is True
+
+
+def test_claude_retries_with_available_model_on_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    import httpx
+    from kalchas_api import parlay_claude
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-retired")
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":
+            return httpx.Response(
+                200, json={"data": [{"id": "claude-opus-x"}, {"id": "claude-sonnet-x"}]}
+            )
+        model = json.loads(request.content)["model"]
+        seen.append(model)
+        if model == "claude-retired":
+            return httpx.Response(404, json={"error": {"message": "model: claude-retired"}})
+        return httpx.Response(
+            200, json={"model": model, "content": [{"type": "text", "text": "Weakest: leg 2"}]}
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        out = parlay_claude.evaluate(
+            slot="today", style="balanced", day="2026-11-07", selected=[], unused=[], client=http
+        )
+    assert out["ok"] is True
+    assert out["model"] == "claude-sonnet-x"
+    assert seen == ["claude-retired", "claude-sonnet-x"]
+
+
+def test_default_caption_explains_style_and_links_site() -> None:
+    composed = {"slot": "today", "style": "bolder"}
+    legs = [{"price": 1.5}, {"price": 1.6}, {"price": 1.7}]
+    caption = admin_parlay._default_caption(composed, legs)
+    assert "riskier slip" in caption
+    assert "kalchas.live" in caption
+    assert "kalchas.live/parlay" not in caption
+    assert "For research/enthusiast purposes only" in caption

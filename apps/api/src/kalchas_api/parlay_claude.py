@@ -17,7 +17,25 @@ import httpx
 log = logging.getLogger("kalchas.api.parlay_claude")
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-MODEL = "claude-sonnet-4-20250514"
+MODELS_URL = "https://api.anthropic.com/v1/models"
+DEFAULT_MODEL = "claude-sonnet-5-5"
+
+
+def _model() -> str:
+    return (os.environ.get("ANTHROPIC_MODEL") or "").strip() or DEFAULT_MODEL
+
+
+def _newest_sonnet(http: httpx.Client, headers: Mapping[str, str]) -> str | None:
+    """When the configured model is retired, pick the newest Sonnet the key can use."""
+    try:
+        res = http.get(MODELS_URL, headers=headers, params={"limit": 50})
+        if res.status_code >= 400:
+            return None
+        ids = [str(m.get("id") or "") for m in res.json().get("data") or []]
+    except (httpx.HTTPError, ValueError):
+        return None
+    return next((mid for mid in ids if "sonnet" in mid), ids[0] if ids else None)
+
 
 SYSTEM = """You are Kalchas's parlay stress-test assistant for an operator who already
 built a multi-leg slip from our watchlist research.
@@ -82,31 +100,37 @@ def evaluate(
         return {"ok": False, "error": "ANTHROPIC_API_KEY is not set"}
 
     facts = _facts(slot=slot, style=style, day=day, selected=selected, unused=unused)
+    headers = {
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    payload: dict[str, Any] = {
+        "model": _model(),
+        "max_tokens": 700,
+        "system": SYSTEM,
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "Stress-test this Kalchas parlay. Facts JSON follows.\n\n"
+                    + json.dumps(facts, ensure_ascii=False)
+                ),
+            }
+        ],
+    }
     owns = client is None
     http = client or httpx.Client(timeout=60.0)
     try:
-        res = http.post(
-            ANTHROPIC_URL,
-            headers={
-                "x-api-key": key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": MODEL,
-                "max_tokens": 700,
-                "system": SYSTEM,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": (
-                            "Stress-test this Kalchas parlay. Facts JSON follows.\n\n"
-                            + json.dumps(facts, ensure_ascii=False)
-                        ),
-                    }
-                ],
-            },
-        )
+        res = http.post(ANTHROPIC_URL, headers=headers, json=payload)
+        if res.status_code == 404:
+            fallback = _newest_sonnet(http, headers)
+            if fallback and fallback != payload["model"]:
+                log.warning(
+                    "anthropic model %s unavailable, retrying with %s", payload["model"], fallback
+                )
+                payload["model"] = fallback
+                res = http.post(ANTHROPIC_URL, headers=headers, json=payload)
         if res.status_code >= 400:
             log.warning("anthropic evaluate HTTP %s: %s", res.status_code, res.text[:300])
             return {"ok": False, "error": f"Claude HTTP {res.status_code}"}
@@ -115,7 +139,7 @@ def evaluate(
         text = "\n".join(str(p.get("text") or "") for p in parts if isinstance(p, Mapping)).strip()
         if not text:
             return {"ok": False, "error": "empty Claude response"}
-        return {"ok": True, "advice": text, "model": data.get("model") or MODEL}
+        return {"ok": True, "advice": text, "model": data.get("model") or payload["model"]}
     except Exception as exc:
         log.exception("parlay claude evaluate failed")
         return {"ok": False, "error": str(exc)[:300]}

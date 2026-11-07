@@ -105,16 +105,24 @@ function oneIn(odds: number): string {
   return `about 1 in ${n}`;
 }
 
+const STYLE_NATURE: Record<Style, string> = {
+  safer: "A cautious slip: short prices on picks that have come in at least 7 times in 10 lately.",
+  balanced: "A middle-ground slip: the day's strongest patterns, neither the safest nor the longest odds.",
+  bolder: "A riskier slip: longer odds on picks whose recent form beats the price. Less likely to all land.",
+};
+
 function defaultCaption(body: Compose, selected: Leg[]): string {
   const slotWord = body.slot === "nightly" ? "Nightly" : body.slot === "tomorrow" ? "Tomorrow's" : "Today's";
   const combined = selected.reduce((t, l) => t * l.price, 1);
   const lines = [
-    `${slotWord} Kalchas ${body.style} parlay`,
+    `${slotWord} Kalchas parlay`,
+    STYLE_NATURE[body.style as Style] ?? STYLE_NATURE.balanced,
+    "",
     `${selected.length} legs · combined ${combined.toFixed(2)}`,
     `A 10 stake returns ${(10 * combined).toFixed(2)}`,
   ];
   if (body.slot === "nightly") lines.push("00:00–07:00 GMT+3");
-  lines.push("", "Full research: kalchas.live/parlay");
+  lines.push("", "kalchas.live", "For research/enthusiast purposes only");
   return lines.join("\n");
 }
 
@@ -130,6 +138,8 @@ export function AdminParlay({ api }: { api: Api }) {
   const [busy, setBusy] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [advice, setAdvice] = useState("");
+  const [evaluating, setEvaluating] = useState(false);
+  const [evalError, setEvalError] = useState("");
   const [channels, setChannels] = useState<Record<string, boolean>>({
     x: true,
     telegram_free: true,
@@ -190,8 +200,8 @@ export function AdminParlay({ api }: { api: Api }) {
       .sort((a, b) => a.kickoff.localeCompare(b.kickoff) || a.match_id.localeCompare(b.match_id));
   }, [pool, style, exclude, n]);
 
-  const selected = generated?.selected ?? [];
-  const selectedIds = selected.map((l) => l.match_id);
+  const selected = useMemo(() => generated?.selected ?? [], [generated]);
+  const selectedIds = useMemo(() => selected.map((l) => l.match_id), [selected]);
   const combined = selected.reduce((t, l) => t * l.price, 1);
 
   async function generate() {
@@ -271,6 +281,9 @@ export function AdminParlay({ api }: { api: Api }) {
   async function evaluate() {
     if (!generated) return;
     setBusy(true);
+    setEvaluating(true);
+    setEvalError("");
+    setAdvice("");
     setError("");
     setStatus("");
     try {
@@ -287,9 +300,10 @@ export function AdminParlay({ api }: { api: Api }) {
       setAdvice(res.advice);
       setStatus("Claude evaluated the slip.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "evaluate failed");
+      setEvalError(err instanceof Error ? err.message : "evaluate failed");
     } finally {
       setBusy(false);
+      setEvaluating(false);
     }
   }
 
@@ -483,11 +497,12 @@ export function AdminParlay({ api }: { api: Api }) {
                 disabled={busy || !(generated?.claude_ready ?? true)}
                 onClick={() => void evaluate()}
               >
-                Evaluate by Claude
+                {evaluating ? "Claude is reading the slip…" : "Evaluate by Claude"}
               </button>
               {!(generated?.claude_ready ?? true) ? (
                 <p className="kit-error">ANTHROPIC_API_KEY is not available on the API.</p>
               ) : null}
+              {evalError ? <p className="kit-error">{evalError}</p> : null}
               {advice ? <pre className="ap-advice">{advice}</pre> : null}
             </div>
 

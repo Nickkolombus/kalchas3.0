@@ -1,18 +1,21 @@
 """Thermal betshop parlay slip — PNG for admin share preview and posts.
 
 Looks like a high-street receipt: narrow stock, monospace, dashed rules,
-fixed illustrative stake of 10. Not a bookmaker ticket.
+fixed illustrative stake of 10, a small Kalchas mark, and a dim diagonal
+watermark across the whole slip. The style (Safer / Balanced / Bolder) is
+explained in the post caption, not printed here.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 Slot = Literal["today", "tomorrow", "nightly"]
 
@@ -24,6 +27,13 @@ WIDTH = 540
 PAD_X = 28
 PAD_Y = 28
 STAKE = 10.0
+LOGO_PX = 40
+SITE = "kalchas.live"
+DISCLAIMER = "For research/enthusiast purposes only"
+WATERMARK_TEXT = "KALCHAS"
+WATERMARK_ALPHA = 26
+
+MARK_PATH = Path(__file__).parent / "assets" / "kalchas-mark.png"
 
 _SLOT_TITLE = {
     "today": "TODAY",
@@ -47,19 +57,58 @@ def render_parlay_slip(
     day: str | None = None,
     settled: Mapping[str, str] | None = None,
 ) -> bytes:
-    """PNG bytes of the thermal slip. ``settled`` maps match_id → landed|missed."""
+    """PNG bytes of the thermal slip. ``settled`` maps match_id → landed|missed.
+
+    ``style`` is accepted for call-site symmetry; it is deliberately not printed.
+    """
+    del style
     results = settled or {}
-    lines = _layout(legs, slot=slot, style=style, day=day, settled=results)
+    lines = _layout(legs, slot=slot, day=day, settled=results)
     height = PAD_Y * 2 + sum(block[0] for block in lines) + 8
     img = Image.new("RGB", (WIDTH, max(height, 200)), PAPER)
+    logo = _logo()
+    if logo is not None:
+        img.paste(logo, ((WIDTH - LOGO_PX) // 2, PAD_Y), logo)
     draw = ImageDraw.Draw(img)
     y = PAD_Y
     for h, paint in lines:
         paint(draw, y)
         y += h
+    img = _watermark(img)
     buf = BytesIO()
     img.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
+
+
+@lru_cache(maxsize=1)
+def _logo() -> Image.Image | None:
+    """The Kalchas mark, small and greyscale so it reads as thermal print."""
+    if not MARK_PATH.is_file():
+        return None
+    mark = Image.open(MARK_PATH).convert("RGBA").resize((LOGO_PX, LOGO_PX), Image.LANCZOS)
+    alpha = mark.getchannel("A")
+    grey = ImageOps.grayscale(mark.convert("RGB"))
+    return Image.merge("RGBA", (grey, grey, grey, alpha))
+
+
+def _watermark(img: Image.Image) -> Image.Image:
+    """Dim KALCHAS text tiled across the whole slip at 45 degrees."""
+    w, h = img.size
+    side = int((w * w + h * h) ** 0.5) + 40
+    layer = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    pen = ImageDraw.Draw(layer)
+    font = _font(22, bold=True)
+    step_x = int(pen.textlength(WATERMARK_TEXT, font=font)) + 70
+    step_y = 70
+    for row, y in enumerate(range(0, side, step_y)):
+        offset = (step_x // 2) if row % 2 else 0
+        for x in range(-step_x + offset, side, step_x):
+            pen.text((x, y), WATERMARK_TEXT, font=font, fill=(*INK, WATERMARK_ALPHA))
+    layer = layer.rotate(45, resample=Image.BICUBIC)
+    left = (side - w) // 2
+    top = (side - h) // 2
+    layer = layer.crop((left, top, left + w, top + h))
+    return Image.alpha_composite(img.convert("RGBA"), layer).convert("RGB")
 
 
 def _font(size: int, *, bold: bool = False) -> ImageFont.ImageFont:
@@ -94,7 +143,6 @@ def _layout(
     legs: Sequence[Mapping[str, Any]],
     *,
     slot: Slot,
-    style: str,
     day: str | None,
     settled: Mapping[str, str],
 ) -> list[tuple[int, Any]]:
@@ -110,7 +158,6 @@ def _layout(
     combined = round(combined, 2)
     returns = round(STAKE * combined, 2)
     day_label = _day_label(day)
-    style_label = (style or "balanced").upper()
     slot_label = _SLOT_TITLE.get(slot, "TODAY")
     lost = next((mid for mid, out in settled.items() if out == "missed"), None)
     won = (
@@ -121,14 +168,17 @@ def _layout(
 
     blocks: list[tuple[int, Any]] = []
 
+    top = LOGO_PX + 8
+
     def header(draw: ImageDraw.ImageDraw, y: int) -> None:
+        y += top
         draw.text((WIDTH / 2, y), "KALCHAS", font=title_f, fill=INK, anchor="mt")
         draw.text(
             (WIDTH / 2, y + 24), "LIVE MATCH INTELLIGENCE", font=sub_f, fill=MUTED, anchor="mt"
         )
         draw.text(
             (WIDTH / 2, y + 42),
-            f"BETTING SLIP · {slot_label} · {style_label} · {len(legs)} LEGS",
+            f"BETTING SLIP · {slot_label} · {len(legs)} LEGS",
             font=sub_f,
             fill=MUTED,
             anchor="mt",
@@ -136,7 +186,7 @@ def _layout(
         if slot == "nightly":
             draw.text((WIDTH / 2, y + 58), "00:00–07:00 GMT+3", font=sub_f, fill=MUTED, anchor="mt")
 
-    blocks.append((72 if slot == "nightly" else 58, header))
+    blocks.append((top + (72 if slot == "nightly" else 58), header))
 
     def rule1(draw: ImageDraw.ImageDraw, y: int) -> None:
         _dash(draw, y + 4)
@@ -233,14 +283,8 @@ def _layout(
     blocks.append((14, rule1))
 
     def footer(draw: ImageDraw.ImageDraw, y: int) -> None:
-        draw.text((WIDTH / 2, y), "NOT A BOOKMAKER RECEIPT", font=small_f, fill=MUTED, anchor="mt")
-        draw.text(
-            (WIDTH / 2, y + 16),
-            "kalchas.live/parlay · research only",
-            font=small_f,
-            fill=MUTED,
-            anchor="mt",
-        )
+        draw.text((WIDTH / 2, y), SITE, font=body_f, fill=INK, anchor="mt")
+        draw.text((WIDTH / 2, y + 18), DISCLAIMER, font=small_f, fill=MUTED, anchor="mt")
 
     blocks.append((40, footer))
     return blocks
