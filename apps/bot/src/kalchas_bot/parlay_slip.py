@@ -15,7 +15,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Literal
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps
 
 Slot = Literal["today", "tomorrow", "nightly"]
 
@@ -27,10 +27,10 @@ WIDTH = 540
 PAD_X = 28
 PAD_Y = 28
 STAKE = 10.0
-LOGO_PX = 40
+LOGO_PX = 80
 SITE = "kalchas.live"
-DISCLAIMER = "For research/enthusiast purposes only"
-WATERMARK_TEXT = "KALCHAS"
+DISCLAIMER = "For research & football enthusiast purposes only"
+WATERMARK_TEXT = "www.kalchas.live"
 WATERMARK_ALPHA = 26
 
 MARK_PATH = Path(__file__).parent / "assets" / "kalchas-mark.png"
@@ -82,13 +82,25 @@ def render_parlay_slip(
 
 @lru_cache(maxsize=1)
 def _logo() -> Image.Image | None:
-    """The Kalchas mark, small and greyscale so it reads as thermal print."""
+    """The round Kalchas mark, cropped to its circle and dithered to ink dots."""
     if not MARK_PATH.is_file():
         return None
-    mark = Image.open(MARK_PATH).convert("RGBA").resize((LOGO_PX, LOGO_PX), Image.LANCZOS)
-    alpha = mark.getchannel("A")
-    grey = ImageOps.grayscale(mark.convert("RGB"))
-    return Image.merge("RGBA", (grey, grey, grey, alpha))
+    mark = Image.open(MARK_PATH).convert("RGB")
+    bbox = ImageOps.invert(mark.convert("L")).point(lambda v: 255 if v > 12 else 0).getbbox()
+    if bbox:
+        mark = mark.crop(bbox)
+    grey = ImageOps.grayscale(mark).resize((LOGO_PX, LOGO_PX), Image.LANCZOS)
+    grey = ImageEnhance.Contrast(ImageOps.equalize(grey)).enhance(1.4)
+    grey = grey.point(lambda v: int(255 * (v / 255) ** 0.8))
+    dots = grey.convert("1", dither=Image.Dither.FLOYDSTEINBERG)
+    ink = ImageOps.invert(dots.convert("L"))
+    circle = Image.new("L", (LOGO_PX * 4, LOGO_PX * 4), 0)
+    ImageDraw.Draw(circle).ellipse((0, 0, LOGO_PX * 4 - 1, LOGO_PX * 4 - 1), fill=255)
+    circle = circle.resize((LOGO_PX, LOGO_PX), Image.LANCZOS)
+    alpha = Image.composite(ink, Image.new("L", ink.size, 0), circle)
+    out = Image.new("RGBA", (LOGO_PX, LOGO_PX), (*INK, 0))
+    out.putalpha(alpha)
+    return out
 
 
 def _watermark(img: Image.Image) -> Image.Image:

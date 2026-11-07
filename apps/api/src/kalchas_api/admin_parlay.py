@@ -204,7 +204,7 @@ def _default_caption(composed: dict[str, Any], legs: list[dict[str, Any]]) -> st
     ]
     if slot == "nightly":
         lines.append(WINDOW_LABEL)
-    lines.extend(["", "kalchas.live", "For research/enthusiast purposes only"])
+    lines.extend(["", "kalchas.live", "For research & football enthusiast purposes only"])
     return "\n".join(lines)
 
 

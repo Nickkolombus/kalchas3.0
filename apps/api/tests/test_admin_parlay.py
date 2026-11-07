@@ -235,4 +235,4 @@ def test_default_caption_explains_style_and_links_site() -> None:
     assert "riskier slip" in caption
     assert "kalchas.live" in caption
     assert "kalchas.live/parlay" not in caption
-    assert "For research/enthusiast purposes only" in caption
+    assert "For research & football enthusiast purposes only" in caption

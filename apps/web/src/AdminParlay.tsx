@@ -122,7 +122,7 @@ function defaultCaption(body: Compose, selected: Leg[]): string {
     `A 10 stake returns ${(10 * combined).toFixed(2)}`,
   ];
   if (body.slot === "nightly") lines.push("00:00–07:00 GMT+3");
-  lines.push("", "kalchas.live", "For research/enthusiast purposes only");
+  lines.push("", "kalchas.live", "For research & football enthusiast purposes only");
   return lines.join("\n");
 }
 
