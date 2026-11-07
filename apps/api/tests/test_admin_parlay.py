@@ -126,3 +126,72 @@ def test_preview_rejects_too_few_legs(client: TestClient, monkeypatch: pytest.Mo
         json={"slot": "today", "style": "balanced", "match_ids": ["1", "2"]},
     )
     assert res.status_code == 422
+
+
+def test_compose_respects_leg_count(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    pages = [page(str(i), f"2026-11-07T{14 + i:02d}:00:00+03:00") for i in range(1, 7)]
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages)
+    body = client.get("/api/admin/parlay?slot=today&style=balanced&legs=3").json()
+    assert body["wanted"] == 3
+    assert len(body["selected"]) == 3
+    assert "explanation" in body and "balanced" in body["explanation"].lower()
+
+
+def test_evaluate_calls_claude(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    pages = [
+        page("1", "2026-11-07T14:00:00+03:00"),
+        page("2", "2026-11-07T15:00:00+03:00"),
+        page("3", "2026-11-07T16:00:00+03:00"),
+    ]
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "kalchas_api.parlay_claude.evaluate",
+        lambda **kw: {"ok": True, "advice": "Weakest: Home1 v Away1", "model": "test"},
+    )
+    res = client.post(
+        "/api/admin/parlay/evaluate",
+        json={"slot": "today", "style": "balanced", "match_ids": ["1", "2", "3"]},
+    )
+    assert res.status_code == 200
+    assert "Weakest" in res.json()["advice"]
+
+
+def test_post_fans_out(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    pages = [
+        page("1", "2026-11-07T14:00:00+03:00"),
+        page("2", "2026-11-07T15:00:00+03:00"),
+        page("3", "2026-11-07T16:00:00+03:00"),
+    ]
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages)
+    monkeypatch.setattr(
+        "kalchas_api.parlay_post.fanout",
+        lambda image, **kw: {
+            "x": {"ok": True, "ref": "1"},
+            "telegram_free": {"ok": True, "ref": "2"},
+        },
+    )
+    monkeypatch.setattr(
+        "kalchas_db.discord_settings.get_discord_settings",
+        lambda dsn: {
+            "free_channel_id": "1",
+            "paid_channel_id": "2",
+            "free_enabled": True,
+            "paid_enabled": True,
+        },
+    )
+    res = client.post(
+        "/api/admin/parlay/post",
+        json={
+            "slot": "today",
+            "style": "balanced",
+            "match_ids": ["1", "2", "3"],
+            "channels": {"x": True, "telegram_free": True},
+            "caption": "test",
+            "autopost": True,
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["post_log"]["x"]["ok"] is True
