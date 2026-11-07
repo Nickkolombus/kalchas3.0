@@ -4,6 +4,7 @@ import { RangePicker, browserZone, defaultRange, fmtWindow, isoDay, pct, rangeQu
 import { AdminOverview, type DiscordState } from "./AdminOverview";
 import { AdminPreview } from "./AdminPreview";
 import { AdminRecap } from "./AdminRecap";
+import { AdminParlay } from "./AdminParlay";
 import { AdminResults, type ResultsInsights, type StrategyMeta } from "./AdminResults";
 import { AdminTips } from "./AdminTips";
 import { AdminVisitors } from "./AdminVisitors";
@@ -69,7 +70,18 @@ const DEFAULT_DISCORD: DiscordState = {
   paid_enabled: true,
 };
 
-type Page = "overview" | "messages" | "results" | "visitors" | "strategies" | "board" | "recap" | "wording" | "tips" | "discord";
+type Page =
+  | "overview"
+  | "messages"
+  | "results"
+  | "visitors"
+  | "strategies"
+  | "board"
+  | "recap"
+  | "parlay"
+  | "wording"
+  | "tips"
+  | "discord";
 
 const PAGES: Record<Page, { group: string; title: string }> = {
   overview: { group: "Today", title: "Overview" },
@@ -79,6 +91,7 @@ const PAGES: Record<Page, { group: string; title: string }> = {
   strategies: { group: "Strategy", title: "Strategies" },
   board: { group: "Strategy", title: "Board filters" },
   recap: { group: "Distribution", title: "Recaps" },
+  parlay: { group: "Distribution", title: "Parlay" },
   wording: { group: "Distribution", title: "Alert text" },
   tips: { group: "Distribution", title: "Tips feed" },
   discord: { group: "Distribution", title: "Discord" },
@@ -164,6 +177,12 @@ const ICONS: Record<Page, ReactNode> = {
     <>
       <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
       <path d="M5 10.5V8M8 10.5V5.5M11 10.5V7" />
+    </>
+  ),
+  parlay: (
+    <>
+      <path d="M3 3.5h10v9H3z" />
+      <path d="M5 6h6M5 8.5h6M5 11h4" />
     </>
   ),
 };
@@ -568,6 +587,7 @@ export function AdminApp() {
         <NavItem page="board" on={page === "board"} onClick={() => go("board")} />
         <div className="adm-nav-group">Distribution</div>
         <NavItem page="recap" on={page === "recap"} onClick={() => go("recap")} />
+        <NavItem page="parlay" on={page === "parlay"} onClick={() => go("parlay")} />
         <NavItem page="wording" on={page === "wording"} onClick={() => go("wording")} />
         <NavItem page="tips" on={page === "tips"} onClick={() => go("tips")} />
         <NavItem page="discord" on={page === "discord"} onClick={() => go("discord")} />
@@ -647,6 +667,7 @@ export function AdminApp() {
             />
           ) : null}
           {page === "recap" ? <AdminRecap api={api} /> : null}
+          {page === "parlay" ? <AdminParlay api={api} /> : null}
           {page === "wording" ? <AdminAlertText api={api} /> : null}
           {page === "tips" ? <AdminTips api={api} /> : null}
           {page === "discord" ? (
