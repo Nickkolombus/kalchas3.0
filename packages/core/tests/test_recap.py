@@ -340,3 +340,14 @@ def test_old_drafts_keep_their_words_under_the_new_fields():
     assert (texts["call_1"], texts["call_3"], texts["calls_footer"]) == ("a", "c", "Hon.")
     assert texts["cover_line"] == "Mine." and texts["lesson"] == "L."
     assert texts["kicker"] == "Every signal we sent"
+
+
+def test_daily_can_keep_only_some_strategies():
+    rows = [OLIMPIA, FAR, NOAH]
+    everything = build_daily(rows, day=date(2026, 10, 28))
+    assert everything["goals"] == 3 and everything["strategy_filter"] == []
+
+    pressure = build_daily(rows, day=date(2026, 10, 28), strategies=["delta_5min"])
+    assert pressure["goals"] == 1 and pressure["total"] == 1
+    assert [c["home"] for c in pressure["calls"]] == ["Olimpia"]
+    assert pressure["strategy_filter"] == ["delta_5min"]

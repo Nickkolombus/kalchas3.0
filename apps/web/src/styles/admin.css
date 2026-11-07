@@ -2910,3 +2910,32 @@
 .ap-in {
   color: var(--success, #2e8b57);
 }
+
+.rc-strategies {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.rc-strategies label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: var(--surface-3);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.rc-strategies label.is-on {
+  border-color: var(--accent, var(--text));
+  color: var(--text);
+}
+
+.rc-strategies input {
+  margin: 0;
+}

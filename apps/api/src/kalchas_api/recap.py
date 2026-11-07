@@ -167,12 +167,30 @@ def get_recap(request: Request, week: str | None = None, kind: Kind = "week") ->
         "this_week": (last_week + timedelta(days=7)).isoformat(),
         "today": today.isoformat(),
         "yesterday": (today - timedelta(days=1)).isoformat(),
+        "strategies": _strategy_choices(),
     }
 
 
+def _strategy_choices() -> list[dict[str, str]]:
+    from kalchas_core.weights.registry import STRATEGY_INFO
+
+    return [
+        {"key": key, "name": info.name, "short": info.short}
+        for key, info in sorted(STRATEGY_INFO.items(), key=lambda item: item[1].slot)
+    ]
+
+
 @router.post("/draft")
-def draft_now(request: Request, week: str | None = None, kind: Kind = "week") -> dict[str, Any]:
-    """Build (or rebuild, while still a draft) a recap now: last week, or a chosen day."""
+def draft_now(
+    request: Request,
+    week: str | None = None,
+    kind: Kind = "week",
+    strategies: str = "",
+) -> dict[str, Any]:
+    """Build (or rebuild, while still a draft) a recap now: last week, or a chosen day.
+
+    A daily draft can be limited to some strategies (comma-separated keys); empty means all.
+    """
     require_admin(request)
     from kalchas_db.recaps import fetch_week_signals_sync, get_recap_sync, save_draft_sync
 
@@ -185,7 +203,12 @@ def draft_now(request: Request, week: str | None = None, kind: Kind = "week") ->
     if kind == "week":
         data = build_recap(rows, week_start=start_day, thresholds=_thresholds(dsn))
     else:
-        data = build_daily(rows, day=start_day, thresholds=_thresholds(dsn))
+        known = {choice["key"] for choice in _strategy_choices()}
+        picked = [key.strip() for key in strategies.split(",") if key.strip()]
+        unknown = [key for key in picked if key not in known]
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"unknown strategy: {', '.join(unknown)}")
+        data = build_daily(rows, day=start_day, thresholds=_thresholds(dsn), strategies=picked)
     texts = data.pop("texts")
     if not save_draft_sync(dsn, start_day, data, texts, kind=kind):
         raise HTTPException(status_code=409, detail="that recap is already approved or posted")

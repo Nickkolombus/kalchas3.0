@@ -23,7 +23,10 @@ type Recap = {
   post_log: Record<string, { ok: boolean; error?: string; ref?: string } | string>;
   notes: string[];
   posted_at: string | null;
+  data?: { strategy_filter?: string[] };
 };
+
+type StrategyChoice = { key: string; name: string; short: string };
 
 type Payload = {
   kind?: Kind;
@@ -33,6 +36,7 @@ type Payload = {
   this_week?: string;
   today?: string;
   yesterday?: string;
+  strategies?: StrategyChoice[];
 };
 
 const CHANNELS: [string, string][] = [
@@ -106,6 +110,7 @@ export function AdminRecap({ api }: { api: Api }) {
   const [channels, setChannels] = useState<Channels>({});
   const [week, setWeek] = useState<string | null>(null);
   const [pickDay, setPickDay] = useState("");
+  const [only, setOnly] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -131,6 +136,11 @@ export function AdminRecap({ api }: { api: Api }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const savedFilter = recap?.kind === "day" ? (recap.data?.strategy_filter ?? []).join(",") : "";
+  useEffect(() => {
+    setOnly(savedFilter ? savedFilter.split(",") : []);
+  }, [savedFilter, recap?.week_start]);
 
   const dirty = useMemo(() => {
     if (!recap || !texts) return false;
@@ -204,7 +214,10 @@ export function AdminRecap({ api }: { api: Api }) {
 
   const draft = (target?: string) =>
     run("Draft built from the signals.", async () => {
-      adopt(await api<Payload>(`/api/admin/recap/draft?kind=${kind}${target ? `&week=${target}` : ""}`, { method: "POST" }));
+      const q = new URLSearchParams({ kind });
+      if (target) q.set("week", target);
+      if (kind === "day" && only.length) q.set("strategies", only.join(","));
+      adopt(await api<Payload>(`/api/admin/recap/draft?${q}`, { method: "POST" }));
       setWeek(target ?? null);
     });
 
@@ -241,9 +254,32 @@ export function AdminRecap({ api }: { api: Api }) {
     </div>
   );
 
+  const choices = payload?.strategies ?? [];
+  const toggle = (key: string) =>
+    setOnly((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  const strategyPicker =
+    kind === "day" && choices.length ? (
+      <div className="rc-strategies" role="group" aria-label="Strategies in this recap">
+        <span className="kit-muted">Strategies</span>
+        <label className={only.length === 0 ? "is-on" : ""}>
+          <input type="checkbox" checked={only.length === 0} disabled={busy} onChange={() => setOnly([])} />
+          All
+        </label>
+        {choices.map((c) => (
+          <label key={c.key} className={only.includes(c.key) ? "is-on" : ""} title={c.name}>
+            <input type="checkbox" checked={only.includes(c.key)} disabled={busy} onChange={() => toggle(c.key)} />
+            {c.name}
+          </label>
+        ))}
+      </div>
+    ) : null;
+  const filterLabel = (keys: string[]) =>
+    keys.map((k) => choices.find((c) => c.key === k)?.name ?? k).join(", ");
+
   const dayPicker =
     kind === "day" && payload ? (
       <div className="rc-draft-day">
+        {strategyPicker}
         <button type="button" className="kit-btn" disabled={busy} onClick={() => void draft(payload.yesterday)}>
           Draft yesterday
         </button>
@@ -334,6 +370,9 @@ export function AdminRecap({ api }: { api: Api }) {
         </span>
         <b>{fmtPeriod(recap.week_start, recap.kind)}</b>
         <span className="kit-muted">{recap.headline}</span>
+        {recap.kind === "day" && recap.data?.strategy_filter?.length ? (
+          <span className="kit-pill is-open">Only: {filterLabel(recap.data.strategy_filter)}</span>
+        ) : null}
         <div className="kit-card-right">
           {recap.status === "draft" && recap.deadline ? <span className="kit-muted">Approve by {fmtWhen(recap.deadline)}</span> : null}
           {recap.posted_at ? <span className="kit-muted">Posted {fmtWhen(recap.posted_at)}</span> : null}

@@ -12,7 +12,7 @@ else (still open, cancelled, the other side scored first) is left out.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from typing import Any
@@ -103,9 +103,21 @@ def build_daily(
     day: date,
     thresholds: Mapping[str, float] | None = None,
     zone: tzinfo = UTC,
+    strategies: Collection[str] | None = None,
 ) -> dict[str, Any]:
-    """The same for one day, posted only when the admin chooses to: no miss, up to four calls."""
-    return _build(rows, kind="day", start=day, days=1, thresholds=thresholds, zone=zone)
+    """The same for one day, posted only when the admin chooses to: no miss, up to four calls.
+
+    `strategies` keeps only alerts fired by those strategy keys; None or empty keeps all.
+    """
+    return _build(
+        rows,
+        kind="day",
+        start=day,
+        days=1,
+        thresholds=thresholds,
+        zone=zone,
+        strategies=strategies,
+    )
 
 
 def _build(
@@ -116,8 +128,12 @@ def _build(
     days: int,
     thresholds: Mapping[str, float] | None,
     zone: tzinfo,
+    strategies: Collection[str] | None = None,
 ) -> dict[str, Any]:
     thresholds = thresholds or {}
+    only = sorted({str(k) for k in strategies or () if k})
+    if only:
+        rows = [row for row in rows if str(row.get("strategy_key") or "") in only]
     signals = [s for s in group_signals(rows) if s.result is not None]
     goals = [s for s in signals if s.result == "goal"]
     misses = [s for s in signals if s.result == "miss"]
@@ -177,6 +193,7 @@ def _build(
         "calls": [summary(s, _call_why(s)) for s in calls],
         "honourable": summary(honourable, "next best call") if honourable else None,
         "miss": summary(miss, _miss_why(misses)) if miss else None,
+        "strategy_filter": only,
     }
     data["texts"] = draft_texts(data)
     return data
