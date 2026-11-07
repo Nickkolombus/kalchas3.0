@@ -54,6 +54,7 @@ class PreviewBody(BaseModel):
     legs: int | None = None
     match_ids: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=list)
+    include: list[str] = Field(default_factory=list)
 
 
 class EvaluateBody(BaseModel):
@@ -62,6 +63,7 @@ class EvaluateBody(BaseModel):
     legs: int | None = None
     match_ids: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=list)
+    include: list[str] = Field(default_factory=list)
 
 
 class PostBody(BaseModel):
@@ -70,6 +72,7 @@ class PostBody(BaseModel):
     legs: int | None = None
     match_ids: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=list)
+    include: list[str] = Field(default_factory=list)
     channels: dict[str, bool] = Field(default_factory=dict)
     caption: str = ""
     x_text: str = ""
@@ -99,6 +102,7 @@ def _compose(
     style: Style,
     exclude: list[str] | None = None,
     wanted: int | None = None,
+    include: list[str] | None = None,
 ) -> dict[str, Any]:
     today = watchlist_api.board_today()
     target = slot_day(slot, today=today)
@@ -118,12 +122,16 @@ def _compose(
 
     style_key = style if style in STYLES else "balanced"
     style_order = list(orders.get(style_key) or [])
-    most = len(style_order)
+    known = {str(leg["match_id"]) for leg in legs}
+    pinned = [mid for mid in dict.fromkeys(include or []) if mid in known]
+    most = min(len(set(style_order) | set(pinned)), MAX_LEGS)
     n = wanted
     if n is None:
         n = min(5, most) if most else 0
     n = max(min(n, most), min(MIN_LEGS, most)) if most else 0
-    selected = select_legs(legs, style_order, exclude=exclude or [], wanted=n or None)
+    selected = select_legs(
+        legs, style_order, exclude=exclude or [], wanted=n or None, include=pinned
+    )
     # If excludes shrink below floor, keep what remains (UI blocks post).
     today_s = today.isoformat()
     if not legs:
@@ -137,7 +145,7 @@ def _compose(
         STYLE_BLURBS.get(style_key, ""),
         (
             f"Same builder as the public /parlay page: one priced leg per match, "
-            f"ordered by {style_key}, then the first {len(selected)} after your removals."
+            f"ordered by {style_key}, then the first {len(selected)} after your edits."
             if selected
             else ""
         ),
@@ -174,6 +182,7 @@ def _compose(
         "returns": returns_for(selected) if selected else None,
         "can_post": can_post(selected),
         "exclude": list(exclude or []),
+        "include": pinned,
         "explanation": " ".join(p for p in explanation_parts if p).strip(),
         "claude_ready": bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip()),
     }
@@ -215,11 +224,13 @@ def get_parlay(
     style: Style = "balanced",
     legs: int | None = None,
     exclude: str = "",
+    include: str = "",
 ) -> dict[str, Any]:
     """Compose the admin slip for a slot (same builder as public /parlay)."""
     require_admin(request)
-    dropped = [part for part in exclude.split(",") if part.strip()]
-    return _compose(slot, style, dropped, wanted=legs)
+    dropped = [part.strip() for part in exclude.split(",") if part.strip()]
+    pinned = [part.strip() for part in include.split(",") if part.strip()]
+    return _compose(slot, style, dropped, wanted=legs, include=pinned)
 
 
 @router.post("/preview")
@@ -228,7 +239,7 @@ def preview_slip(body: PreviewBody, request: Request) -> Response:
     require_admin(request)
     from kalchas_bot.parlay_slip import render_parlay_slip
 
-    composed = _compose(body.slot, body.style, body.exclude, wanted=body.legs)
+    composed = _compose(body.slot, body.style, body.exclude, wanted=body.legs, include=body.include)
     legs = _resolve_legs(body.match_ids, composed)
     if len(legs) < MIN_LEGS:
         raise HTTPException(status_code=422, detail=f"need at least {MIN_LEGS} legs for a slip")
@@ -242,12 +253,16 @@ def evaluate_slip(body: EvaluateBody, request: Request) -> dict[str, Any]:
     require_admin(request)
     from kalchas_api.parlay_claude import evaluate
 
-    composed = _compose(body.slot, body.style, body.exclude, wanted=body.legs)
+    composed = _compose(body.slot, body.style, body.exclude, wanted=body.legs, include=body.include)
     legs = _resolve_legs(body.match_ids, composed)
     if len(legs) < MIN_LEGS:
         raise HTTPException(status_code=422, detail=f"need at least {MIN_LEGS} legs")
     selected_ids = {str(leg["match_id"]) for leg in legs}
-    unused = [leg for leg in composed["legs"] if str(leg["match_id"]) not in selected_ids]
+    rank = {mid: i for i, mid in enumerate(composed["order"].get(composed["style"]) or [])}
+    unused = sorted(
+        (leg for leg in composed["legs"] if str(leg["match_id"]) not in selected_ids),
+        key=lambda leg: rank.get(str(leg["match_id"]), len(rank)),
+    )
     result = evaluate(
         slot=body.slot,
         style=body.style,
@@ -268,7 +283,7 @@ def post_slip(body: PostBody, request: Request) -> dict[str, Any]:
 
     from kalchas_api.parlay_post import fanout
 
-    composed = _compose(body.slot, body.style, body.exclude, wanted=body.legs)
+    composed = _compose(body.slot, body.style, body.exclude, wanted=body.legs, include=body.include)
     legs = _resolve_legs(body.match_ids, composed)
     if len(legs) < MIN_LEGS:
         raise HTTPException(status_code=422, detail=f"need at least {MIN_LEGS} legs")

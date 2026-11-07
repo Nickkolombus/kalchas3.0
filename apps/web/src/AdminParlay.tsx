@@ -45,8 +45,18 @@ type Compose = {
   returns: number | null;
   can_post: boolean;
   exclude: string[];
+  include: string[];
   explanation: string;
   claude_ready: boolean;
+};
+
+type Suggestion = {
+  kind: "swap" | "remove" | "add";
+  remove: string | null;
+  add: string | null;
+  remove_label: string | null;
+  add_label: string | null;
+  why: string;
 };
 
 type PostLog = Record<string, { ok: boolean; error?: string; ref?: string }>;
@@ -131,6 +141,8 @@ export function AdminParlay({ api }: { api: Api }) {
   const [style, setStyle] = useState<Style>("balanced");
   const [wanted, setWanted] = useState(5);
   const [exclude, setExclude] = useState<string[]>([]);
+  const [include, setInclude] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [pool, setPool] = useState<Compose | null>(null);
   const [generated, setGenerated] = useState<Compose | null>(null);
   const [error, setError] = useState("");
@@ -174,6 +186,8 @@ export function AdminParlay({ api }: { api: Api }) {
 
   useEffect(() => {
     setExclude([]);
+    setInclude([]);
+    setSuggestions([]);
     setGenerated(null);
     setAdvice("");
     setPostLog(null);
@@ -192,32 +206,43 @@ export function AdminParlay({ api }: { api: Api }) {
     const byId = new Map(pool.legs.map((l) => [l.match_id, l]));
     const order = pool.order?.[style] ?? [];
     const dropped = new Set(exclude);
-    return order
+    return [...new Set([...include, ...order])]
       .filter((id) => !dropped.has(id))
       .slice(0, n)
       .map((id) => byId.get(id))
       .filter((l): l is Leg => Boolean(l))
       .sort((a, b) => a.kickoff.localeCompare(b.kickoff) || a.match_id.localeCompare(b.match_id));
-  }, [pool, style, exclude, n]);
+  }, [pool, style, exclude, include, n]);
 
   const selected = useMemo(() => generated?.selected ?? [], [generated]);
   const selectedIds = useMemo(() => selected.map((l) => l.match_id), [selected]);
   const combined = selected.reduce((t, l) => t * l.price, 1);
 
-  async function generate() {
+  async function generate(edit?: { exclude: string[]; include: string[]; legs: number; note: string }) {
+    const ex = edit?.exclude ?? exclude;
+    const inc = edit?.include ?? include;
+    const legs = edit?.legs ?? n;
     setBusy(true);
     setError("");
     setStatus("");
     setAdvice("");
+    setSuggestions([]);
+    setEvalError("");
     setPostLog(null);
     try {
-      const q = new URLSearchParams({ slot, style, legs: String(n) });
-      if (exclude.length) q.set("exclude", exclude.join(","));
+      const q = new URLSearchParams({ slot, style, legs: String(legs) });
+      if (ex.length) q.set("exclude", ex.join(","));
+      if (inc.length) q.set("include", inc.join(","));
       const next = await api<Compose>(`/api/admin/parlay?${q}`);
+      if (edit) {
+        setExclude(ex);
+        setInclude(inc);
+        setWanted(next.wanted);
+      }
       setGenerated(next);
       setPool(next);
       setCaption(defaultCaption(next, next.selected));
-      setStatus("Slip generated.");
+      setStatus(edit?.note ?? "Slip generated.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "generate failed");
     } finally {
@@ -246,6 +271,7 @@ export function AdminParlay({ api }: { api: Api }) {
             legs: generated.wanted,
             match_ids: selectedIds,
             exclude,
+            include,
           }),
         });
         if (!res.ok) throw new Error(`preview HTTP ${res.status}`);
@@ -266,13 +292,15 @@ export function AdminParlay({ api }: { api: Api }) {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [generated, slot, style, selectedIds, exclude]);
+  }, [generated, slot, style, selectedIds, exclude, include]);
 
   function remove(id: string) {
     const floor = generated?.min_legs ?? pool?.min_legs ?? 3;
     const current = generated?.selected ?? draftSelected;
     if (current.length <= floor) return;
     setExclude((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    setInclude((prev) => prev.filter((x) => x !== id));
+    setSuggestions([]);
     setGenerated(null);
     setAdvice("");
     setPostLog(null);
@@ -287,7 +315,7 @@ export function AdminParlay({ api }: { api: Api }) {
     setError("");
     setStatus("");
     try {
-      const res = await api<{ ok: boolean; advice: string }>("/api/admin/parlay/evaluate", {
+      const res = await api<{ ok: boolean; advice: string; suggestions?: Suggestion[] }>("/api/admin/parlay/evaluate", {
         method: "POST",
         body: JSON.stringify({
           slot,
@@ -295,9 +323,11 @@ export function AdminParlay({ api }: { api: Api }) {
           legs: generated.wanted,
           match_ids: selectedIds,
           exclude,
+          include,
         }),
       });
       setAdvice(res.advice);
+      setSuggestions(res.suggestions ?? []);
       setStatus("Claude evaluated the slip.");
     } catch (err) {
       setEvalError(err instanceof Error ? err.message : "evaluate failed");
@@ -306,6 +336,36 @@ export function AdminParlay({ api }: { api: Api }) {
       setEvaluating(false);
     }
   }
+
+  function applyEdit(remove: string | null, add: string | null, note: string) {
+    const ex = remove && !exclude.includes(remove) ? [...exclude, remove] : exclude;
+    const inc = add ? [...include.filter((x) => x !== remove && x !== add), add] : include.filter((x) => x !== remove);
+    const delta = (add ? 1 : 0) - (remove ? 1 : 0);
+    const legs = Math.min(Math.max(selected.length + delta, generated?.min_legs ?? 3), generated?.max_legs ?? 18);
+    void generate({ exclude: ex.filter((x) => x !== add), include: inc, legs, note });
+  }
+
+  function applySuggestion(s: Suggestion) {
+    const what =
+      s.kind === "swap"
+        ? `Swapped ${s.remove_label} for ${s.add_label}.`
+        : s.kind === "remove"
+          ? `Removed ${s.remove_label}.`
+          : `Added ${s.add_label}.`;
+    applyEdit(s.remove, s.add, `Claude suggestion applied. ${what}`);
+  }
+
+  const spare = useMemo(() => {
+    if (!generated) return [] as Leg[];
+    const taken = new Set(selectedIds);
+    const byId = new Map(generated.legs.map((l) => [l.match_id, l]));
+    const ranked = [...new Set([...(generated.order?.[style] ?? []), ...generated.legs.map((l) => l.match_id)])];
+    return ranked
+      .filter((id) => !taken.has(id))
+      .map((id) => byId.get(id))
+      .filter((l): l is Leg => Boolean(l))
+      .slice(0, 12);
+  }, [generated, selectedIds, style]);
 
   async function post() {
     if (!generated) return;
@@ -321,6 +381,7 @@ export function AdminParlay({ api }: { api: Api }) {
           legs: generated.wanted,
           match_ids: selectedIds,
           exclude,
+          include,
           channels,
           caption,
           x_text: caption,
@@ -351,8 +412,13 @@ export function AdminParlay({ api }: { api: Api }) {
         </div>
         <div className="kit-card-right">
           {pool ? <span className="kit-muted">{dayLabel(pool.day)}</span> : null}
-          <button type="button" className="kit-btn" disabled={busy || exclude.length === 0} onClick={() => setExclude([])}>
-            Reset removals
+          <button type="button" className="kit-btn" disabled={busy || (exclude.length === 0 && include.length === 0)}
+            onClick={() => {
+              setExclude([]);
+              setInclude([]);
+            }}
+          >
+            Reset edits
           </button>
         </div>
       </div>
@@ -504,6 +570,64 @@ export function AdminParlay({ api }: { api: Api }) {
               ) : null}
               {evalError ? <p className="kit-error">{evalError}</p> : null}
               {advice ? <pre className="ap-advice">{advice}</pre> : null}
+              {suggestions.length ? (
+                <ul className="ap-suggest">
+                  {suggestions.map((sg) => (
+                    <li key={`${sg.remove}-${sg.add}`}>
+                      <div>
+                        <b>{sg.kind === "swap" ? "Swap" : sg.kind === "remove" ? "Remove" : "Add"}</b>
+                        {sg.remove_label ? <span className="ap-out">− {sg.remove_label}</span> : null}
+                        {sg.add_label ? <span className="ap-in">+ {sg.add_label}</span> : null}
+                        {sg.why ? <span className="kit-muted">{sg.why}</span> : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="kit-btn is-primary"
+                        disabled={
+                          busy ||
+                          (sg.kind === "remove" && selected.length <= (generated?.min_legs ?? 3)) ||
+                          (sg.kind === "add" && selected.length >= (generated?.max_legs ?? 18))
+                        }
+                        onClick={() => applySuggestion(sg)}
+                      >
+                        Apply
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : advice ? (
+                <p className="kit-muted">No concrete change suggested.</p>
+              ) : null}
+            </div>
+
+            <div className="ap-add kit-card">
+              <div className="ap-cap">Add a leg · unused candidates, best first for {styleInfo.label}</div>
+              {spare.length ? (
+                <ul className="ap-suggest">
+                  {spare.map((leg) => (
+                    <li key={leg.match_id}>
+                      <div>
+                        <b>
+                          {leg.home.name} v {leg.away.name}
+                        </b>
+                        <span className="kit-muted">
+                          {kickHm(leg.kickoff)} · {leg.label} · {leg.hit}/{leg.n} recent · {leg.price.toFixed(2)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="kit-btn"
+                        disabled={busy || selected.length >= (generated?.max_legs ?? 18)}
+                        onClick={() => applyEdit(null, leg.match_id, `Added ${leg.home.name} v ${leg.away.name}.`)}
+                      >
+                        Add
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="kit-muted">No other priced legs for this slot.</p>
+              )}
             </div>
 
             <div className="ap-share kit-card">

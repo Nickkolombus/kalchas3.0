@@ -86,14 +86,19 @@ def select_legs(
     *,
     exclude: Sequence[str] = (),
     wanted: int | None = None,
+    include: Sequence[str] = (),
 ) -> list[dict[str, Any]]:
-    """Legs in kick-off order for the slip: style order, minus removals, capped."""
+    """Legs in kick-off order for the slip: pinned legs first, then style order
+    minus removals, capped at ``wanted``."""
     by_id = {str(leg["match_id"]): dict(leg) for leg in legs}
     dropped = {str(mid) for mid in exclude}
     picked: list[dict[str, Any]] = []
-    for mid in style_order:
-        if mid in dropped or mid not in by_id:
+    seen: set[str] = set()
+    pinned = [str(mid) for mid in include if str(mid) in by_id and str(mid) not in dropped]
+    for mid in [*dict.fromkeys(pinned), *style_order]:
+        if mid in dropped or mid not in by_id or mid in seen:
             continue
+        seen.add(mid)
         picked.append(by_id[mid])
         if wanted is not None and len(picked) >= wanted:
             break

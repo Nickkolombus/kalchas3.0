@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -19,6 +20,7 @@ log = logging.getLogger("kalchas.api.parlay_claude")
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 MODELS_URL = "https://api.anthropic.com/v1/models"
 DEFAULT_MODEL = "claude-sonnet-5-5"
+UNUSED_CAP = 12
 
 
 def _model() -> str:
@@ -49,7 +51,67 @@ Rules:
   1) Weakest leg (name it and why, using the provided recent hit rate and price)
   2) One optional swap idea from the unused candidates if any look quieter, else say none
   3) Overall read in one or two sentences
+- Refer to legs by team names in the prose, never by match_id.
+- After the prose, end with exactly one fenced ```json block and nothing after it:
+  {"suggestions": [{"remove": "<match_id or null>", "add": "<match_id or null>", "why": "<max 12 words>"}]}
+  "remove" must be a selected_legs match_id; "add" must be an unused_candidates match_id.
+  A swap sets both. Up to 3 suggestions, best first. Use [] when nothing is worth changing.
 """
+
+_JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+
+
+def _leg_label(leg: Mapping[str, Any]) -> str:
+    home = leg.get("home") if isinstance(leg.get("home"), Mapping) else {}
+    away = leg.get("away") if isinstance(leg.get("away"), Mapping) else {}
+    market = str(leg.get("label") or leg.get("market") or "")
+    price = leg.get("price")
+    tail = f" · {market} {float(price):.2f}" if price else f" · {market}" if market else ""
+    return f"{home.get('name') or ''} v {away.get('name') or ''}{tail}"
+
+
+def split_suggestions(
+    text: str,
+    selected: Sequence[Mapping[str, Any]],
+    unused: Sequence[Mapping[str, Any]],
+) -> tuple[str, list[dict[str, Any]]]:
+    """Strip Claude's trailing JSON block and keep only actions that fit this slip."""
+    found = list(_JSON_BLOCK.finditer(text))
+    if not found:
+        return text.strip(), []
+    block = found[-1]
+    prose = (text[: block.start()] + text[block.end() :]).strip()
+    try:
+        raw = json.loads(block.group(1)).get("suggestions") or []
+    except (ValueError, AttributeError):
+        return prose, []
+    picked = {str(leg.get("match_id")): leg for leg in selected}
+    spare = {str(leg.get("match_id")): leg for leg in unused}
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str | None, str | None]] = set()
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, Mapping):
+            continue
+        remove = str(item["remove"]) if item.get("remove") not in (None, "") else None
+        add = str(item["add"]) if item.get("add") not in (None, "") else None
+        if remove not in picked:
+            remove = None
+        if add not in spare:
+            add = None
+        if (remove is None and add is None) or (remove, add) in seen:
+            continue
+        seen.add((remove, add))
+        out.append(
+            {
+                "kind": "swap" if remove and add else "remove" if remove else "add",
+                "remove": remove,
+                "add": add,
+                "remove_label": _leg_label(picked[remove]) if remove else None,
+                "add_label": _leg_label(spare[add]) if add else None,
+                "why": str(item.get("why") or "")[:160],
+            }
+        )
+    return prose, out[:3]
 
 
 def _facts(
@@ -82,7 +144,7 @@ def _facts(
         "style": style,
         "day": day,
         "selected_legs": [pack(leg) for leg in selected],
-        "unused_candidates": [pack(leg) for leg in unused[:12]],
+        "unused_candidates": [pack(leg) for leg in unused[:UNUSED_CAP]],
     }
 
 
@@ -149,7 +211,13 @@ def evaluate(
                 data.get("usage"),
             )
             return {"ok": False, "error": f"Claude returned no advice ({data.get('stop_reason')})"}
-        return {"ok": True, "advice": text, "model": data.get("model") or payload["model"]}
+        advice, suggestions = split_suggestions(text, selected, unused[:UNUSED_CAP])
+        return {
+            "ok": True,
+            "advice": advice,
+            "suggestions": suggestions,
+            "model": data.get("model") or payload["model"],
+        }
     except Exception as exc:
         log.exception("parlay claude evaluate failed")
         return {"ok": False, "error": str(exc)[:300]}

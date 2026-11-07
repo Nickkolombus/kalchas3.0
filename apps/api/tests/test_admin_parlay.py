@@ -261,4 +261,45 @@ def test_claude_ignores_thinking_blocks(monkeypatch: pytest.MonkeyPatch) -> None
         out = parlay_claude.evaluate(
             slot="today", style="balanced", day="2026-11-07", selected=[], unused=[], client=http
         )
-    assert out == {"ok": True, "advice": "Weakest: leg 3", "model": "claude-sonnet-x"}
+    assert out["ok"] is True
+    assert out["advice"] == "Weakest: leg 3"
+    assert out["suggestions"] == []
+
+
+def test_include_pins_a_leg_into_the_slip(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pages = [page(str(i), f"2026-11-07T1{i}:00:00+03:00") for i in range(1, 8)]
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages)
+    base = client.get("/api/admin/parlay?slot=today&style=balanced&legs=3").json()
+    picked = [leg["match_id"] for leg in base["selected"]]
+    spare = next(leg["match_id"] for leg in base["legs"] if leg["match_id"] not in picked)
+    swapped = client.get(
+        f"/api/admin/parlay?slot=today&style=balanced&legs=3&exclude={picked[0]}&include={spare}"
+    ).json()
+    ids = [leg["match_id"] for leg in swapped["selected"]]
+    assert len(ids) == 3
+    assert spare in ids
+    assert picked[0] not in ids
+    assert swapped["include"] == [spare]
+
+
+def test_split_suggestions_keeps_only_valid_actions() -> None:
+    from kalchas_api.parlay_claude import split_suggestions
+
+    selected = [page("1", "2026-11-07T14:00:00+03:00") | {"label": "BTTS No", "price": 1.9}]
+    unused = [page("9", "2026-11-07T22:30:00+03:00") | {"label": "Over 2.5", "price": 1.67}]
+    text = (
+        "1) Weakest leg: Home1 v Away1.\n\n"
+        "```json\n"
+        '{"suggestions": ['
+        '{"remove": "1", "add": "9", "why": "better hit rate"},'
+        '{"remove": "404", "add": null, "why": "made up"},'
+        '{"remove": null, "add": "9", "why": "extra"}'
+        "]}\n```"
+    )
+    prose, out = split_suggestions(text, selected, unused)
+    assert prose == "1) Weakest leg: Home1 v Away1."
+    assert [s["kind"] for s in out] == ["swap", "add"]
+    assert out[0]["remove_label"] == "Home1 v Away1 · BTTS No 1.90"
+    assert out[0]["add_label"] == "Home9 v Away9 · Over 2.5 1.67"

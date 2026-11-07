@@ -107,3 +107,12 @@ def test_select_legs_respects_exclude_and_floor() -> None:
     assert [leg["match_id"] for leg in picked] == ["a", "c", "d"]
     assert can_post(picked)
     assert not can_post(picked[:2])
+
+
+def test_select_legs_pins_included_first() -> None:
+    legs = [
+        {"match_id": str(i), "kickoff": f"2026-11-07T1{i}:00:00+03:00", "price": 1.5}
+        for i in range(1, 6)
+    ]
+    picked = select_legs(legs, ["1", "2", "3", "4", "5"], exclude=["1"], wanted=3, include=["5"])
+    assert [leg["match_id"] for leg in picked] == ["2", "3", "5"]
