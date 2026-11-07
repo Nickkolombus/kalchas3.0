@@ -107,7 +107,8 @@ def evaluate(
     }
     payload: dict[str, Any] = {
         "model": _model(),
-        "max_tokens": 700,
+        # Newer models think before answering and the thinking counts toward this cap.
+        "max_tokens": 4000,
         "system": SYSTEM,
         "messages": [
             {
@@ -120,7 +121,7 @@ def evaluate(
         ],
     }
     owns = client is None
-    http = client or httpx.Client(timeout=60.0)
+    http = client or httpx.Client(timeout=120.0)
     try:
         res = http.post(ANTHROPIC_URL, headers=headers, json=payload)
         if res.status_code == 404:
@@ -136,9 +137,18 @@ def evaluate(
             return {"ok": False, "error": f"Claude HTTP {res.status_code}"}
         data = res.json()
         parts = data.get("content") or []
-        text = "\n".join(str(p.get("text") or "") for p in parts if isinstance(p, Mapping)).strip()
+        text = "\n".join(
+            str(p.get("text") or "")
+            for p in parts
+            if isinstance(p, Mapping) and p.get("type") == "text"
+        ).strip()
         if not text:
-            return {"ok": False, "error": "empty Claude response"}
+            log.warning(
+                "anthropic evaluate empty text: stop_reason=%s usage=%s",
+                data.get("stop_reason"),
+                data.get("usage"),
+            )
+            return {"ok": False, "error": f"Claude returned no advice ({data.get('stop_reason')})"}
         return {"ok": True, "advice": text, "model": data.get("model") or payload["model"]}
     except Exception as exc:
         log.exception("parlay claude evaluate failed")

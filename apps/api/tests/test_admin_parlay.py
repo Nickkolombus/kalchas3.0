@@ -236,3 +236,29 @@ def test_default_caption_explains_style_and_links_site() -> None:
     assert "kalchas.live" in caption
     assert "kalchas.live/parlay" not in caption
     assert "For research & football enthusiast purposes only" in caption
+
+
+def test_claude_ignores_thinking_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    import httpx
+    from kalchas_api import parlay_claude
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "model": "claude-sonnet-x",
+                "stop_reason": "end_turn",
+                "content": [
+                    {"type": "thinking", "thinking": "", "signature": "abc"},
+                    {"type": "text", "text": "Weakest: leg 3"},
+                ],
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        out = parlay_claude.evaluate(
+            slot="today", style="balanced", day="2026-11-07", selected=[], unused=[], client=http
+        )
+    assert out == {"ok": True, "advice": "Weakest: leg 3", "model": "claude-sonnet-x"}
