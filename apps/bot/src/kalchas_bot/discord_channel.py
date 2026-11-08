@@ -62,9 +62,14 @@ async def send_discord_message(
     photo_bytes: bytes | None,
     caption: str,
     client: httpx.AsyncClient | None = None,
+    reply_to_message_id: int | None = None,
 ) -> int | None:
-    """Post a new message. Returns its id, or None on failure."""
+    """Post a new message, as a reply when ``reply_to_message_id`` is set.
+    Returns its id, or None on failure."""
     content = _clip(html_to_discord(caption))
+    body: dict[str, object] = {"content": content}
+    if reply_to_message_id is not None:
+        body["message_reference"] = {"message_id": str(reply_to_message_id)}
     owns_client = client is None
     http_client = client or httpx.AsyncClient(timeout=10.0)
     try:
@@ -73,13 +78,11 @@ async def send_discord_message(
             response = await http_client.post(
                 url,
                 headers=_headers(token),
-                data={"payload_json": json.dumps({"content": content})},
+                data={"payload_json": json.dumps(body)},
                 files={"files[0]": ("alert.png", photo_bytes, "image/png")},
             )
         else:
-            response = await http_client.post(
-                url, headers=_headers(token), json={"content": content}
-            )
+            response = await http_client.post(url, headers=_headers(token), json=body)
         response.raise_for_status()
         return int(response.json()["id"])
     except Exception:

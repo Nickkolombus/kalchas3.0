@@ -72,3 +72,29 @@ def test_settled_lost_banner() -> None:
         settled={"100": "landed", "101": "missed", "102": "landed"},
     )
     assert len(png) > 500
+
+
+def test_ballpen_marks_change_the_slip_and_stay_the_same() -> None:
+    legs = _legs(3)
+    plain = render_parlay_slip(legs, day="2026-11-07")
+    marks = {"100": "landed", "101": "void", "102": "landed"}
+    once = render_parlay_slip(legs, day="2026-11-07", settled=marks, seed="parlay-1")
+    again = render_parlay_slip(legs, day="2026-11-07", settled=marks, seed="parlay-1")
+    assert once != plain
+    assert once == again  # the same slip always gets the same hand
+
+
+def test_half_checked_slip_has_no_verdict() -> None:
+    legs = _legs(3)
+    two = render_parlay_slip(
+        legs, day="2026-11-07", settled={"100": "landed", "101": "landed"}, seed="s"
+    )
+    three = render_parlay_slip(
+        legs,
+        day="2026-11-07",
+        settled={"100": "landed", "101": "landed", "102": "landed"},
+        seed="s",
+    )
+    a, b = Image.open(BytesIO(two)), Image.open(BytesIO(three))
+    box = (0, a.height - 150, a.width, a.height)  # the totals and footer
+    assert a.crop(box).tobytes() != b.crop(box).tobytes()

@@ -8,7 +8,13 @@ import os
 
 from telegram import Update
 from telegram.error import Conflict
-from telegram.ext import Application, ChatMemberHandler, CommandHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    ChatMemberHandler,
+    CommandHandler,
+    ContextTypes,
+)
 
 from kalchas_bot.discord_channel import discord_bot_token
 from kalchas_bot.paid_channel import paid_chat_id
@@ -84,6 +90,14 @@ async def _maybe_start_delivery(application: Application) -> None:
         twitter=twitter_credentials(),
     )
     application.bot_data["recap_task"] = asyncio.create_task(recap_loop(application.bot, targets))
+
+    # Admin parlay slips: post, settle when every match is played, reply with
+    # the hand-marked result. The admin answers its questions with buttons.
+    from kalchas_bot.parlay_job import CALLBACK_PREFIX, on_parlay_button, parlay_loop
+
+    application.bot_data["parlay_admin_chat"] = targets.admin_chat_id
+    application.add_handler(CallbackQueryHandler(on_parlay_button, pattern=f"^{CALLBACK_PREFIX}:"))
+    application.bot_data["parlay_task"] = asyncio.create_task(parlay_loop(application.bot, targets))
 
 
 def build_app(token: str) -> Application:

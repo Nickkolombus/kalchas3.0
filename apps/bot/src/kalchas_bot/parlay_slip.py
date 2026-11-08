@@ -4,6 +4,10 @@ Looks like a high-street receipt: narrow stock, monospace, dashed rules,
 fixed illustrative stake of 10, a small Kalchas mark, and a dim diagonal
 watermark across the whole slip. The style (Safer / Balanced / Bolder) is
 explained in the post caption, not printed here.
+
+Once the matches are played the same printed slip comes back marked up by hand
+in blue ballpoint: a tick or a cross by each leg, void legs struck through, and
+the total circled or crossed out (see ``ballpen``).
 """
 
 from __future__ import annotations
@@ -16,6 +20,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps
+
+from kalchas_bot.ballpen import Pen
 
 Slot = Literal["today", "tomorrow", "nightly"]
 
@@ -56,14 +62,17 @@ def render_parlay_slip(
     style: str = "balanced",
     day: str | None = None,
     settled: Mapping[str, str] | None = None,
+    seed: str | None = None,
 ) -> bytes:
-    """PNG bytes of the thermal slip. ``settled`` maps match_id → landed|missed.
+    """PNG bytes of the thermal slip.
 
-    ``style`` is accepted for call-site symmetry; it is deliberately not printed.
+    ``settled`` maps match_id to ``landed``, ``missed`` or ``void``; when given,
+    the slip comes back marked in ballpoint. ``seed`` keeps the hand marks the
+    same every time one slip is drawn. ``style`` is accepted for call-site
+    symmetry; it is deliberately not printed.
     """
     del style
-    results = settled or {}
-    lines = _layout(legs, slot=slot, day=day, settled=results)
+    lines = _layout(legs, slot=slot, day=day)
     height = PAD_Y * 2 + sum(block[0] for block in lines) + 8
     img = Image.new("RGB", (WIDTH, max(height, 200)), PAPER)
     logo = _logo()
@@ -71,10 +80,16 @@ def render_parlay_slip(
         img.paste(logo, ((WIDTH - LOGO_PX) // 2, PAD_Y), logo)
     draw = ImageDraw.Draw(img)
     y = PAD_Y
-    for h, paint in lines:
+    where: dict[str, int] = {}
+    for h, paint, tag in lines:
         paint(draw, y)
+        if tag:
+            where[tag] = y
         y += h
     img = _watermark(img)
+    if settled:
+        key = seed or "|".join(str(leg.get("match_id")) for leg in legs)
+        img = _mark_up(img, legs, settled, where, seed=key)
     buf = BytesIO()
     img.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
@@ -156,29 +171,22 @@ def _layout(
     *,
     slot: Slot,
     day: str | None,
-    settled: Mapping[str, str],
-) -> list[tuple[int, Any]]:
+) -> list[tuple[int, Any, str | None]]:
     title_f = _font(18, bold=True)
     sub_f = _font(11)
     body_f = _font(13)
     small_f = _font(11)
     big_f = _font(16, bold=True)
 
-    combined = 1.0
+    product = 1.0
     for leg in legs:
-        combined *= float(leg.get("price") or 1)
-    combined = round(combined, 2)
-    returns = round(STAKE * combined, 2)
+        product *= float(leg.get("price") or 1)
+    # Same arithmetic as the page and the caption: round only for display.
+    combined = round(product, 2)
+    returns = round(STAKE * product, 2)
     day_label = _day_label(day)
     slot_label = _SLOT_TITLE.get(slot, "TODAY")
-    lost = next((mid for mid, out in settled.items() if out == "missed"), None)
-    won = (
-        bool(settled)
-        and all(out == "landed" for out in settled.values())
-        and len(settled) == len(legs)
-    )
-
-    blocks: list[tuple[int, Any]] = []
+    blocks: list[tuple[int, Any, str | None]] = []
 
     top = LOGO_PX + 8
 
@@ -198,20 +206,20 @@ def _layout(
         if slot == "nightly":
             draw.text((WIDTH / 2, y + 58), "00:00–07:00 GMT+3", font=sub_f, fill=MUTED, anchor="mt")
 
-    blocks.append((top + (72 if slot == "nightly" else 58), header))
+    blocks.append((top + (72 if slot == "nightly" else 58), header, None))
 
     def rule1(draw: ImageDraw.ImageDraw, y: int) -> None:
         _dash(draw, y + 4)
 
-    blocks.append((14, rule1))
+    blocks.append((14, rule1, None))
 
     def meta(draw: ImageDraw.ImageDraw, y: int) -> None:
         draw.text((PAD_X, y), day_label, font=small_f, fill=MUTED)
         stake = f"STAKE {STAKE:.2f}"
         draw.text((WIDTH - PAD_X, y), stake, font=small_f, fill=MUTED, anchor="rt")
 
-    blocks.append((18, meta))
-    blocks.append((14, rule1))
+    blocks.append((18, meta, None))
+    blocks.append((14, rule1, None))
 
     for i, leg in enumerate(legs, start=1):
         mid = str(leg.get("match_id") or "")
@@ -228,12 +236,6 @@ def _layout(
         market = str(leg.get("label") or leg.get("market") or "")
         price = float(leg.get("price") or 0)
         kick = _kick_hm(str(leg.get("kickoff") or ""))
-        outcome = settled.get(mid)
-        outcome_bit = ""
-        if outcome == "landed":
-            outcome_bit = " · LANDED"
-        elif outcome == "missed":
-            outcome_bit = " · MISSED"
 
         def leg_paint(
             draw: ImageDraw.ImageDraw,
@@ -244,12 +246,11 @@ def _layout(
             px: float = price,
             kick_s: str = kick,
             market_s: str = market,
-            bit: str = outcome_bit,
         ) -> None:
             left = f"{n:02d}  {_fit(draw, match_name, body_f, WIDTH - PAD_X * 2 - 56)}"
             draw.text((PAD_X, y), left, font=body_f, fill=INK)
             draw.text((WIDTH - PAD_X, y), f"{px:.2f}", font=body_f, fill=INK, anchor="rt")
-            detail = f"{kick_s} · {market_s}{bit}" if kick_s else f"{market_s}{bit}"
+            detail = f"{kick_s} · {market_s}" if kick_s else market_s
             draw.text(
                 (PAD_X + 28, y + 18),
                 _fit(draw, detail, small_f, WIDTH - PAD_X * 2 - 28),
@@ -257,9 +258,9 @@ def _layout(
                 fill=MUTED,
             )
 
-        blocks.append((40, leg_paint))
+        blocks.append((40, leg_paint, f"leg:{mid}"))
 
-    blocks.append((14, rule1))
+    blocks.append((14, rule1, None))
 
     def totals(draw: ImageDraw.ImageDraw, y: int) -> None:
         draw.text((PAD_X, y), "COMBINED", font=big_f, fill=INK)
@@ -267,39 +268,117 @@ def _layout(
         draw.text((PAD_X, y + 24), "RETURNS", font=body_f, fill=MUTED)
         draw.text((WIDTH - PAD_X, y + 24), f"{returns:.2f}", font=big_f, fill=INK, anchor="rt")
 
-    blocks.append((48, totals))
-
-    if settled:
-        blocks.append((14, rule1))
-
-        def banner(draw: ImageDraw.ImageDraw, y: int) -> None:
-            if won:
-                text = "*** CAME IN ***"
-            elif lost:
-                # Find leg number for the miss.
-                num = next(
-                    (
-                        idx
-                        for idx, leg in enumerate(legs, start=1)
-                        if str(leg.get("match_id")) == lost
-                    ),
-                    0,
-                )
-                text = f"*** LOST · LEG {num:02d} ***" if num else "*** LOST ***"
-            else:
-                text = "*** SETTLED ***"
-            draw.text((WIDTH / 2, y + 4), text, font=big_f, fill=INK, anchor="mt")
-
-        blocks.append((28, banner))
-
-    blocks.append((14, rule1))
+    blocks.append((48, totals, "totals"))
+    blocks.append((14, rule1, None))
 
     def footer(draw: ImageDraw.ImageDraw, y: int) -> None:
         draw.text((WIDTH / 2, y), SITE, font=body_f, fill=INK, anchor="mt")
         draw.text((WIDTH / 2, y + 18), DISCLAIMER, font=small_f, fill=MUTED, anchor="mt")
 
-    blocks.append((40, footer))
+    blocks.append((40, footer, "footer"))
     return blocks
+
+
+def _mark_up(
+    img: Image.Image,
+    legs: Sequence[Mapping[str, Any]],
+    settled: Mapping[str, str],
+    where: Mapping[str, int],
+    *,
+    seed: str,
+) -> Image.Image:
+    """The checker's pass over a played slip, in blue ballpoint."""
+    pen = Pen(img.size, seed)
+    probe = ImageDraw.Draw(img)
+    body_f, big_f = _font(13), _font(16, bold=True)
+    right = WIDTH - PAD_X
+
+    missed_n: list[int] = []
+    voids = 0
+    for i, leg in enumerate(legs, start=1):
+        mid = str(leg.get("match_id") or "")
+        y = where.get(f"leg:{mid}")
+        state = settled.get(mid)
+        if y is None or state is None:
+            continue
+        price_w = probe.textlength(f"{float(leg.get('price') or 0):.2f}", font=body_f)
+        if state == "landed":
+            pen.tick(15, y + 9, size=22)
+        elif state == "missed":
+            missed_n.append(i)
+            pen.cross(14, y + 9, size=17)
+            pen.strike(PAD_X + 26, right - price_w - 10, y + 8, wavy=True)
+        elif state == "void":
+            voids += 1
+            pen.strike(PAD_X - 4, right + 4, y + 8)
+            pen.write((right - 2, y + 25), "void", size=24, anchor="rm", tilt=5)
+
+    # The total is only marked once every leg is: a half-checked slip has no verdict.
+    total_y = where.get("totals")
+    every = all(str(leg.get("match_id")) in settled for leg in legs)
+    if total_y is not None and every:
+        live = [leg for leg in legs if settled.get(str(leg.get("match_id"))) != "void"]
+        combined = 1.0
+        for leg in live:
+            combined *= float(leg.get("price") or 1)
+        returns = STAKE * combined
+        old = probe.textbbox(
+            (right, total_y + 24), f"{_printed_returns(legs):.2f}", font=big_f, anchor="rt"
+        )
+        old_odds = probe.textbbox(
+            (right, total_y), f"{_printed_combined(legs):.2f}", font=big_f, anchor="rt"
+        )
+        middle = (PAD_X + 120 + old[0]) / 2
+        if voids and live:
+            # Voided legs pay at evens: the odds and returns get rewritten by hand.
+            pen.strike(old_odds[0] - 4, old_odds[2] + 4, (old_odds[1] + old_odds[3]) / 2 + 1)
+            pen.write(
+                (old_odds[0] - 10, total_y + 9), f"{combined:.2f}", size=28, anchor="rm", tilt=3
+            )
+        if missed_n:
+            pen.strike(old[0] - 6, old[2] + 6, (old[1] + old[3]) / 2 + 1)
+            legs_word = "leg" if len(missed_n) == 1 else "legs"
+            nums = ", ".join(str(n) for n in missed_n[:-1])
+            nums = f"{nums} & {missed_n[-1]}" if nums else str(missed_n[-1])
+            pen.write(
+                (middle, total_y + 36), f"lost · {legs_word} {nums}", size=27, anchor="mm", tilt=4
+            )
+        elif live:
+            if voids:
+                # Strike the printed total and write the real one beside it, ringed.
+                pen.strike(old[0] - 4, old[2] + 4, (old[1] + old[3]) / 2 + 1)
+                new = f"{returns:.2f}"
+                end = old[0] - 22
+                width = pen.text_width(new, 28)
+                pen.write((end, total_y + 33), new, size=28, anchor="rm", tilt=3)
+                ring = (end - width, old[1] - 1, end, old[3] + 3)
+                middle = (PAD_X + 110 + ring[0]) / 2
+            else:
+                ring = old
+            pen.ring(ring)
+            pen.write((middle - 6, total_y + 34), "came in!", size=30, anchor="mm", tilt=6)
+        else:
+            pen.write((middle, total_y + 34), "all void", size=28, anchor="mm", tilt=4)
+
+    foot = where.get("footer")
+    if foot is not None and every:
+        pen.write((PAD_X - 6, foot + 4), "checked", size=20, anchor="lt", tilt=8)
+    return pen.apply(img)
+
+
+def _product(legs: Sequence[Mapping[str, Any]]) -> float:
+    total = 1.0
+    for leg in legs:
+        total *= float(leg.get("price") or 1)
+    return total
+
+
+def _printed_combined(legs: Sequence[Mapping[str, Any]]) -> float:
+    return round(_product(legs), 2)
+
+
+def _printed_returns(legs: Sequence[Mapping[str, Any]]) -> float:
+    return round(STAKE * _product(legs), 2)
 
 
 def _day_label(day: str | None) -> str:

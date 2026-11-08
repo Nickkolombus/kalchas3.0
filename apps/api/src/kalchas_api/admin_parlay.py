@@ -1,13 +1,19 @@
-"""Admin parlay: compose like the public page, evaluate with Claude, post.
+"""Admin parlay: build a slip like the public /parlay page, check it, post it.
 
-Same builder as /parlay (Safer / Balanced / Bolder + leg count), plus admin-only
-Nightly, per-leg Remove, thermal slip, Claude stress-test, and channel fan-out.
+The page gets one payload per slot (every leg on offer and each style's
+order, exactly what the public page gets) and builds the slip in the browser,
+so every control is instant and the selection logic is the public one.
+
+The server only renders, asks Claude, and saves. A slip is saved exactly as
+the admin saw it: if a price or market moved since, saving is refused with
+what changed. Posting, settling and the result reply are the bot's job
+(``kalchas_bot.parlay_job``), so this request never waits on a channel.
 """
 
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+from datetime import date
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -15,14 +21,11 @@ from kalchas_core.watchlist.parlay import MAX_LEGS, MIN_LEGS, STYLES
 from kalchas_core.watchlist.parlay_share import (
     STAKE,
     WINDOW_LABEL,
-    can_post,
-    combined_odds,
     filter_nightly,
     rebuild_orders,
-    returns_for,
-    select_legs,
     slot_day,
 )
+from kalchas_core.watchlist.parlay_slips import CHOICES, marks, snapshot, verdict
 from pydantic import BaseModel, Field
 
 from kalchas_api import watchlist as watchlist_api
@@ -33,11 +36,7 @@ router = APIRouter(prefix="/api/admin/parlay", tags=["admin"])
 Slot = Literal["today", "tomorrow", "nightly"]
 Style = Literal["safer", "balanced", "bolder"]
 
-STYLE_BLURBS: dict[str, str] = {
-    "safer": "Shortest prices first, and only legs that came in at least 7 times in 10 recently.",
-    "balanced": "The strongest patterns of the day, in the order the watchlist ranks them.",
-    "bolder": "Legs whose recent record beats the price by the most. Longer odds, less likely to all come in.",
-}
+CHANNEL_KEYS = ("x", "telegram_free", "telegram_paid", "discord_free", "discord_paid")
 
 STYLE_NATURE: dict[str, str] = {
     "safer": "A cautious slip: short prices on picks that have come in at least 7 times in 10 lately.",
@@ -45,38 +44,39 @@ STYLE_NATURE: dict[str, str] = {
     "bolder": "A riskier slip: longer odds on picks whose recent form beats the price. Less likely to all land.",
 }
 
-CHANNEL_KEYS = ("x", "telegram_free", "telegram_paid", "discord_free", "discord_paid")
+
+class LegRef(BaseModel):
+    """One leg as the admin saw it. The price is checked before anything is saved."""
+
+    match_id: str
+    market: str
+    price: float
 
 
-class PreviewBody(BaseModel):
+class SlipBody(BaseModel):
     slot: Slot = "today"
     style: Style = "balanced"
-    legs: int | None = None
-    match_ids: list[str] = Field(default_factory=list)
-    exclude: list[str] = Field(default_factory=list)
-    include: list[str] = Field(default_factory=list)
+    legs: list[LegRef] = Field(default_factory=list)
 
 
-class EvaluateBody(BaseModel):
-    slot: Slot = "today"
-    style: Style = "balanced"
-    legs: int | None = None
-    match_ids: list[str] = Field(default_factory=list)
-    exclude: list[str] = Field(default_factory=list)
-    include: list[str] = Field(default_factory=list)
+class EvaluateBody(SlipBody):
+    pass
 
 
-class PostBody(BaseModel):
-    slot: Slot = "today"
-    style: Style = "balanced"
-    legs: int | None = None
-    match_ids: list[str] = Field(default_factory=list)
-    exclude: list[str] = Field(default_factory=list)
-    include: list[str] = Field(default_factory=list)
-    channels: dict[str, bool] = Field(default_factory=dict)
+class SaveBody(SlipBody):
     caption: str = ""
     x_text: str = ""
+    channels: dict[str, bool] = Field(default_factory=dict)
     autopost: bool = True
+
+
+class DecideBody(BaseModel):
+    match_id: str
+    outcome: Literal["landed", "missed", "void"]
+
+
+class ReplyBody(BaseModel):
+    action: Literal["post", "skip", "retry"]
 
 
 def _dsn() -> str:
@@ -86,260 +86,261 @@ def _dsn() -> str:
     return dsn
 
 
-def _one_in(odds: float) -> str:
-    if odds < 2:
-        return "better than even"
-    n = round(odds)
-    if n >= 10_000:
-        return f"about 1 in {round(n / 1000):,}000"
-    if n >= 1000:
-        return f"about 1 in {round(n / 100) * 100:,}"
-    return f"about 1 in {n}"
+# ---------------------------------------------------------------- the day
 
 
-def _compose(
-    slot: Slot,
-    style: Style,
-    exclude: list[str] | None = None,
-    wanted: int | None = None,
-    include: list[str] | None = None,
-) -> dict[str, Any]:
+def day_for(slot: Slot) -> dict[str, Any]:
+    """Everything the slot can use: the public /parlay payload, Nightly-filtered."""
     today = watchlist_api.board_today()
     target = slot_day(slot, today=today)
-    day = target.isoformat()
+    iso = target.isoformat()
     try:
-        built = watchlist_api._parlay_for(_dsn(), day)
+        built = watchlist_api._parlay_for(_dsn(), iso)
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"parlay unavailable: {exc}") from exc
-
-    legs: list[dict[str, Any]] = list(built.get("legs") or [])
-    orders = dict(built.get("order") or {})
+    legs = list(built.get("legs") or [])
+    order = {s: list((built.get("order") or {}).get(s) or []) for s in STYLES}
+    unpriced = list(built.get("unpriced") or [])
     if slot == "nightly":
         legs = filter_nightly(legs)
-        orders = rebuild_orders(legs)
-
-    style_key = style if style in STYLES else "balanced"
-    style_order = list(orders.get(style_key) or [])
-    known = {str(leg["match_id"]) for leg in legs}
-    pinned = [mid for mid in dict.fromkeys(include or []) if mid in known]
-    most = min(len(set(style_order) | set(pinned)), MAX_LEGS)
-    n = wanted
-    if n is None:
-        n = min(5, most) if most else 0
-    n = max(min(n, most), min(MIN_LEGS, most)) if most else 0
-    selected = select_legs(
-        legs, style_order, exclude=exclude or [], wanted=n or None, include=pinned
-    )
-    # If excludes shrink below floor, keep what remains (UI blocks post).
-    today_s = today.isoformat()
-    if not legs:
-        status = "none" if day < today_s else "preparing"
-    else:
+        order = rebuild_orders(legs)
+        unpriced = []  # no kick-off on those rows, so they can't be placed in the window
+    if built:
         status = "ready"
-
-    looks = sum(1 for leg in selected if leg.get("watch") == "look")
-    combined = combined_odds(selected) if selected else None
-    explanation_parts = [
-        STYLE_BLURBS.get(style_key, ""),
-        (
-            f"Same builder as the public /parlay page: one priced leg per match, "
-            f"ordered by {style_key}, then the first {len(selected)} after your edits."
-            if selected
-            else ""
-        ),
-    ]
-    if combined is not None and selected:
-        explanation_parts.append(
-            f"All {len(selected)} have to land. At these prices bookmakers rate that {_one_in(combined)}."
-        )
-    if looks:
-        explanation_parts.append(
-            f"{looks} {'leg' if looks == 1 else 'legs'} from Worth a look, added to reach {len(selected)}."
-        )
-    if slot == "nightly":
-        explanation_parts.append(f"Nightly window {WINDOW_LABEL}, admin-only.")
-
+    else:
+        status = "none" if iso < today.isoformat() else "preparing"
     return {
         "slot": slot,
-        "style": style_key,
-        "style_blurb": STYLE_BLURBS.get(style_key, ""),
-        "day": day,
-        "today": today_s,
+        "day": iso,
+        "today": today.isoformat(),
         "status": status,
         "window_label": WINDOW_LABEL if slot == "nightly" else None,
+        "legs": legs,
+        "order": order,
+        "unpriced": unpriced,
         "stake": STAKE,
         "min_legs": MIN_LEGS,
         "max_legs": MAX_LEGS,
-        "presets": [p for p in (3, 5, 8, 12, 18) if p <= max(most, MIN_LEGS) or p <= most],
-        "available": most,
-        "wanted": n,
-        "legs": legs,
-        "order": {s: list(orders.get(s) or []) for s in STYLES},
-        "selected": selected,
-        "combined": combined,
-        "returns": returns_for(selected) if selected else None,
-        "can_post": can_post(selected),
-        "exclude": list(exclude or []),
-        "include": pinned,
-        "explanation": " ".join(p for p in explanation_parts if p).strip(),
         "claude_ready": bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip()),
     }
 
 
-def _resolve_legs(body_match_ids: list[str], composed: dict[str, Any]) -> list[dict[str, Any]]:
-    by_id = {str(leg["match_id"]): leg for leg in composed["legs"]}
-    if body_match_ids:
-        legs = [by_id[mid] for mid in body_match_ids if mid in by_id]
-        legs.sort(key=lambda leg: (str(leg.get("kickoff") or ""), str(leg["match_id"])))
-        return legs
-    return list(composed["selected"])
+def take(slot: Slot, refs: list[LegRef]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The legs the admin picked, from today's data; 409 if any changed since."""
+    day = day_for(slot)
+    by_id = {str(leg["match_id"]): leg for leg in day["legs"]}
+    picked: list[dict[str, Any]] = []
+    changed: list[str] = []
+    seen: set[str] = set()
+    for ref in refs:
+        if ref.match_id in seen:
+            continue
+        seen.add(ref.match_id)
+        leg = by_id.get(ref.match_id)
+        if leg is None:
+            changed.append(f"{ref.match_id}: no longer on the list")
+        elif leg["market"] != ref.market:
+            changed.append(f"{_name(leg)}: the leg is now {leg['label']}")
+        elif round(float(leg["price"]), 2) != round(ref.price, 2):
+            changed.append(f"{_name(leg)}: price {ref.price:.2f} is now {float(leg['price']):.2f}")
+        else:
+            picked.append(leg)
+    if changed:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "The list changed since you built this slip.", "changes": changed},
+        )
+    if not MIN_LEGS <= len(picked) <= MAX_LEGS:
+        raise HTTPException(
+            status_code=422, detail=f"a slip needs {MIN_LEGS} to {MAX_LEGS} legs, not {len(picked)}"
+        )
+    picked.sort(key=lambda leg: (str(leg.get("kickoff") or ""), str(leg["match_id"])))
+    return day, picked
 
 
-def _default_caption(composed: dict[str, Any], legs: list[dict[str, Any]]) -> str:
-    slot = composed["slot"]
-    style = composed["style"]
-    combined = combined_odds(legs) if legs else 0
-    slot_word = (
-        "Nightly" if slot == "nightly" else "Tomorrow's" if slot == "tomorrow" else "Today's"
-    )
+def _name(leg: dict[str, Any]) -> str:
+    return f"{(leg.get('home') or {}).get('name', '')} v {(leg.get('away') or {}).get('name', '')}"
+
+
+def default_caption(slot: str, style: str, legs: list[dict[str, Any]]) -> str:
+    combined = 1.0
+    for leg in legs:
+        combined *= float(leg["price"])
+    word = "Nightly" if slot == "nightly" else "Tomorrow's" if slot == "tomorrow" else "Today's"
     lines = [
-        f"{slot_word} Kalchas parlay",
+        f"{word} Kalchas parlay",
         STYLE_NATURE.get(style, STYLE_NATURE["balanced"]),
         "",
         f"{len(legs)} legs · combined {combined:.2f}",
-        f"A 10 stake returns {returns_for(legs):.2f}",
+        f"A {STAKE:.0f} stake returns {STAKE * combined:.2f}",
     ]
     if slot == "nightly":
         lines.append(WINDOW_LABEL)
-    lines.extend(["", "kalchas.live", "For research & football enthusiast purposes only"])
+    lines += ["", "kalchas.live", "For research & football enthusiast purposes only"]
     return "\n".join(lines)
 
 
-@router.get("")
-def get_parlay(
-    request: Request,
-    slot: Slot = "today",
-    style: Style = "balanced",
-    legs: int | None = None,
-    exclude: str = "",
-    include: str = "",
-) -> dict[str, Any]:
-    """Compose the admin slip for a slot (same builder as public /parlay)."""
+# ---------------------------------------------------------------- endpoints
+
+
+@router.get("/day")
+def get_day(request: Request, slot: Slot = "today") -> dict[str, Any]:
+    """Every leg the slot can use and each style's order, like GET /api/watchlist/parlay."""
     require_admin(request)
-    dropped = [part.strip() for part in exclude.split(",") if part.strip()]
-    pinned = [part.strip() for part in include.split(",") if part.strip()]
-    return _compose(slot, style, dropped, wanted=legs, include=pinned)
+    return day_for(slot)
 
 
 @router.post("/preview")
-def preview_slip(body: PreviewBody, request: Request) -> Response:
-    """Thermal slip PNG for the chosen legs."""
+def preview(body: SlipBody, request: Request) -> Response:
+    """The thermal slip PNG for exactly these legs."""
     require_admin(request)
     from kalchas_bot.parlay_slip import render_parlay_slip
 
-    composed = _compose(body.slot, body.style, body.exclude, wanted=body.legs, include=body.include)
-    legs = _resolve_legs(body.match_ids, composed)
-    if len(legs) < MIN_LEGS:
-        raise HTTPException(status_code=422, detail=f"need at least {MIN_LEGS} legs for a slip")
-    png = render_parlay_slip(legs, slot=body.slot, style=body.style, day=composed["day"])
-    return Response(content=png, media_type="image/png")
+    day, legs = take(body.slot, body.legs)
+    png = render_parlay_slip(legs, slot=body.slot, style=body.style, day=day["day"])
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+@router.post("/caption")
+def caption(body: SlipBody, request: Request) -> dict[str, str]:
+    require_admin(request)
+    _, legs = take(body.slot, body.legs)
+    return {"caption": default_caption(body.slot, body.style, legs)}
 
 
 @router.post("/evaluate")
 def evaluate_slip(body: EvaluateBody, request: Request) -> dict[str, Any]:
-    """Claude stress-test: weakest leg + optional swap. Does not change the slip."""
+    """Claude's read: weakest leg and swap ideas from the unused legs. Changes nothing."""
     require_admin(request)
     from kalchas_api.parlay_claude import evaluate
 
-    composed = _compose(body.slot, body.style, body.exclude, wanted=body.legs, include=body.include)
-    legs = _resolve_legs(body.match_ids, composed)
-    if len(legs) < MIN_LEGS:
-        raise HTTPException(status_code=422, detail=f"need at least {MIN_LEGS} legs")
-    selected_ids = {str(leg["match_id"]) for leg in legs}
-    rank = {mid: i for i, mid in enumerate(composed["order"].get(composed["style"]) or [])}
+    day, legs = take(body.slot, body.legs)
+    chosen = {str(leg["match_id"]) for leg in legs}
+    rank = {mid: i for i, mid in enumerate(day["order"].get(body.style) or [])}
     unused = sorted(
-        (leg for leg in composed["legs"] if str(leg["match_id"]) not in selected_ids),
-        key=lambda leg: rank.get(str(leg["match_id"]), len(rank)),
+        (leg for leg in day["legs"] if str(leg["match_id"]) not in chosen),
+        key=lambda leg: (rank.get(str(leg["match_id"]), len(rank)), -float(leg.get("score") or 0)),
     )
     result = evaluate(
-        slot=body.slot,
-        style=body.style,
-        day=composed["day"],
-        selected=legs,
-        unused=unused,
+        slot=body.slot, style=body.style, day=day["day"], selected=legs, unused=unused
     )
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=str(result.get("error") or "Claude failed"))
     return result
 
 
-@router.post("/post")
-def post_slip(body: PostBody, request: Request) -> dict[str, Any]:
-    """Render the thermal slip and post it to the chosen channels."""
+@router.post("/slips")
+def save_slip(body: SaveBody, request: Request) -> dict[str, Any]:
+    """Save the slip as previewed; the bot posts it within a minute."""
     require_admin(request)
-    from kalchas_bot.parlay_slip import render_parlay_slip
+    from kalchas_db.parlay_slips import insert_slip_sync
 
-    from kalchas_api.parlay_post import fanout
-
-    composed = _compose(body.slot, body.style, body.exclude, wanted=body.legs, include=body.include)
-    legs = _resolve_legs(body.match_ids, composed)
-    if len(legs) < MIN_LEGS:
-        raise HTTPException(status_code=422, detail=f"need at least {MIN_LEGS} legs")
     channels = {key: bool(body.channels.get(key)) for key in CHANNEL_KEYS}
     if not any(channels.values()):
         raise HTTPException(status_code=422, detail="pick at least one channel")
-
-    caption = (body.caption or "").strip() or _default_caption(composed, legs)
-    x_text = (body.x_text or "").strip() or caption[:280]
-    png = render_parlay_slip(legs, slot=body.slot, style=body.style, day=composed["day"])
-
-    discord = None
-    try:
-        from kalchas_db.discord_settings import get_discord_settings
-
-        discord = get_discord_settings(_dsn())
-    except Exception:  # noqa: BLE001 — missing table / bad DSN must not block a post
-        discord = None
-
-    post_log = fanout(
-        png,
-        caption=caption,
-        x_text=x_text,
+    day, legs = take(body.slot, body.legs)
+    text = body.caption.strip() or default_caption(body.slot, body.style, legs)
+    row = insert_slip_sync(
+        _dsn(),
+        day=date.fromisoformat(day["day"]),
+        slot=body.slot,
+        style=body.style,
+        legs=[snapshot(leg) for leg in legs],
+        caption=text,
+        x_text=(body.x_text.strip() or text)[:280],
         channels=channels,
-        discord_settings=discord,
+        autopost=body.autopost,
     )
-    ok_any = any(bool((entry or {}).get("ok")) for entry in post_log.values())
-    return {
-        "ok": ok_any,
-        "post_log": post_log,
-        "autopost": body.autopost,
-        "day": composed["day"],
-        "slot": body.slot,
-        "style": body.style,
-        "legs": [str(leg["match_id"]) for leg in legs],
-        "caption": caption,
-    }
+    return _out(row)
 
 
-@router.get("/meta")
-def parlay_meta(request: Request) -> dict[str, Any]:
-    """Static labels the admin UI needs (no DB)."""
+@router.get("/slips")
+def list_slips(request: Request, limit: int = 30) -> dict[str, Any]:
     require_admin(request)
-    return {
-        "slots": [
-            {"key": "today", "label": "Today"},
-            {"key": "tomorrow", "label": "Tomorrow"},
-            {"key": "nightly", "label": "Nightly", "window": WINDOW_LABEL, "admin_only": True},
-        ],
-        "styles": [{"key": s, "label": s.capitalize(), "blurb": STYLE_BLURBS[s]} for s in STYLES],
-        "stake": STAKE,
-        "min_legs": MIN_LEGS,
-        "max_legs": MAX_LEGS,
-        "presets": [3, 5, 8, 12, 18],
-        "timezone_label": "GMT+3",
-        "channels": list(CHANNEL_KEYS),
-        "claude_ready": bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip()),
-        "now": datetime.now(UTC).isoformat(),
+    from kalchas_db.parlay_slips import list_slips_sync
+
+    return {"slips": [_out(row) for row in list_slips_sync(_dsn(), min(max(limit, 1), 100))]}
+
+
+@router.get("/slips/{slip_id}")
+def get_slip(slip_id: int, request: Request) -> dict[str, Any]:
+    require_admin(request)
+    return _out(_load(slip_id))
+
+
+@router.get("/slips/{slip_id}/image")
+def slip_image(slip_id: int, request: Request) -> Response:
+    """The slip as posted, marked up by hand once legs are decided."""
+    require_admin(request)
+    from kalchas_bot.parlay_slip import render_parlay_slip
+
+    row = _load(slip_id)
+    png = render_parlay_slip(
+        row["legs"],
+        slot=row["slot"],
+        style=row["style"],
+        day=str(row["day"]),
+        settled=marks(row.get("outcomes") or {}) or None,
+        seed=f"parlay-{row['id']}",
+    )
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+@router.post("/slips/{slip_id}/decide")
+def decide(slip_id: int, body: DecideBody, request: Request) -> dict[str, Any]:
+    """The admin's call on a leg the result can't settle (same as the Telegram buttons)."""
+    require_admin(request)
+    from kalchas_db.parlay_slips import decide_leg_sync
+
+    row = _load(slip_id)
+    entry = (row.get("outcomes") or {}).get(body.match_id) or {}
+    allowed = CHOICES.get(str(entry.get("state") or ""), ())
+    if body.outcome not in allowed:
+        raise HTTPException(status_code=409, detail="that leg isn't waiting for this answer")
+    saved = decide_leg_sync(_dsn(), slip_id, body.match_id, body.outcome, by="admin")
+    if saved is None:
+        raise HTTPException(status_code=409, detail="this slip no longer takes answers")
+    return _out(saved)
+
+
+@router.post("/slips/{slip_id}/reply")
+def reply(slip_id: int, body: ReplyBody, request: Request) -> dict[str, Any]:
+    """Post the result reply (or skip it, or retry the channels that failed)."""
+    require_admin(request)
+    from kalchas_db.parlay_slips import set_reply_sync
+
+    if not set_reply_sync(_dsn(), slip_id, body.action):
+        raise HTTPException(status_code=409, detail="the result isn't waiting for that")
+    return _out(_load(slip_id))
+
+
+@router.post("/slips/{slip_id}/retry")
+def retry(slip_id: int, request: Request) -> dict[str, Any]:
+    """Post a slip again where every channel failed."""
+    require_admin(request)
+    from kalchas_db.parlay_slips import retry_post_sync
+
+    if not retry_post_sync(_dsn(), slip_id):
+        raise HTTPException(status_code=409, detail="only a failed slip can be retried")
+    return _out(_load(slip_id))
+
+
+def _load(slip_id: int) -> dict[str, Any]:
+    from kalchas_db.parlay_slips import get_slip_sync
+
+    row = get_slip_sync(_dsn(), slip_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="no such slip")
+    return row
+
+
+def _out(row: dict[str, Any]) -> dict[str, Any]:
+    v = verdict(row["legs"], row.get("outcomes") or {})
+    out = {
+        key: (value.isoformat() if hasattr(value, "isoformat") else value)
+        for key, value in row.items()
     }
+    out["verdict"] = v
+    return out
