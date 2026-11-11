@@ -1,0 +1,1386 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin redesign - Overview, Results, Visitors</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Sora:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #071018;
+        --surface: #0c1520;
+        --surface-2: #101b28;
+        --surface-3: #15212f;
+        --border: rgba(232, 220, 196, 0.1);
+        --border-2: rgba(232, 220, 196, 0.16);
+        --grid: rgba(232, 220, 196, 0.07);
+        --text: #f2ebe0;
+        --text-2: #b7b0a3;
+        --muted: #7d776c;
+        --accent: #3dd6c6;
+        --font-display: "Fraunces", Georgia, serif;
+        --font-body: "Sora", sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+        /* chart series - validated on #0c1520 (dark): all six checks pass */
+        --s1: #3987e5;
+        --s2: #d95926;
+        --s3: #199e70;
+        --mid: #2a3340;
+        /* status - reserved for outcomes, always with icon + label */
+        --good: #0ca30c;
+        --warn: #fab219;
+        --bad: #e66767;
+        --up: #4fbf7f;
+        --down: #e8806b;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; }
+      body {
+        color: var(--text);
+        font-family: var(--font-body);
+        font-size: 14px;
+        background: var(--bg);
+        -webkit-font-smoothing: antialiased;
+      }
+      button, input, select { font: inherit; color: inherit; }
+      .num, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+      /* ---------- shell ---------- */
+      .shell { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100vh; }
+      .side {
+        position: sticky; top: 0; height: 100vh;
+        display: flex; flex-direction: column; gap: 2px;
+        padding: 18px 12px; border-right: 1px solid var(--border);
+        background: linear-gradient(180deg, #0a131d, #071018);
+      }
+      .brand { display: flex; align-items: baseline; gap: 8px; padding: 2px 10px 18px; }
+      .brand b { font-family: var(--font-display); font-size: 1.2rem; font-weight: 650; }
+      .brand span { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
+      .nav-group { margin: 14px 10px 4px; font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+      .nav-item {
+        display: flex; align-items: center; gap: 10px; width: 100%;
+        padding: 8px 10px; border: 0; border-radius: 8px; background: none;
+        color: var(--text-2); text-align: left; cursor: pointer; font-size: 0.86rem;
+      }
+      .nav-item svg { width: 16px; height: 16px; flex: none; opacity: 0.8; }
+      .nav-item:hover { background: var(--surface-2); color: var(--text); }
+      .nav-item.is-on { background: var(--surface-3); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
+      .nav-item .badge { margin-left: auto; font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); }
+      .nav-item .badge.is-alert { color: var(--warn); }
+      .side-foot { margin-top: auto; display: grid; gap: 2px; padding-top: 12px; border-top: 1px solid var(--border); }
+
+      .main { min-width: 0; }
+      .topbar {
+        position: sticky; top: 0; z-index: 5;
+        display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+        padding: 14px 28px; border-bottom: 1px solid var(--border);
+        background: rgba(7, 16, 24, 0.88); backdrop-filter: blur(10px);
+      }
+      .topbar h1 { margin: 0; font-family: var(--font-display); font-size: 1.35rem; font-weight: 650; }
+      .topbar .crumb { color: var(--muted); font-size: 0.78rem; }
+      .topbar .spacer { flex: 1; }
+      .seg { display: inline-flex; padding: 3px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+      .seg button { border: 0; background: none; padding: 5px 11px; border-radius: 6px; cursor: pointer; color: var(--text-2); font-size: 0.8rem; }
+      .seg button.is-on { background: var(--surface-3); color: var(--text); }
+      .fresh { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 0.76rem; }
+      .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgba(61, 214, 198, 0.15); }
+      .live-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 0.78rem; color: var(--text-2); }
+      .live-chip b { color: var(--text); font-family: var(--font-mono); }
+      .live-chip[hidden] { display: none; }
+
+      .page { padding: 22px 28px 64px; display: grid; gap: 18px; max-width: 1360px; }
+      .page[hidden] { display: none; }
+
+      /* ---------- cards ---------- */
+      .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; min-width: 0; }
+      .card-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 16px 0; }
+      .card-head h2 { margin: 0; font-size: 0.92rem; font-weight: 600; }
+      .card-head .sub { color: var(--muted); font-size: 0.76rem; }
+      .card-head .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+      .card-body { padding: 12px 16px 16px; }
+      .grid-2 { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; }
+      .grid-2e { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+      .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+
+      /* ---------- stat strip: open numbers on the page, hairline dividers, no box per number ----------
+         Each item carries a left + top hairline and is pulled back 1px, so the strip's
+         overflow clips the first one in every row and the top one in every column. */
+      .kpis { display: grid; grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr)); overflow: hidden; padding: 2px 0 4px; border-bottom: 1px solid var(--border); }
+      .kpi { min-width: 0; display: grid; align-content: start; gap: 6px; padding: 10px 18px 14px; margin: -1px 0 0 -1px; border-left: 1px solid var(--border); border-top: 1px solid var(--border); }
+      .kpi .lbl { color: var(--muted); font-size: 0.72rem; letter-spacing: 0.04em; display: flex; gap: 7px; align-items: center; }
+      .kpi .val { font-family: var(--font-mono); font-size: 1.75rem; font-weight: 500; letter-spacing: -0.02em; line-height: 1.1; }
+      .kpi .val small { font-size: 0.8rem; color: var(--muted); margin-left: 6px; letter-spacing: 0; }
+      .kpi .foot { display: flex; align-items: center; justify-content: space-between; gap: 4px 10px; flex-wrap: wrap; min-height: 24px; }
+      .kpi .foot svg { flex: none; }
+      .delta { font-family: var(--font-mono); font-size: 0.74rem; color: var(--muted); }
+      .delta.up { color: var(--up); }
+      .delta.down { color: var(--down); }
+      .delta em { font-style: normal; color: var(--muted); font-family: var(--font-body); margin-left: 4px; }
+      .kpi.is-hero .lbl { color: var(--text-2); }
+      .kpi.is-hero .lbl::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+      .kpi.is-hero .val { font-size: 2.1rem; }
+
+      /* ---------- chips / filters ---------- */
+      .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .chip {
+        display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px;
+        border: 1px solid var(--border); background: var(--surface); color: var(--text-2); cursor: pointer; font-size: 0.8rem;
+      }
+      .chip:hover { border-color: var(--border-2); color: var(--text); }
+      .chip.is-on { border-color: rgba(61, 214, 198, 0.45); background: rgba(61, 214, 198, 0.1); color: var(--text); }
+      .chip .n { font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); }
+      .filters .label { color: var(--muted); font-size: 0.74rem; margin-right: 2px; }
+      .search { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); min-width: 200px; font-size: 0.8rem; }
+
+      /* ---------- tables ---------- */
+      .tbl { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+      .tbl th { text-align: left; font-weight: 500; color: var(--muted); font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+      .tbl td { padding: 9px 10px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+      .tbl tr:last-child td { border-bottom: 0; }
+      .tbl td.r, .tbl th.r { text-align: right; }
+      .tbl tbody tr.click { cursor: pointer; }
+      .tbl tbody tr.click:hover td { background: rgba(232, 220, 196, 0.03); }
+      .tbl small { display: block; color: var(--muted); font-size: 0.72rem; margin-top: 2px; }
+      .tbl-wrap { overflow-x: auto; }
+
+      .strat-tag { display: inline-flex; align-items: center; justify-content: center; min-width: 46px; padding: 3px 8px; border-radius: 6px; background: var(--surface-3); font-family: var(--font-mono); font-size: 0.78rem; color: var(--text); }
+
+      /* hit-rate bar with CI whisker + baseline tick */
+      .rate { display: flex; align-items: center; gap: 10px; min-width: 210px; }
+      .rate .num { width: 40px; text-align: right; font-size: 0.86rem; }
+      .rate-track { position: relative; flex: 1; height: 18px; }
+      .rate-track::before { content: ""; position: absolute; left: 0; right: 0; top: 8px; height: 2px; background: var(--grid); border-radius: 2px; }
+      .rate-ci { position: absolute; top: 4px; height: 10px; border-radius: 3px; background: rgba(61, 214, 198, 0.18); }
+      .rate-pt { position: absolute; top: 3px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface); }
+      .rate-base { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--muted); }
+
+      /* outcome pills */
+      .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 7px; border-radius: 999px; font-size: 0.74rem; color: var(--text-2); background: var(--surface-3); white-space: nowrap; }
+      .pill i { font-style: normal; font-weight: 600; width: 14px; text-align: center; }
+      .pill.ok i { color: var(--good); }
+      .pill.miss i { color: var(--bad); }
+      .pill.open i { color: var(--warn); }
+
+      /* ---------- bar lists ---------- */
+      .bars { display: grid; gap: 7px; }
+      .bar-row { display: grid; grid-template-columns: minmax(90px, 0.9fr) minmax(0, 1.6fr) 56px; align-items: center; gap: 10px; font-size: 0.8rem; }
+      .bar-row .name { color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .bar-row .num { text-align: right; }
+      .bar-track { height: 10px; border-radius: 0 4px 4px 0; position: relative; }
+      .bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 0 4px 4px 0; background: var(--accent); }
+
+      /* diverging lift rows */
+      .lift { display: grid; grid-template-columns: minmax(0, 1.3fr) 44px minmax(120px, 1fr) 54px; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--grid); font-size: 0.8rem; }
+      .lift:last-child { border-bottom: 0; }
+      .lift .what { min-width: 0; }
+      .lift .what b { font-weight: 500; }
+      .lift .what span { color: var(--muted); font-size: 0.7rem; margin-left: 6px; }
+      .lift .n { color: var(--muted); text-align: right; font-size: 0.74rem; }
+      .lift-track { position: relative; height: 14px; }
+      .lift-track::before { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; border-left: 1px solid var(--border-2); }
+      .lift-fill { position: absolute; top: 2px; height: 10px; }
+      .lift-fill.pos { left: 50%; background: var(--s1); border-radius: 0 4px 4px 0; }
+      .lift-fill.neg { right: 50%; background: var(--s2); border-radius: 4px 0 0 4px; }
+      .lift .pts { text-align: right; }
+
+      /* heatmaps */
+      .heat { display: grid; gap: 3px; font-size: 0.74rem; }
+      .heat .hc { height: 30px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 0.72rem; }
+      .heat .hl { color: var(--text-2); display: flex; align-items: center; font-size: 0.74rem; padding-right: 6px; white-space: nowrap; }
+      .heat .hh { color: var(--muted); text-align: center; font-size: 0.68rem; padding-bottom: 2px; }
+      .heat .hc.empty { background: repeating-linear-gradient(135deg, transparent 0 4px, rgba(232, 220, 196, 0.05) 4px 5px); color: var(--muted); }
+      .legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; color: var(--text-2); font-size: 0.74rem; }
+      .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+      .ramp { display: inline-block; width: 120px; height: 8px; border-radius: 4px; vertical-align: middle; margin: 0 6px; }
+
+      /* funnel */
+      .funnel { display: grid; gap: 10px; }
+      .f-step { display: grid; grid-template-columns: 150px minmax(0, 1fr) 120px; gap: 12px; align-items: center; font-size: 0.82rem; }
+      .f-step .lbl { color: var(--text-2); }
+      .f-track { height: 26px; background: rgba(232, 220, 196, 0.03); border-radius: 0 5px 5px 0; position: relative; }
+      .f-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 0 5px 5px 0; opacity: 0.85; display: flex; align-items: center; padding-left: 8px; font-family: var(--font-mono); font-size: 0.76rem; color: #062a27; font-weight: 500; }
+      .f-step .conv { text-align: right; font-family: var(--font-mono); font-size: 0.78rem; }
+      .f-step .conv small { display: block; color: var(--muted); font-size: 0.68rem; }
+
+      /* histogram */
+      .hist { display: flex; align-items: flex-end; gap: 6px; height: 150px; padding-top: 10px; }
+      .hist .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 6px; }
+      .hist .b { width: 100%; max-width: 54px; background: var(--accent); border-radius: 4px 4px 0 0; opacity: 0.85; }
+      .hist .col:hover .b { opacity: 1; }
+      .hist .t { font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
+      .hist .v { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-2); }
+
+      /* split bar */
+      .split { display: flex; height: 14px; gap: 2px; border-radius: 4px; overflow: hidden; margin: 6px 0 12px; }
+      .split div { height: 100%; }
+
+      /* log */
+      .day-head td { background: var(--surface-2); color: var(--text-2); font-size: 0.76rem; padding: 7px 10px; position: sticky; top: 0; }
+      .day-head td b { color: var(--text); font-weight: 600; margin-right: 10px; }
+      .day-head .mono { margin-left: 10px; }
+      .log-row.is-ok td:first-child { box-shadow: inset 3px 0 0 var(--good); }
+      .log-row.is-miss td:first-child { box-shadow: inset 3px 0 0 rgba(230, 103, 103, 0.7); }
+      .log-row.is-open td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+      .facts { display: flex; gap: 10px; font-family: var(--font-mono); font-size: 0.76rem; color: var(--text-2); white-space: nowrap; }
+      .facts span b { color: var(--muted); font-weight: 400; margin-right: 3px; }
+      .expand td { background: var(--surface-2); }
+      .expand-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px 18px; padding: 6px 2px; font-size: 0.78rem; }
+      .expand-grid div span { display: block; color: var(--muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; }
+      .expand-grid div b { font-family: var(--font-mono); font-weight: 500; }
+
+      /* attention list */
+      .attn { display: grid; gap: 0; }
+      .attn-item { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 11px 0; border-bottom: 1px solid var(--grid); font-size: 0.84rem; }
+      .attn-item:last-child { border-bottom: 0; }
+      .attn-item .ic { font-weight: 700; text-align: center; }
+      .attn-item .ic.w { color: var(--warn); }
+      .attn-item .ic.g { color: var(--good); }
+      .attn-item .ic.i { color: var(--s1); }
+      .attn-item p { margin: 2px 0 0; color: var(--muted); font-size: 0.76rem; }
+      .link { border: 0; background: none; color: var(--accent); cursor: pointer; font-size: 0.78rem; padding: 0; white-space: nowrap; }
+
+      /* note callouts */
+      .note { border: 1px dashed var(--border-2); border-radius: 12px; padding: 14px 16px; color: var(--text-2); font-size: 0.82rem; line-height: 1.5; }
+      .note h3 { margin: 0 0 6px; font-size: 0.86rem; color: var(--text); font-weight: 600; }
+      .note ul { margin: 6px 0 0; padding-left: 18px; }
+      .note li { margin: 3px 0; }
+      .mock-banner { margin: 0; padding: 8px 28px; background: rgba(250, 178, 25, 0.08); border-bottom: 1px solid rgba(250, 178, 25, 0.2); color: #e8cf8f; font-size: 0.76rem; }
+
+      /* settings */
+      .split-pane { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 18px; align-items: start; }
+      .s-list { display: grid; gap: 4px; padding: 8px; }
+      .s-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 10px; border-radius: 8px; border: 0; background: none; cursor: pointer; text-align: left; }
+      .s-item:hover { background: var(--surface-2); }
+      .s-item.is-on { background: var(--surface-3); }
+      .s-item .st { font-size: 0.72rem; color: var(--muted); text-align: right; }
+      .s-item .st b { color: var(--text); font-weight: 500; font-size: 0.8rem; margin-right: 6px; }
+      .st-period { display: grid; gap: 8px; padding: 12px 12px 10px; border-bottom: 1px solid var(--border); }
+      .st-period-lbl { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+      .seg-full { display: flex; }
+      .seg-full button { flex: 1; padding: 5px 0; }
+      .st-custom { display: grid; gap: 6px; }
+      .st-custom label { grid-template-columns: 38px minmax(0, 1fr); align-items: center; }
+      .st-custom[hidden] { display: none; }
+      .st-custom label { display: grid; gap: 4px; font-size: 0.68rem; color: var(--muted); }
+      .st-custom input { width: 100%; min-width: 0; padding: 6px 6px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-family: var(--font-mono); font-size: 0.72rem; color-scheme: dark; }
+      .st-custom input:focus { outline: none; border-color: rgba(61, 214, 198, 0.5); }
+      .st-span { font-size: 0.72rem; color: var(--text-2); }
+      .st-span.bad { color: var(--bad); }
+      .s-item .onoff { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+      .s-item .onoff.off { background: var(--muted); }
+      .form-sec { padding: 16px; border-top: 1px solid var(--border); }
+      .form-sec:first-of-type { border-top: 0; }
+      .form-sec h3 { margin: 0 0 2px; font-size: 0.88rem; font-weight: 600; }
+      .form-sec > p { margin: 0 0 12px; color: var(--muted); font-size: 0.76rem; }
+      .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px 16px; }
+      .field { display: grid; gap: 5px; font-size: 0.78rem; color: var(--text-2); }
+      .field input[type="number"], .field input[type="text"], .field select { padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); font-family: var(--font-mono); font-size: 0.82rem; }
+      .field .help { color: var(--muted); font-size: 0.7rem; }
+      .field.dirty input { border-color: rgba(250, 178, 25, 0.55); }
+      .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--text-2); cursor: pointer; }
+      .toggle input { accent-color: var(--accent); width: 15px; height: 15px; }
+      .slider { display: grid; grid-template-columns: 120px minmax(0, 1fr) 52px; gap: 12px; align-items: center; font-size: 0.8rem; color: var(--text-2); padding: 4px 0; }
+      .slider input { accent-color: var(--accent); width: 100%; }
+      .slider .num { text-align: right; color: var(--text); }
+      .savebar { position: sticky; bottom: 14px; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(250, 178, 25, 0.35); background: #1a1a14; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); font-size: 0.82rem; }
+      .savebar[hidden] { display: none; }
+      .btn { border: 1px solid var(--border-2); background: var(--surface-3); padding: 7px 14px; border-radius: 8px; cursor: pointer; font-size: 0.8rem; }
+      .btn.primary { background: var(--accent); border-color: var(--accent); color: #052421; font-weight: 600; }
+
+      /* sweet spot */
+      .ss-line { display: grid; grid-template-columns: minmax(0, 1fr) 52px minmax(0, 1fr); align-items: start; margin: 6px 0 30px; }
+      .ss-ht { text-align: center; font-size: 0.66rem; color: var(--muted); letter-spacing: 0.1em; line-height: 22px; }
+      .ss-seg { position: relative; height: 22px; }
+      .ss-track { position: absolute; left: 0; right: 22px; top: 0; bottom: 0; background: rgba(232, 220, 196, 0.05); border-radius: 5px 0 0 5px; }
+      .ss-win { position: absolute; top: 0; bottom: 0; background: rgba(61, 214, 198, 0.75); border-radius: 5px; }
+      .ss-win.to-end { border-radius: 5px 0 0 5px; }
+      .ss-x { position: absolute; right: 0; top: 0; bottom: 0; width: 20px; border-radius: 0 5px 5px 0; background: repeating-linear-gradient(135deg, rgba(232, 220, 196, 0.08) 0 3px, transparent 3px 6px); }
+      .ss-x.on { background: repeating-linear-gradient(135deg, rgba(61, 214, 198, 0.7) 0 3px, rgba(61, 214, 198, 0.15) 3px 6px); }
+      .ss-tick { position: absolute; top: 28px; transform: translateX(-50%); font-family: var(--font-mono); font-size: 0.66rem; color: var(--muted); white-space: nowrap; }
+      .ss-tick.first { transform: none; }
+      .ss-x .ss-tick { left: 50%; }
+      .ss-halves { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+      .ss-half { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface-2); }
+      .ss-half-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+      .ss-half-head b { font-weight: 600; font-size: 0.86rem; }
+      .ss-half-head span { color: var(--muted); font-family: var(--font-mono); font-size: 0.72rem; }
+      .ss-range { display: flex; align-items: flex-end; gap: 10px; }
+      .ss-range label { display: grid; gap: 4px; font-size: 0.7rem; color: var(--muted); }
+      .ss-in { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding-right: 9px; }
+      .ss-in:focus-within { border-color: rgba(61, 214, 198, 0.5); }
+      .ss-in input { width: 52px; border: 0; background: none; padding: 7px 2px 7px 10px; color: var(--text); font-family: var(--font-mono); font-size: 0.95rem; outline: none; -moz-appearance: textfield; }
+      .ss-in input::-webkit-inner-spin-button, .ss-in input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+      .ss-in i { font-style: normal; color: var(--muted); }
+      .ss-half.bad .ss-in { border-color: rgba(230, 103, 103, 0.6); }
+      .ss-dash { color: var(--muted); padding-bottom: 8px; }
+      .ss-sum { margin-top: 9px; font-size: 0.74rem; color: var(--text-2); }
+      .ss-half.bad .ss-sum { color: var(--bad); }
+      .ss-inj { margin-top: 14px; }
+      .ss-inj span { color: var(--muted); font-size: 0.72rem; }
+      .ss-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--border); font-size: 0.78rem; color: var(--muted); }
+      .ss-foot.dirty { color: var(--warn); }
+      .btn:disabled { opacity: 0.4; cursor: default; }
+      @media (max-width: 820px) { .ss-halves { grid-template-columns: minmax(0, 1fr); } }
+
+      /* tooltip */
+      .tip { position: fixed; z-index: 50; pointer-events: none; padding: 8px 10px; border-radius: 8px; background: #1b2635; border: 1px solid var(--border-2); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45); font-size: 0.76rem; line-height: 1.45; color: var(--text); max-width: 260px; opacity: 0; transition: opacity 0.08s; }
+      .tip.on { opacity: 1; }
+      .tip .tt { color: var(--muted); font-size: 0.7rem; }
+      .tip .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+      .tip .row b { font-family: var(--font-mono); font-weight: 500; }
+
+      svg text { fill: var(--muted); font-family: var(--font-body); font-size: 10.5px; }
+      .chart { width: 100%; display: block; }
+
+      @media (max-width: 1100px) {
+        .grid-2, .grid-3, .grid-2e { grid-template-columns: minmax(0, 1fr); }
+      }
+      @media (max-width: 820px) {
+        .shell { grid-template-columns: minmax(0, 1fr); }
+        .side { position: static; height: auto; flex-direction: row; overflow-x: auto; padding: 10px 16px; gap: 4px; border-right: 0; border-bottom: 1px solid var(--border); }
+        .brand, .nav-group, .side-foot { display: none; }
+        .nav-item { width: auto; white-space: nowrap; }
+        .nav-item .badge { display: none; }
+        .topbar { padding: 12px 16px; }
+        .page { padding: 16px 16px 48px; }
+        .mock-banner { padding: 8px 16px; }
+        .split-pane { grid-template-columns: minmax(0, 1fr); }
+        .f-step { grid-template-columns: 100px minmax(0, 1fr) 76px; }
+        .search { min-width: 0; width: 100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="side">
+        <div class="brand"><b>Kalchas</b><span>Admin</span></div>
+        <button class="nav-item" data-page="overview"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>Overview<span class="badge is-alert" id="attn-badge"></span></button>
+        <div class="nav-group">Insights</div>
+        <button class="nav-item" data-page="results"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 13l4-5 3 3 5-7"/></svg>Results</button>
+        <button class="nav-item" data-page="visitors"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="5.5" r="2.5"/><path d="M1.5 14c.6-2.6 2.3-4 4.5-4s3.9 1.4 4.5 4"/><path d="M11 3.2a2.4 2.4 0 010 4.6M12.5 10.3c1.1.6 1.8 1.8 2 3.7"/></svg>Visitors<span class="badge" id="live-badge"></span></button>
+        <div class="nav-group">Strategy</div>
+        <button class="nav-item" data-page="strategies"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M3 8h10M3 12h10"/><circle cx="6" cy="4" r="1.4" fill="currentColor"/><circle cx="10" cy="8" r="1.4" fill="currentColor"/><circle cx="5" cy="12" r="1.4" fill="currentColor"/></svg>Strategies</button>
+        <button class="nav-item" data-page="board"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 6.5h12M6 6.5V13"/></svg>Board filters</button>
+        <div class="nav-group">Distribution</div>
+        <button class="nav-item" data-page="tips"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h10v7H7l-3 3v-3H3z"/></svg>Tips feed</button>
+        <button class="nav-item" data-page="discord"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8h3l2-5 2 10 2-5h3"/></svg>Discord</button>
+        <div class="side-foot">
+          <button class="nav-item">← Live board</button>
+          <button class="nav-item">Log out</button>
+        </div>
+      </aside>
+
+      <div class="main">
+        <p class="mock-banner">Mockup with generated data. Every number below is computed from fake alerts and visits so the layout behaves like the real thing; nothing comes from production.</p>
+        <div class="topbar">
+          <div>
+            <div class="crumb" id="crumb">Insights</div>
+            <h1 id="title">Results</h1>
+          </div>
+          <div class="spacer"></div>
+          <div class="seg" id="range" role="group" aria-label="Date range">
+            <button data-days="1">Today</button>
+            <button data-days="7" class="is-on">7 days</button>
+            <button data-days="30">30 days</button>
+          </div>
+          <span class="live-chip" id="live-chip" hidden><span class="dot"></span><b id="live-n">7</b> on the board now</span>
+          <span class="fresh"><span class="dot"></span>Updated 12s ago</span>
+        </div>
+
+        <!-- ================= OVERVIEW ================= -->
+        <section class="page" id="p-overview" hidden>
+          <div class="kpis" id="ov-kpis"></div>
+          <div class="grid-2">
+            <article class="card">
+              <div class="card-head"><h2>Needs attention</h2><span class="sub">Things that moved, so you do not have to go looking</span></div>
+              <div class="card-body"><div class="attn" id="ov-attn"></div></div>
+            </article>
+            <article class="card">
+              <div class="card-head"><h2>Strategies today</h2><span class="sub">Fires, settled, hit rate · 30-day rate for reference</span></div>
+              <div class="card-body tbl-wrap"><table class="tbl" id="ov-strats"></table></div>
+            </article>
+          </div>
+          <div class="grid-2e">
+            <article class="card">
+              <div class="card-head"><h2>Hit rate, last 14 days</h2><span class="sub">All strategies</span></div>
+              <div class="card-body"><div id="ov-hit"></div></div>
+            </article>
+            <article class="card">
+              <div class="card-head"><h2>Visitors, last 14 days</h2>
+                <div class="right legend"><span><i class="sw" style="background:var(--s1)"></i>New</span><span><i class="sw" style="background:var(--s2)"></i>Returning</span></div>
+              </div>
+              <div class="card-body"><div id="ov-vis"></div></div>
+            </article>
+          </div>
+        </section>
+
+        <!-- ================= RESULTS ================= -->
+        <section class="page" id="p-results">
+          <div class="filters" id="res-strats"></div>
+          <div class="kpis" id="res-kpis"></div>
+
+          <article class="card">
+            <div class="card-head">
+              <h2>Strategy scorecard</h2>
+              <span class="sub">Dot = hit rate, band = 90% likely range for that sample size, dashed line = all strategies. Click a row to focus the page on it.</span>
+            </div>
+            <div class="card-body tbl-wrap"><table class="tbl" id="res-score"></table></div>
+          </article>
+
+          <div class="grid-2">
+            <article class="card">
+              <div class="card-head"><h2>Hit rate by day</h2><span class="sub" id="res-line-sub"></span>
+                <div class="right legend"><span><i class="sw" style="background:var(--accent)"></i>Hit rate</span><span style="color:var(--muted)">- - - period average</span></div>
+              </div>
+              <div class="card-body"><div id="res-line"></div></div>
+            </article>
+            <article class="card">
+              <div class="card-head"><h2>Minute of fire × strategy</h2>
+                <span class="sub">Hit rate per cell, coloured against the overall rate</span>
+              </div>
+              <div class="card-body">
+                <div class="heat" id="res-heat"></div>
+                <div class="legend" style="margin-top:12px">
+                  <span>worse<span class="ramp" style="background:linear-gradient(90deg,var(--s2),var(--mid),var(--s1))"></span>better</span>
+                  <span><i class="sw" style="background:repeating-linear-gradient(135deg,transparent 0 3px,rgba(232,220,196,.15) 3px 4px)"></i>fewer than 5 settled</span>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <article class="card">
+            <div class="card-head">
+              <h2>Where it works</h2>
+              <span class="sub">Every slice (clock, score, odds, league, side, sweet spot, weekday) ranked by how far it beats or trails the overall rate</span>
+              <div class="right"><label class="toggle"><input type="checkbox" id="minN" checked />Hide slices under 15 alerts</label></div>
+            </div>
+            <div class="card-body grid-2e">
+              <div><div class="legend" style="margin-bottom:6px"><span><i class="sw" style="background:var(--s1)"></i>Lean into</span></div><div id="res-lean"></div></div>
+              <div><div class="legend" style="margin-bottom:6px"><span><i class="sw" style="background:var(--s2)"></i>Avoid or tighten</span></div><div id="res-avoid"></div></div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <h2>Alert log</h2><span class="sub" id="log-sub"></span>
+              <div class="right filters">
+                <div class="seg" id="log-state">
+                  <button data-s="" class="is-on">All</button><button data-s="Confirmed">✓ Hit</button><button data-s="Expired">✕ Miss</button><button data-s="Monitoring">● Open</button>
+                </div>
+                <input class="search" id="log-q" type="search" placeholder="Team, league, country…" />
+                <button class="btn">Export CSV</button>
+              </div>
+            </div>
+            <div class="card-body tbl-wrap" style="max-height:620px;overflow:auto;padding-top:6px"><table class="tbl" id="res-log"></table></div>
+          </article>
+        </section>
+
+        <!-- ================= VISITORS ================= -->
+        <section class="page" id="p-visitors" hidden>
+          <div class="kpis" id="vis-kpis"></div>
+
+          <article class="card">
+            <div class="card-head">
+              <h2>Traffic</h2><span class="sub">Unique visitors. Hover for the split.</span>
+              <div class="right">
+                <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>New</span><span><i class="sw" style="background:var(--s2)"></i>Returning</span></div>
+                <div class="seg" id="vis-by"><button data-by="day" class="is-on">By day</button><button data-by="hour">By hour of day</button></div>
+              </div>
+            </div>
+            <div class="card-body"><div id="vis-traffic"></div></div>
+          </article>
+
+          <div class="grid-2">
+            <article class="card">
+              <div class="card-head"><h2>Conversion funnel</h2><span class="sub">From landing to the paid Telegram button</span></div>
+              <div class="card-body"><div class="funnel" id="vis-funnel"></div></div>
+            </article>
+            <article class="card">
+              <div class="card-head"><h2>How long people stay</h2><span class="sub">Visits by length</span></div>
+              <div class="card-body"><div class="hist" id="vis-hist"></div></div>
+            </article>
+          </div>
+
+          <article class="card">
+            <div class="card-head"><h2>Where visitors come from</h2><span class="sub">Referrer of the first page load. Telegram conversion is per visitor.</span></div>
+            <div class="card-body tbl-wrap"><table class="tbl" id="vis-sources"></table></div>
+          </article>
+
+          <div class="grid-3">
+            <article class="card">
+              <div class="card-head"><h2>Countries</h2></div>
+              <div class="card-body"><div class="bars" id="vis-countries"></div></div>
+            </article>
+            <article class="card">
+              <div class="card-head"><h2>Devices</h2></div>
+              <div class="card-body" id="vis-devices"></div>
+            </article>
+            <article class="card">
+              <div class="card-head"><h2>Most-watched matches</h2></div>
+              <div class="card-body tbl-wrap"><table class="tbl" id="vis-matches"></table></div>
+            </article>
+          </div>
+
+          <article class="card">
+            <div class="card-head"><h2>When they visit</h2><span class="sub">Visits by weekday and hour, your time zone</span>
+              <div class="right legend"><span>fewer<span class="ramp" style="background:linear-gradient(90deg,#14263b,#1c5cab,#86b6ef)"></span>more</span></div>
+            </div>
+            <div class="card-body tbl-wrap"><div class="heat" id="vis-heat" style="min-width:640px"></div></div>
+          </article>
+
+          <div class="note">
+            <h3>Needs a data change before it can show here</h3>
+            <ul>
+              <li><b>Retention cohorts</b> ("of the people who came in week 1, how many are still coming in week 4"): visits are deleted after 30 days, so this needs a small daily rollup table that keeps one row per visitor per day for longer.</li>
+              <li><b>Campaigns</b> (which Telegram post or tweet sent people): needs <code>utm_source</code> / <code>utm_campaign</code> stored with the landing page.</li>
+              <li><b>Real paid conversions</b>: we only see the click on the paid button, not whether they subscribed.</li>
+            </ul>
+          </div>
+
+          <details class="card">
+            <summary class="card-head" style="cursor:pointer;padding-bottom:14px"><h2>Raw visit log</h2><span class="sub">The per-visit table from today's tab, kept for digging</span></summary>
+            <div class="card-body tbl-wrap"><table class="tbl" id="vis-log"></table></div>
+          </details>
+        </section>
+
+        <!-- ================= STRATEGIES ================= -->
+        <section class="page" id="p-strategies" hidden>
+          <div class="split-pane">
+            <article class="card">
+              <div class="st-period">
+                <div class="st-period-lbl">Hit rate over</div>
+                <div class="seg seg-full" id="st-range" role="group" aria-label="Evaluation period">
+                  <button data-r="1">Today</button><button data-r="7">7d</button><button data-r="30" class="is-on">30d</button><button data-r="custom">Custom</button>
+                </div>
+                <div class="st-custom" id="st-custom" hidden>
+                  <label>From<input type="date" id="st-from" /></label>
+                  <label>To<input type="date" id="st-to" /></label>
+                </div>
+                <div class="st-span" id="st-span"></div>
+              </div>
+              <div class="s-list" id="st-list"></div>
+            </article>
+            <div style="display:grid;gap:14px">
+              <article class="card" id="st-form"></article>
+              <div class="savebar" id="savebar" hidden>
+                <span><b id="dirty-n">0</b> unsaved change(s). The scanner picks them up within ~15s of saving.</span>
+                <span class="spacer" style="flex:1"></span>
+                <button class="btn" id="discard">Discard</button>
+                <button class="btn primary" id="save">Save changes</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="p-board" hidden>
+          <article class="card">
+            <div class="form-sec"><h3>Sweet spot t</h3><p>When Sweet spot t is on, the live board only shows matches whose clock is inside one of these two windows.</p>
+              <div class="ss-line" id="ss-line" aria-hidden="true"></div>
+              <div class="ss-halves">
+                <div class="ss-half">
+                  <div class="ss-half-head"><b>1st half</b><span>0′ – 45′</span></div>
+                  <div class="ss-range">
+                    <label>From<span class="ss-in"><input type="number" id="ss-h1a" min="0" max="45" value="30" /><i>′</i></span></label>
+                    <span class="ss-dash">–</span>
+                    <label>To<span class="ss-in"><input type="number" id="ss-h1b" min="0" max="45" value="45" /><i>′</i></span></label>
+                  </div>
+                  <div class="ss-sum" id="ss-h1s"></div>
+                </div>
+                <div class="ss-half">
+                  <div class="ss-half-head"><b>2nd half</b><span>45′ – 90′</span></div>
+                  <div class="ss-range">
+                    <label>From<span class="ss-in"><input type="number" id="ss-h2a" min="45" max="90" value="70" /><i>′</i></span></label>
+                    <span class="ss-dash">–</span>
+                    <label>To<span class="ss-in"><input type="number" id="ss-h2b" min="45" max="90" value="90" /><i>′</i></span></label>
+                  </div>
+                  <div class="ss-sum" id="ss-h2s"></div>
+                </div>
+              </div>
+              <label class="toggle ss-inj"><input type="checkbox" id="ss-inj" checked />Include injury time <span>(the striped end of each half: 45′+x and 90′+x count when a window ends at 45′ or 90′)</span></label>
+            </div>
+            <div class="ss-foot"><span id="ss-state">Saved</span><button class="btn primary" id="ss-save" disabled>Save</button></div>
+          </article>
+          <div class="note">Same settings as today's <b>Various</b> tab, renamed to say what it does. The bar on top draws the two windows on a match clock, so a typo like 70–45 shows up straight away.</div>
+        </section>
+
+        <section class="page" id="p-tips" hidden>
+          <div class="kpis">
+            <div class="kpi"><div class="lbl">Feed status</div><div class="val" style="font-size:1.1rem;color:var(--good)">✓ Polled 40s ago</div></div>
+            <div class="kpi"><div class="lbl">Rows in last poll</div><div class="val">3</div></div>
+            <div class="kpi"><div class="lbl">Polls today</div><div class="val">1,284</div></div>
+            <div class="kpi"><div class="lbl">Alert window</div><div class="val">30<small>min</small></div></div>
+          </div>
+          <div class="note">Same content as today's Tips feed tab (live rows, history, poll log), but with the health of the feed on top as tiles, so a dead feed is visible at a glance and also raised on Overview.</div>
+        </section>
+
+        <section class="page" id="p-discord" hidden>
+          <div class="grid-2e">
+            <article class="card"><div class="form-sec"><h3>Paid channel</h3><p>Fires and outcomes are cross-posted here.</p>
+              <div class="fields"><label class="field">Channel id<input type="text" value="1234567890123456" /></label></div>
+              <p style="margin-top:12px"><label class="toggle"><input type="checkbox" checked />Cross-post to paid channel</label></p></div></article>
+            <article class="card"><div class="form-sec"><h3>Free channel</h3><p>Delayed or filtered fires go here.</p>
+              <div class="fields"><label class="field">Channel id<input type="text" value="" placeholder="not set" /></label></div>
+              <p style="margin-top:12px"><label class="toggle"><input type="checkbox" />Cross-post to free channel</label></p></div></article>
+          </div>
+          <div class="note">Unchanged settings, new layout: one card per channel, and a "last post sent at" line once the bot reports it.</div>
+        </section>
+      </div>
+    </div>
+    <div class="tip" id="tip"></div>
+
+    <script>
+      /* ================= fake data ================= */
+      function mulberry32(a) {
+        return function () {
+          a |= 0; a = (a + 0x6d2b79f5) | 0;
+          let t = Math.imul(a ^ (a >>> 15), 1 | a);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+      const rand = mulberry32(20261031);
+      const pickW = (items) => {
+        const total = items.reduce((s, i) => s + i[1], 0);
+        let r = rand() * total;
+        for (const [v, w] of items) if ((r -= w) <= 0) return v;
+        return items[items.length - 1][0];
+      };
+      const normal = () => { let u = 0, v = 0; while (!u) u = rand(); while (!v) v = rand(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+      const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+
+      const TODAY = new Date(2026, 9, 31, 21, 40);
+      const HISTORY = 60;
+      const dayDate = (d) => new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() - d);
+      const fmtDay = (d) => dayDate(d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+      const fmtShort = (d) => dayDate(d).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
+      const STRATS = [
+        { k: "urg", s: "UrG", base: 0.63, w: 5, on: true },
+        { k: "d10", s: "Δ10′", base: 0.58, w: 4, on: true },
+        { k: "bar", s: "Bar", base: 0.55, w: 3, on: true },
+        { k: "d5", s: "Δ5′", base: 0.61, w: 4, on: true },
+        { k: "npei", s: "NPEI", base: 0.5, w: 2, on: false },
+        { k: "k", s: "K", base: 0.67, w: 3, on: true },
+      ];
+      const SBY = Object.fromEntries(STRATS.map((s) => [s.k, s]));
+      const LEAGUES = [
+        ["Premier League", "GB", ["Arsenal", "Chelsea", "Brighton", "Fulham", "Brentford", "Everton"]],
+        ["La Liga", "ES", ["Sevilla", "Betis", "Girona", "Osasuna", "Valencia", "Getafe"]],
+        ["Serie A", "IT", ["Bologna", "Torino", "Lazio", "Genoa", "Udinese", "Fiorentina"]],
+        ["Bundesliga", "DE", ["Freiburg", "Mainz", "Augsburg", "Bochum", "Union Berlin", "Wolfsburg"]],
+        ["Super League", "GR", ["PAOK", "Aris", "Atromitos", "OFI", "Volos", "Panetolikos"]],
+        ["Eredivisie", "NL", ["Twente", "Utrecht", "Heerenveen", "Sparta", "NEC", "Go Ahead"]],
+        ["Championship", "GB", ["Leeds", "Norwich", "Hull", "Stoke", "Millwall", "Swansea"]],
+        ["Süper Lig", "TR", ["Trabzonspor", "Konyaspor", "Sivasspor", "Rizespor", "Kayserispor", "Alanyaspor"]],
+        ["Brasileirão", "BR", ["Bahia", "Fortaleza", "Cuiabá", "Juventude", "Vitória", "Goiás"]],
+      ];
+      const LEAGUE_MOD = Object.fromEntries(LEAGUES.map(([n]) => [n, (rand() - 0.5) * 0.16]));
+      const CLOCKS = ["1-15", "16-30", "31-45", "46-60", "61-75", "76+"];
+      const CLOCK_MOD = { "1-15": -0.1, "16-30": -0.02, "31-45": 0.03, "46-60": -0.04, "61-75": 0.04, "76+": 0.08 };
+      const SCORE_MOD = { "0-0": -0.06, level: 0.0, leading: -0.07, trailing: 0.08 };
+      const ODDS_MOD = { "favourite <2": 0.05, "mid 2-3.5": 0, "dog >3.5": -0.07 };
+
+      const ALERTS = [];
+      const GAMES_BY_DAY = {};
+      let aid = 1;
+      for (let d = HISTORY - 1; d >= 0; d--) {
+        const n = 16 + Math.floor(rand() * 14) + (dayDate(d).getDay() % 6 === 0 ? 8 : 0);
+        const games = [];
+        for (let g = 0; g < 14; g++) {
+          const [league, cc, teams] = LEAGUES[Math.floor(rand() * LEAGUES.length)];
+          const i = Math.floor(rand() * teams.length);
+          let j = Math.floor(rand() * teams.length); if (j === i) j = (j + 1) % teams.length;
+          games.push({ id: `m${d}-${g}`, league, cc, home: teams[i], away: teams[j] });
+        }
+        for (let a = 0; a < n; a++) {
+          const st = pickW(STRATS.map((s) => [s, s.on ? s.w : s.w * 0.3]));
+          const clock = pickW([["1-15", 1], ["16-30", 3], ["31-45", 4], ["46-60", 3], ["61-75", 5], ["76+", 4]]);
+          const lo = { "1-15": 1, "16-30": 16, "31-45": 31, "46-60": 46, "61-75": 61, "76+": 76 }[clock];
+          const minute = lo + Math.floor(rand() * (clock === "76+" ? 15 : 15));
+          const score = pickW([["0-0", 3], ["level", 3], ["leading", 2], ["trailing", 3]]);
+          const odds = pickW([["favourite <2", 4], ["mid 2-3.5", 4], ["dog >3.5", 2]]);
+          const side = rand() < 0.6 ? "home" : "away";
+          const game = games[Math.floor(rand() * games.length)];
+          const sweet = (minute >= 30 && minute <= 45) || minute >= 70;
+          let p = st.base + CLOCK_MOD[clock] + SCORE_MOD[score] + ODDS_MOD[odds] + LEAGUE_MOD[game.league] + (side === "home" ? 0.02 : -0.02) + (sweet ? 0.03 : 0) + (rand() - 0.5) * 0.08;
+          if (st.k === "d5" && d < 7) p -= 0.17;
+          p = clamp(p, 0.12, 0.92);
+          const hour = pickW([[12, 1], [13, 1], [14, 2], [15, 3], [16, 3], [17, 3], [18, 4], [19, 5], [20, 5], [21, d === 0 ? 1 : 4], [22, d === 0 ? 0.01 : 2]]);
+          const open = d === 0 && hour >= 20 && rand() < 0.5;
+          const state = open ? "Monitoring" : rand() < p ? "Confirmed" : "Expired";
+          const [sh, sa] = score === "0-0" ? [0, 0] : score === "level" ? [1, 1] : score === "leading" ? (side === "home" ? [1, 0] : [0, 1]) : side === "home" ? [0, 1] : [1, 0];
+          const toGoal = 1 + Math.floor(rand() * 14);
+          ALERTS.push({
+            id: aid++, d, hour, min: Math.floor(rand() * 60), strat: st.k, side, minute, clock, scoreState: score,
+            score: `${sh}-${sa}`, odds, oddsVal: odds === "favourite <2" ? 1.4 + rand() * 0.55 : odds === "mid 2-3.5" ? 2 + rand() * 1.5 : 3.6 + rand() * 4,
+            league: game.league, cc: game.cc, home: game.home, away: game.away, matchId: game.id, sweet, state,
+            settle: state === "Confirmed" ? `${side === "home" ? sh + 1 : sh}-${side === "away" ? sa + 1 : sa} ${Math.min(minute + toGoal, 94)}′` : state === "Expired" ? `${sh}-${sa} ${Math.min(minute + 15, 94)}′` : null,
+            toGoal, value: 50 + rand() * 45, k: Math.round(40 + rand() * 50), d5: (0.5 + rand() * 3).toFixed(1), d10: Math.round(1 + rand() * 7), phi: Math.round(20 + rand() * 70),
+            tslg: pickW([["no goal yet", 3], ["0-9'", 1], ["10-19'", 2], ["20'+", 4]]),
+            also: rand() < 0.2 ? STRATS[Math.floor(rand() * STRATS.length)].k : null,
+            weekday: dayDate(d).toLocaleDateString("en-GB", { weekday: "short" }),
+          });
+        }
+        GAMES_BY_DAY[d] = games;
+      }
+
+      /* visits */
+      const COUNTRIES = [["GR", 30, "Greece"], ["GB", 14, "United Kingdom"], ["CY", 8, "Cyprus"], ["DE", 7, "Germany"], ["US", 6, "United States"], ["NL", 4, "Netherlands"], ["IT", 4, "Italy"], ["ES", 3, "Spain"], ["TR", 3, "Türkiye"], ["AU", 2, "Australia"], ["CA", 2, "Canada"], ["FR", 2, "France"], ["SE", 1, "Sweden"], ["BR", 1, "Brazil"]];
+      const CNAME = Object.fromEntries(COUNTRIES.map(([c, , n]) => [c, n]));
+      const flag = (cc) => cc.replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
+      const SOURCES_NEW = [["Direct", 30], ["t.me", 20], ["google.com", 18], ["x.com", 11], ["reddit.com", 8], ["discord.com", 7], ["bing.com", 2], ["Other", 4]];
+      const SOURCES_RET = [["Direct", 62], ["t.me", 18], ["google.com", 7], ["x.com", 4], ["discord.com", 6], ["Other", 3]];
+      const VISITS = [];
+      const SEEN = [];
+      let vid = 1;
+      for (let d = HISTORY - 1; d >= 0; d--) {
+        const dow = dayDate(d).getDay();
+        let n = Math.round(48 + (HISTORY - d) * 0.9 + (dow === 0 || dow === 6 ? 26 : 0) + normal() * 9);
+        if (d === 0) n = Math.round(n * 0.86);
+        for (let i = 0; i < n; i++) {
+          let v;
+          const returning = SEEN.length > 20 && rand() < 0.4;
+          if (returning) v = SEEN[Math.max(0, SEEN.length - 1 - Math.floor(rand() * 450))];
+          else {
+            const device = pickW([["Mobile", 62], ["Desktop", 34], ["Tablet", 4]]);
+            const browser = device === "Desktop" ? pickW([["Chrome", 64], ["Edge", 14], ["Safari", 12], ["Firefox", 10]]) : pickW([["Chrome", 48], ["Safari", 40], ["Samsung", 8], ["Firefox", 4]]);
+            v = { id: `v${vid++}`, first: d, country: pickW(COUNTRIES.map(([c, w]) => [c, w])), device, browser, os: device === "Desktop" ? (browser === "Safari" ? "macOS" : pickW([["Windows", 78], ["macOS", 18], ["Linux", 4]])) : browser === "Safari" ? "iOS" : "Android" };
+            SEEN.push(v);
+          }
+          const isNew = v.first === d && !VISITS.some((x) => x.v === v && x.d === d);
+          const source = pickW(isNew ? SOURCES_NEW : SOURCES_RET);
+          const weekend = dow === 0 || dow === 6;
+          const hour = pickW(Array.from({ length: 24 }, (_, h) => [h, h < 7 ? 0.3 : h < 12 ? 1 + (weekend ? 1 : 0) : h < 16 ? 2 + (weekend ? 3 : 0) : h < 23 ? 6 : 2]));
+          let dur = Math.round(clamp(Math.exp(4.1 + 1.35 * normal() + (returning ? 0.6 : 0)), 3, 10800));
+          const engaged = dur > 45;
+          const tgFree = engaged && rand() < (source === "t.me" ? 0.16 : source === "x.com" ? 0.09 : 0.05);
+          const tgPaid = tgFree ? rand() < 0.2 : engaged && rand() < 0.006;
+          const games = GAMES_BY_DAY[d] || [];
+          const mc = dur > 40 ? Math.floor(rand() * Math.min(6, dur / 120 + 1.5)) : 0;
+          const matches = Array.from({ length: mc }, () => games[Math.floor(rand() * Math.min(5, games.length))]).filter(Boolean);
+          VISITS.push({ v, d, hour, dur, source, tgFree, tgPaid, matches, returning: !isNew, pageLoads: 1 + Math.floor(rand() * 3) });
+        }
+      }
+
+      /* ================= helpers ================= */
+      const $ = (id) => document.getElementById(id);
+      const pct = (x) => (x == null || isNaN(x) ? "–" : `${Math.round(x * 100)}%`);
+      const pct1 = (x) => (x == null || isNaN(x) ? "–" : `${(x * 100).toFixed(1)}%`);
+      const fmtInt = (x) => x.toLocaleString("en-GB");
+      const fmtDur = (s) => (s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s` : `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`);
+      const median = (arr) => { if (!arr.length) return 0; const s = [...arr].sort((a, b) => a - b); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+      function wilson(k, n, z = 1.645) {
+        if (!n) return [0, 0];
+        const p = k / n, z2 = z * z, den = 1 + z2 / n;
+        const c = (p + z2 / (2 * n)) / den, h = (z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / den;
+        return [Math.max(0, c - h), Math.min(1, c + h)];
+      }
+      function deltaHtml(cur, prev, { pts = false, invert = false, unit = "", label = "" } = {}) {
+        if (prev == null || cur == null || isNaN(prev) || isNaN(cur) || (!pts && prev === 0)) return `<span class="delta">no prior data</span>`;
+        const diff = pts ? (cur - prev) * 100 : ((cur - prev) / prev) * 100;
+        const up = diff > 0.5, down = diff < -0.5;
+        const good = invert ? down : up, bad = invert ? up : down;
+        const arrow = up ? "▲" : down ? "▼" : "•";
+        const txt = pts ? `${diff > 0 ? "+" : ""}${diff.toFixed(1)} pts` : `${diff > 0 ? "+" : ""}${Math.round(diff)}%${unit}`;
+        return `<span class="delta ${good ? "up" : bad ? "down" : ""}">${arrow} ${txt}<em>${label}</em></span>`;
+      }
+      function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+      function mix(a, b, t) { const A = hexToRgb(a), B = hexToRgb(b); return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(",")})`; }
+      function diverging(lift, span = 0.2) {
+        const t = clamp(lift / span, -1, 1);
+        return t >= 0 ? mix("#2a3340", "#3987e5", t) : mix("#2a3340", "#d95926", -t);
+      }
+      function sequential(t) {
+        if (t <= 0) return "#101b28";
+        return t < 0.5 ? mix("#14263b", "#1c5cab", t * 2) : mix("#1c5cab", "#86b6ef", (t - 0.5) * 2);
+      }
+      function inkFor(bg) { const m = bg.match(/\d+/g); if (!m) return "var(--text)"; const [r, g, b] = m.map(Number); return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? "#08131d" : "var(--text)"; }
+
+      /* tooltip */
+      const tip = $("tip");
+      function showTip(html, x, y) {
+        tip.innerHTML = html; tip.classList.add("on");
+        const r = tip.getBoundingClientRect();
+        let left = x + 14, top = y + 14;
+        if (left + r.width > innerWidth - 8) left = x - r.width - 14;
+        if (top + r.height > innerHeight - 8) top = y - r.height - 14;
+        tip.style.left = `${left}px`; tip.style.top = `${top}px`;
+      }
+      const hideTip = () => tip.classList.remove("on");
+      document.addEventListener("mousemove", (e) => {
+        const el = e.target.closest && e.target.closest("[data-tip]");
+        if (el) showTip(el.getAttribute("data-tip"), e.clientX, e.clientY);
+        else if (!e.target.closest || !e.target.closest(".xhair")) hideTip();
+      });
+      const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+      const tipRows = (title, rows) => esc(`<div class="tt">${title}</div>` + rows.map(([k, v]) => `<div class="row"><span>${k}</span><b>${v}</b></div>`).join(""));
+
+      /* ---------- svg charts ---------- */
+      const NS = "http://www.w3.org/2000/svg";
+      function sparkline(vals, { w = 92, h = 26, color = "var(--accent)" } = {}) {
+        const pts = vals.map((v, i) => [i, v]).filter(([, v]) => v != null && !isNaN(v));
+        if (pts.length < 2) return `<svg width="${w}" height="${h}"></svg>`;
+        const ys = pts.map(([, v]) => v), lo = Math.min(...ys), hi = Math.max(...ys), span = hi - lo || 1;
+        const X = (i) => 2 + (i / (vals.length - 1)) * (w - 6), Y = (v) => h - 3 - ((v - lo) / span) * (h - 6);
+        const d = pts.map(([i, v], k) => `${k ? "L" : "M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join("");
+        const [li, lv] = pts[pts.length - 1];
+        return `<svg width="${w}" height="${h}" aria-hidden="true"><path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity=".9"/><circle cx="${X(li)}" cy="${Y(lv)}" r="2.6" fill="${color}"/></svg>`;
+      }
+      function frame(el, h) {
+        const w = Math.max(280, el.clientWidth || 600);
+        return { w, h, m: { t: 10, r: 10, b: 24, l: 36 } };
+      }
+      function lineChart(el, pts, { baseline = null, height = 230 } = {}) {
+        const { w, h, m } = frame(el, height);
+        const iw = w - m.l - m.r, ih = h - m.t - m.b;
+        const X = (i) => m.l + (pts.length === 1 ? iw / 2 : (i / (pts.length - 1)) * iw);
+        const Y = (v) => m.t + ih - v * ih;
+        let s = `<svg class="chart" width="${w}" height="${h}" role="img" aria-label="Hit rate by day">`;
+        for (const g of [0, 0.25, 0.5, 0.75, 1]) s += `<line x1="${m.l}" x2="${w - m.r}" y1="${Y(g)}" y2="${Y(g)}" stroke="var(--grid)"/><text x="${m.l - 8}" y="${Y(g) + 3.5}" text-anchor="end">${g * 100}%</text>`;
+        const every = Math.ceil(pts.length / Math.max(2, Math.floor(iw / 70)));
+        pts.forEach((p, i) => { if ((i % every === 0 && pts.length - 1 - i >= every * 0.6) || i === pts.length - 1) s += `<text x="${X(i)}" y="${h - 6}" text-anchor="middle">${p.label}</text>`; });
+        if (baseline != null) s += `<line x1="${m.l}" x2="${w - m.r}" y1="${Y(baseline)}" y2="${Y(baseline)}" stroke="var(--muted)" stroke-dasharray="4 4"/>`;
+        let d = "", on = false;
+        pts.forEach((p, i) => { if (p.v == null) { on = false; return; } d += `${on ? "L" : "M"}${X(i).toFixed(1)},${Y(p.v).toFixed(1)}`; on = true; });
+        s += `<path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+        pts.forEach((p, i) => { if (p.v != null && pts.length <= 31) s += `<circle cx="${X(i)}" cy="${Y(p.v)}" r="${pts.length > 14 ? 2.2 : 3.2}" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/>`; });
+        s += `<g class="hover" style="display:none"><line class="hx" y1="${m.t}" y2="${m.t + ih}" stroke="var(--border-2)"/><circle class="hc" r="5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/></g>`;
+        s += `<rect class="xhair" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"/></svg>`;
+        el.innerHTML = s;
+        const svg = el.querySelector("svg"), g = svg.querySelector(".hover"), rect = svg.querySelector(".xhair");
+        rect.addEventListener("mousemove", (e) => {
+          const bx = svg.getBoundingClientRect();
+          const i = clamp(Math.round(((e.clientX - bx.left - m.l) / iw) * (pts.length - 1)), 0, pts.length - 1);
+          const p = pts[i];
+          g.style.display = "";
+          g.querySelector(".hx").setAttribute("x1", X(i)); g.querySelector(".hx").setAttribute("x2", X(i));
+          const c = g.querySelector(".hc");
+          if (p.v != null) { c.setAttribute("cx", X(i)); c.setAttribute("cy", Y(p.v)); c.style.display = ""; } else c.style.display = "none";
+          showTip(`<div class="tt">${p.full}</div><div class="row"><span>Hit rate</span><b>${pct(p.v)}</b></div><div class="row"><span>Hits / settled</span><b>${p.k} / ${p.n}</b></div>${baseline != null ? `<div class="row"><span>Period avg</span><b>${pct(baseline)}</b></div>` : ""}`, e.clientX, e.clientY);
+        });
+        rect.addEventListener("mouseleave", () => { g.style.display = "none"; hideTip(); });
+      }
+      function roundTop(x, y, w, h, r) {
+        r = Math.min(r, w / 2, h);
+        return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+      }
+      function stackedBars(el, cols, { height = 240, labelEvery = null } = {}) {
+        const { w, h, m } = frame(el, height);
+        const iw = w - m.l - m.r, ih = h - m.t - m.b;
+        const max = Math.max(1, ...cols.map((c) => c.a + c.b));
+        const nice = Math.ceil(max / 20) * 20;
+        const bw = iw / cols.length, gap = Math.min(10, bw * 0.28), barW = bw - gap;
+        const Y = (v) => (v / nice) * ih;
+        let s = `<svg class="chart" width="${w}" height="${h}" role="img" aria-label="Visitors">`;
+        for (const g of [0, 0.25, 0.5, 0.75, 1]) { const y = m.t + ih - g * ih; s += `<line x1="${m.l}" x2="${w - m.r}" y1="${y}" y2="${y}" stroke="var(--grid)"/><text x="${m.l - 8}" y="${y + 3.5}" text-anchor="end">${Math.round(nice * g)}</text>`; }
+        const every = labelEvery || Math.ceil(cols.length / Math.max(2, Math.floor(iw / 56)));
+        cols.forEach((c, i) => {
+          const x = m.l + i * bw + gap / 2;
+          const ha = Y(c.a), hb = Y(c.b), base = m.t + ih;
+          const tipHtml = tipRows(c.full, [["Visitors", fmtInt(c.a + c.b)], ["New", fmtInt(c.a)], ["Returning", fmtInt(c.b)]]);
+          s += `<g data-tip="${tipHtml}">`;
+          s += `<rect x="${x - gap / 2}" y="${m.t}" width="${bw}" height="${ih}" fill="transparent"/>`;
+          if (c.a) s += `<path d="${c.b ? `M${x},${base}V${base - ha}H${x + barW}V${base}Z` : roundTop(x, base - ha, barW, ha, 4)}" fill="var(--s1)" opacity="${c.dim ? 0.55 : 1}"/>`;
+          if (c.b) s += `<path d="${roundTop(x, base - ha - hb - (c.a ? 2 : 0), barW, hb, 4)}" fill="var(--s2)" opacity="${c.dim ? 0.55 : 1}"/>`;
+          s += `</g>`;
+          if ((i % every === 0 && cols.length - 1 - i >= every * 0.6) || i === cols.length - 1) s += `<text x="${x + barW / 2}" y="${h - 6}" text-anchor="middle">${c.label}</text>`;
+        });
+        el.innerHTML = s + `</svg>`;
+      }
+
+      /* ================= state ================= */
+      const state = { page: "results", days: 7, strat: null, logState: "", logQ: "", minN: true, visBy: "day", openRow: null };
+      const inRange = (d, days) => d < days;
+      const inPrev = (d, days) => d >= days && d < days * 2;
+
+      function settledStats(rows) {
+        const k = rows.filter((r) => r.state === "Confirmed").length;
+        const n = rows.filter((r) => r.state !== "Monitoring").length;
+        return { k, n, rate: n ? k / n : null, open: rows.length - n, total: rows.length };
+      }
+
+      /* ================= RESULTS ================= */
+      function renderResults() {
+        const days = state.days;
+        const all = ALERTS.filter((a) => !state.strat || a.strat === state.strat);
+        const cur = all.filter((a) => inRange(a.d, days));
+        const prev = all.filter((a) => inPrev(a.d, days));
+        const S = settledStats(cur), P = settledStats(prev);
+        const prevLabel = days === 1 ? " vs yesterday" : ` vs prev ${days}d`;
+        const chartDays = days === 1 ? 14 : days;
+
+        // chips
+        const countBy = (k) => ALERTS.filter((a) => inRange(a.d, days) && a.strat === k).length;
+        $("res-strats").innerHTML = `<span class="label">Strategy</span>` +
+          `<button class="chip ${!state.strat ? "is-on" : ""}" data-strat="">All <span class="n">${ALERTS.filter((a) => inRange(a.d, days)).length}</span></button>` +
+          STRATS.map((s) => `<button class="chip ${state.strat === s.k ? "is-on" : ""}" data-strat="${s.k}">${s.s} <span class="n">${countBy(s.k)}</span>${s.on ? "" : ' <span class="n">off</span>'}</button>`).join("");
+
+        // daily series for sparklines
+        const daily = (rows, nDays) => Array.from({ length: nDays }, (_, i) => { const d = nDays - 1 - i; const st = settledStats(rows.filter((r) => r.d === d)); return st; });
+        const dser = daily(all, Math.max(chartDays, 7));
+        const hits = all.filter((a) => a.state === "Confirmed" && inRange(a.d, days));
+        const prevHits = all.filter((a) => a.state === "Confirmed" && inPrev(a.d, days));
+
+        $("res-kpis").innerHTML = [
+          { hero: true, lbl: "Hit rate", val: pct(S.rate), d: deltaHtml(S.rate, P.rate, { pts: true, label: prevLabel }), sp: sparkline(dser.map((x) => x.rate)), tip: tipRows("Hit rate", [["This period", pct1(S.rate)], ["Previous", pct1(P.rate)], ["90% likely range", wilson(S.k, S.n).map(pct).join(" – ")]]) },
+          { lbl: "Alerts fired", val: fmtInt(S.total), d: deltaHtml(S.total, P.total, { label: prevLabel }), sp: sparkline(dser.map((x) => x.total)) },
+          { lbl: "Hits", val: `${fmtInt(S.k)}<small>/ ${fmtInt(S.n)} settled</small>`, d: deltaHtml(S.k, P.k, { label: prevLabel }), sp: sparkline(dser.map((x) => x.k)) },
+          { lbl: "Median minutes to goal", val: `${median(hits.map((h) => h.toGoal)) || "–"}<small>min</small>`, d: deltaHtml(median(hits.map((h) => h.toGoal)), median(prevHits.map((h) => h.toGoal)), { invert: true, label: prevLabel }), sp: "" },
+          { lbl: "Still open", val: fmtInt(S.open), d: `<span class="delta">being monitored now</span>`, sp: "" },
+        ].map((k) => `<div class="kpi ${k.hero ? "is-hero" : ""}" ${k.tip ? `data-tip="${k.tip}"` : ""}><div class="lbl">${k.lbl}</div><div class="val">${k.val}</div><div class="foot">${k.d}${k.sp}</div></div>`).join("");
+
+        // scorecard
+        const allCur = ALERTS.filter((a) => inRange(a.d, days));
+        const overall = settledStats(allCur).rate;
+        const rows = STRATS.map((s) => {
+          const c = allCur.filter((a) => a.strat === s.k), p = ALERTS.filter((a) => a.strat === s.k && inPrev(a.d, days));
+          const cs = settledStats(c), ps = settledStats(p);
+          const trend = Array.from({ length: 14 }, (_, i) => settledStats(ALERTS.filter((a) => a.strat === s.k && a.d === 13 - i)).rate);
+          const hitsS = c.filter((a) => a.state === "Confirmed");
+          const best = bestSlice(c);
+          return { s, cs, ps, trend, mtg: median(hitsS.map((h) => h.toGoal)), best };
+        }).sort((a, b) => (b.cs.rate ?? -1) - (a.cs.rate ?? -1));
+        const pos = (x) => `${(x * 100).toFixed(1)}%`;
+        $("res-score").innerHTML = `<thead><tr><th>Strategy</th><th class="r">Alerts</th><th>Hit rate</th><th class="r">Change</th><th>Last 14 days</th><th class="r">Median to goal</th><th>Best slice</th></tr></thead><tbody>` +
+          rows.map(({ s, cs, ps, trend, mtg, best }) => {
+            const [lo, hi] = wilson(cs.k, cs.n);
+            return `<tr class="click ${state.strat === s.k ? "is-sel" : ""}" data-strat="${s.k}" style="${state.strat && state.strat !== s.k ? "opacity:.45" : ""}">
+              <td><span class="strat-tag">${s.s}</span>${s.on ? "" : '<small>disabled</small>'}</td>
+              <td class="r num">${cs.total}<small>${cs.n} settled</small></td>
+              <td><div class="rate" data-tip="${tipRows(s.s, [["Hit rate", pct1(cs.rate)], ["Hits / settled", `${cs.k} / ${cs.n}`], ["90% likely range", `${pct(lo)} – ${pct(hi)}`], ["All strategies", pct1(overall)]])}">
+                <span class="num">${pct(cs.rate)}</span>
+                <span class="rate-track">${cs.n ? `<span class="rate-ci" style="left:${pos(lo)};width:${pos(hi - lo)}"></span><span class="rate-pt" style="left:${pos(cs.rate)}"></span>` : ""}${overall != null ? `<span class="rate-base" style="left:${pos(overall)}"></span>` : ""}</span></div></td>
+              <td class="r">${deltaHtml(cs.rate, ps.rate, { pts: true })}</td>
+              <td>${sparkline(trend, { w: 110 })}</td>
+              <td class="r num">${mtg ? `${mtg}′` : "–"}</td>
+              <td>${best ? `${esc(best.label)}<small>${pct(best.rate)} on ${best.n} · ${best.dim}</small>` : '<span style="color:var(--muted)">not enough data</span>'}</td>
+            </tr>`;
+          }).join("") + `</tbody>`;
+
+        // line
+        const lpts = Array.from({ length: chartDays }, (_, i) => { const d = chartDays - 1 - i; const st = settledStats(all.filter((a) => a.d === d)); return { label: fmtShort(d), full: fmtDay(d), v: st.rate, k: st.k, n: st.n }; });
+        const base = settledStats(all.filter((a) => inRange(a.d, chartDays))).rate;
+        $("res-line-sub").textContent = days === 1 ? "Last 14 days for context" : `Last ${days} days`;
+        lineChart($("res-line"), lpts, { baseline: base });
+
+        // heatmap
+        const heat = $("res-heat");
+        heat.style.gridTemplateColumns = `56px repeat(${CLOCKS.length}, minmax(34px, 1fr))`;
+        let hh = `<div></div>` + CLOCKS.map((c) => `<div class="hh">${c}′</div>`).join("");
+        for (const s of STRATS) {
+          hh += `<div class="hl">${s.s}</div>`;
+          for (const c of CLOCKS) {
+            const st = settledStats(allCur.filter((a) => a.strat === s.k && a.clock === c));
+            if (st.n < 5) { hh += `<div class="hc empty" data-tip="${tipRows(`${s.s} · ${c}′`, [["Settled", st.n], ["Hit rate", st.n ? pct(st.rate) : "–"]])}">${st.n ? "·" : ""}</div>`; continue; }
+            const bg = diverging(st.rate - overall);
+            hh += `<div class="hc" style="background:${bg};color:${inkFor(bg)}" data-tip="${tipRows(`${s.s} · fired ${c}′`, [["Hit rate", pct1(st.rate)], ["Hits / settled", `${st.k} / ${st.n}`], ["vs overall", `${st.rate >= overall ? "+" : ""}${((st.rate - overall) * 100).toFixed(1)} pts`]])}">${pct(st.rate)}</div>`;
+          }
+        }
+        heat.innerHTML = hh;
+
+        // lift
+        const slices = allSlices(cur).filter((x) => x.n >= (state.minN ? 15 : 5));
+        const base2 = S.rate ?? 0;
+        slices.forEach((x) => (x.lift = x.rate - base2));
+        const lean = slices.filter((x) => x.lift > 0).sort((a, b) => b.lift - a.lift).slice(0, 7);
+        const avoid = slices.filter((x) => x.lift < 0).sort((a, b) => a.lift - b.lift).slice(0, 7);
+        const maxLift = Math.max(0.05, ...slices.map((x) => Math.abs(x.lift)));
+        const liftRow = (x) => {
+          const w = (Math.abs(x.lift) / maxLift) * 50;
+          return `<div class="lift" data-tip="${tipRows(`${x.dim}: ${x.label}`, [["Hit rate", pct1(x.rate)], ["Hits / settled", `${x.k} / ${x.n}`], ["Overall", pct1(base2)], ["90% likely range", wilson(x.k, x.n).map(pct).join(" – ")]])}">
+            <div class="what"><b>${esc(x.label)}</b><span>${x.dim}</span></div>
+            <div class="n num">n ${x.n}</div>
+            <div class="lift-track"><div class="lift-fill ${x.lift >= 0 ? "pos" : "neg"}" style="width:${w}%"></div></div>
+            <div class="pts num">${x.lift >= 0 ? "+" : "−"}${Math.abs(x.lift * 100).toFixed(0)} pts</div></div>`;
+        };
+        $("res-lean").innerHTML = lean.map(liftRow).join("") || `<p class="sub" style="color:var(--muted)">Nothing clearly above average with this much data.</p>`;
+        $("res-avoid").innerHTML = avoid.map(liftRow).join("") || `<p class="sub" style="color:var(--muted)">Nothing clearly below average with this much data.</p>`;
+
+        renderLog(cur);
+      }
+
+      function allSlices(rows) {
+        const dims = [
+          ["Minute", (a) => `${a.clock}′`],
+          ["Half", (a) => (a.minute <= 45 ? "1st half" : "2nd half")],
+          ["Score", (a) => ({ "0-0": "0-0", level: "Level (not 0-0)", leading: "Trigger side leading", trailing: "Trigger side trailing" })[a.scoreState]],
+          ["Kickoff odds", (a) => a.odds],
+          ["Side", (a) => (a.side === "home" ? "Home team" : "Away team")],
+          ["Sweet spot", (a) => (a.sweet ? "Inside sweet spot" : "Outside sweet spot")],
+          ["League", (a) => a.league],
+          ["Weekday", (a) => a.weekday],
+          ["Time since last goal", (a) => a.tslg],
+        ];
+        const out = [];
+        for (const [dim, fn] of dims) {
+          const g = {};
+          for (const a of rows) { if (a.state === "Monitoring") continue; const key = fn(a); (g[key] ||= { k: 0, n: 0 }); g[key].n++; if (a.state === "Confirmed") g[key].k++; }
+          for (const [label, { k, n }] of Object.entries(g)) out.push({ dim, label, k, n, rate: k / n });
+        }
+        return out;
+      }
+      function bestSlice(rows) {
+        const st = settledStats(rows);
+        if (st.n < 10) return null;
+        const c = allSlices(rows).filter((x) => x.n >= Math.max(10, st.n * 0.15)).sort((a, b) => b.rate - a.rate);
+        return c[0] && c[0].rate > st.rate ? c[0] : null;
+      }
+
+      function renderLog(cur) {
+        const q = state.logQ.trim().toLowerCase();
+        const rows = cur
+          .filter((a) => !state.logState || a.state === state.logState)
+          .filter((a) => !q || [a.home, a.away, a.league, CNAME[a.cc] || ""].some((f) => f.toLowerCase().includes(q)))
+          .sort((a, b) => a.d - b.d || b.hour - a.hour || b.min - a.min);
+        $("log-sub").textContent = `${rows.length} alert(s) · newest first, grouped by day`;
+        let html = `<thead><tr><th>Time</th><th>Match</th><th>Strategy</th><th>At fire</th><th>Board at fire</th><th class="r">Odds</th><th>Settled</th><th>Outcome</th></tr></thead><tbody>`;
+        let lastD = null;
+        for (const a of rows.slice(0, 160)) {
+          if (a.d !== lastD) {
+            const dayRows = cur.filter((x) => x.d === a.d && (!state.logState || x.state === state.logState));
+            const st = settledStats(dayRows);
+            html += `<tr class="day-head"><td colspan="8"><b>${a.d === 0 ? "Today" : a.d === 1 ? "Yesterday" : fmtDay(a.d)}</b>${st.total} alerts<span class="mono">${st.k}/${st.n} hit · ${pct(st.rate)}</span>${st.open ? `<span class="mono">· ${st.open} open</span>` : ""}</td></tr>`;
+            lastD = a.d;
+          }
+          const cls = a.state === "Confirmed" ? "is-ok" : a.state === "Expired" ? "is-miss" : "is-open";
+          const pill = a.state === "Confirmed" ? `<span class="pill ok"><i>✓</i>Hit</span>` : a.state === "Expired" ? `<span class="pill miss"><i>✕</i>Miss</span>` : `<span class="pill open"><i>●</i>Open</span>`;
+          html += `<tr class="log-row click ${cls}" data-id="${a.id}">
+            <td class="num">${String(a.hour).padStart(2, "0")}:${String(a.min).padStart(2, "0")}</td>
+            <td>${esc(a.home)} v ${esc(a.away)}<small>${flag(a.cc)} ${esc(a.league)}</small></td>
+            <td><span class="strat-tag">${SBY[a.strat].s}</span> <span style="color:var(--muted);font-size:.74rem">${a.side}</span>${a.also ? `<small>+ ${SBY[a.also].s} also firing</small>` : ""}</td>
+            <td class="num">${a.score} · ${a.minute}′<small>value ${a.value.toFixed(1)}</small></td>
+            <td><div class="facts"><span><b>K</b>${a.k}</span><span><b>Δ5</b>${a.d5}</span><span><b>Δ10</b>${a.d10}</span><span><b>ΦI</b>${a.phi}</span></div></td>
+            <td class="r num">${a.oddsVal.toFixed(2)}</td>
+            <td class="num">${a.settle || "–"}</td>
+            <td>${pill}</td></tr>`;
+          if (state.openRow === a.id) {
+            html += `<tr class="expand"><td colspan="8"><div class="expand-grid">
+              <div><span>Time since last goal</span><b>${a.tslg}</b></div>
+              <div><span>Odds band</span><b>${a.odds}</b></div>
+              <div><span>Sweet spot</span><b>${a.sweet ? "yes" : "no"}</b></div>
+              <div><span>Score state</span><b>${a.scoreState}</b></div>
+              <div><span>Minutes to goal</span><b>${a.state === "Confirmed" ? `${a.toGoal}′` : "–"}</b></div>
+              <div><span>Country</span><b>${flag(a.cc)} ${CNAME[a.cc] || a.cc}</b></div>
+              <div><span>Same-slice hit rate</span><b>${pct(settledStats(ALERTS.filter((x) => x.strat === a.strat && x.clock === a.clock && x.d < 30)).rate)} (${SBY[a.strat].s}, ${a.clock}′, 30d)</b></div>
+            </div></td></tr>`;
+          }
+        }
+        if (!rows.length) html += `<tr><td colspan="8" style="color:var(--muted);padding:24px">No alerts match these filters.</td></tr>`;
+        $("res-log").innerHTML = html + `</tbody>`;
+      }
+
+      /* ================= VISITORS ================= */
+      function visitorStats(visits) {
+        const ids = new Set(visits.map((v) => v.v.id));
+        const per = {};
+        for (const v of visits) { const p = (per[v.v.id] ||= { tg: false, paid: false, ret: false, engaged: false, match: false }); p.tg ||= v.tgFree || v.tgPaid; p.paid ||= v.tgPaid; p.ret ||= v.returning; p.engaged ||= v.dur >= 60; p.match ||= v.matches.length > 0; }
+        const P = Object.values(per);
+        return {
+          visitors: ids.size, visits: visits.length,
+          median: median(visits.map((v) => v.dur)),
+          returningShare: ids.size ? P.filter((p) => p.ret).length / ids.size : null,
+          bounce: visits.length ? visits.filter((v) => v.dur < 15).length / visits.length : null,
+          tgVisitors: P.filter((p) => p.tg).length, paidVisitors: P.filter((p) => p.paid).length,
+          engaged: P.filter((p) => p.engaged).length, matchViewers: P.filter((p) => p.match).length,
+          tgRate: ids.size ? P.filter((p) => p.tg).length / ids.size : null,
+        };
+      }
+      function renderVisitors() {
+        const days = state.days;
+        const cur = VISITS.filter((v) => inRange(v.d, days)), prev = VISITS.filter((v) => inPrev(v.d, days));
+        const S = visitorStats(cur), P = visitorStats(prev);
+        const prevLabel = days === 1 ? " vs yesterday" : ` vs prev ${days}d`;
+        const spDays = Math.max(days, 14);
+        const perDay = Array.from({ length: spDays }, (_, i) => visitorStats(VISITS.filter((v) => v.d === spDays - 1 - i)));
+
+        $("vis-kpis").innerHTML = [
+          { hero: true, lbl: "Unique visitors", val: fmtInt(S.visitors), d: deltaHtml(S.visitors, P.visitors, { label: prevLabel }), sp: sparkline(perDay.map((x) => x.visitors)) },
+          { lbl: "Visits", val: fmtInt(S.visits), d: deltaHtml(S.visits, P.visits, { label: prevLabel }), sp: sparkline(perDay.map((x) => x.visits)) },
+          { lbl: "Typical visit (median)", val: fmtDur(S.median), d: deltaHtml(S.median, P.median, { label: prevLabel }), sp: sparkline(perDay.map((x) => x.median)) },
+          { lbl: "Returning visitors", val: pct(S.returningShare), d: deltaHtml(S.returningShare, P.returningShare, { pts: true, label: prevLabel }), sp: sparkline(perDay.map((x) => x.returningShare)) },
+          { lbl: "Bounced (<15s)", val: pct(S.bounce), d: deltaHtml(S.bounce, P.bounce, { pts: true, invert: true, label: prevLabel }), sp: sparkline(perDay.map((x) => x.bounce)) },
+          { lbl: "Clicked Telegram", val: `${fmtInt(S.tgVisitors)}<small>${pct1(S.tgRate)}</small>`, d: deltaHtml(S.tgRate, P.tgRate, { pts: true, label: prevLabel }), sp: sparkline(perDay.map((x) => x.tgRate)) },
+        ].map((k) => `<div class="kpi ${k.hero ? "is-hero" : ""}"><div class="lbl">${k.lbl}</div><div class="val">${k.val}</div><div class="foot">${k.d}${k.sp}</div></div>`).join("");
+
+        // traffic
+        const tDays = days === 1 ? 14 : days;
+        if (state.visBy === "day") {
+          const cols = Array.from({ length: tDays }, (_, i) => {
+            const d = tDays - 1 - i; const vs = VISITS.filter((v) => v.d === d);
+            const ids = new Map(); for (const v of vs) ids.set(v.v.id, (ids.get(v.v.id) || false) || !v.returning);
+            const a = [...ids.values()].filter(Boolean).length;
+            return { label: fmtShort(d), full: `${fmtDay(d)}${d === 0 ? " (so far)" : ""}`, a, b: ids.size - a, dim: d === 0 };
+          });
+          stackedBars($("vis-traffic"), cols);
+        } else {
+          const cols = Array.from({ length: 24 }, (_, h) => {
+            const vs = cur.filter((v) => v.hour === h); const a = vs.filter((v) => !v.returning).length;
+            return { label: `${String(h).padStart(2, "0")}h`, full: `${String(h).padStart(2, "0")}:00–${String(h).padStart(2, "0")}:59 · ${days === 1 ? "today" : `last ${days} days`} (visits)`, a, b: vs.length - a };
+          });
+          stackedBars($("vis-traffic"), cols, { labelEvery: 3 });
+        }
+
+        // funnel
+        const steps = [["Landed", S.visitors], ["Stayed 1 min+", S.engaged], ["Opened a match", S.matchViewers], ["Clicked Telegram", S.tgVisitors], ["Clicked paid", S.paidVisitors]];
+        $("vis-funnel").innerHTML = steps.map(([lbl, n], i) => {
+          const w = S.visitors ? (n / S.visitors) * 100 : 0;
+          const step = i ? (steps[i - 1][1] ? n / steps[i - 1][1] : 0) : 1;
+          return `<div class="f-step" data-tip="${tipRows(lbl, [["Visitors", fmtInt(n)], ["Of everyone who landed", pct1(w / 100)], ...(i ? [["Of the step before", pct1(step)]] : [])])}"><span class="lbl">${lbl}</span><div class="f-track"><div class="f-fill" style="width:${Math.max(w, 2)}%">${w > 12 ? fmtInt(n) : ""}</div>${w <= 12 ? `<span class="num" style="position:absolute;left:calc(${Math.max(w, 2)}% + 8px);top:5px;font-size:.76rem">${fmtInt(n)}</span>` : ""}</div><span class="conv">${i ? `${pct(step)} <small>of previous step</small>` : `100%`}</span></div>`;
+        }).join("");
+
+        // histogram
+        const buckets = [["<15s", 0, 15], ["15–60s", 15, 60], ["1–3 min", 60, 180], ["3–10 min", 180, 600], ["10–30 min", 600, 1800], ["30 min+", 1800, 1e9]];
+        const bc = buckets.map(([l, a, b]) => [l, cur.filter((v) => v.dur >= a && v.dur < b).length]);
+        const bmax = Math.max(1, ...bc.map(([, n]) => n));
+        $("vis-hist").innerHTML = bc.map(([l, n]) => `<div class="col" data-tip="${tipRows(l, [["Visits", fmtInt(n)], ["Share", pct1(cur.length ? n / cur.length : 0)]])}"><span class="v">${pct(cur.length ? n / cur.length : 0)}</span><div class="b" style="height:${(n / bmax) * 100}%"></div><span class="t">${l}</span></div>`).join("");
+
+        // sources
+        const src = {};
+        for (const v of cur) { const s = (src[v.source] ||= { ids: new Set(), durs: [], tg: new Set(), prevIds: new Set() }); s.ids.add(v.v.id); s.durs.push(v.dur); if (v.tgFree || v.tgPaid) s.tg.add(v.v.id); }
+        for (const v of prev) { (src[v.source] ||= { ids: new Set(), durs: [], tg: new Set(), prevIds: new Set() }).prevIds.add(v.v.id); }
+        const srcRows = Object.entries(src).filter(([, s]) => s.ids.size).sort((a, b) => b[1].ids.size - a[1].ids.size);
+        const srcMax = Math.max(1, ...srcRows.map(([, s]) => s.ids.size));
+        $("vis-sources").innerHTML = `<thead><tr><th>Source</th><th>Visitors</th><th class="r">Change</th><th class="r">Typical visit</th><th class="r">Telegram click rate</th></tr></thead><tbody>` +
+          srcRows.map(([name, s]) => `<tr><td>${name}</td><td><div class="bar-row" style="grid-template-columns:52px minmax(80px,1fr)"><span class="num">${fmtInt(s.ids.size)}</span><div class="bar-track"><div class="bar-fill" style="width:${(s.ids.size / srcMax) * 100}%"></div></div></div></td><td class="r">${deltaHtml(s.ids.size, s.prevIds.size)}</td><td class="r num">${fmtDur(median(s.durs))}</td><td class="r num">${pct1(s.tg.size / s.ids.size)}</td></tr>`).join("") + `</tbody>`;
+
+        // countries
+        const cc = {};
+        for (const v of cur) (cc[v.v.country] ||= new Set()).add(v.v.id);
+        const ccRows = Object.entries(cc).map(([c, s]) => [c, s.size]).sort((a, b) => b[1] - a[1]);
+        const top = ccRows.slice(0, 7), other = ccRows.slice(7).reduce((s, [, n]) => s + n, 0);
+        const cmax = Math.max(1, ...top.map(([, n]) => n));
+        $("vis-countries").innerHTML = top.concat(other ? [["", other]] : []).map(([c, n]) => `<div class="bar-row"><span class="name">${c ? `${flag(c)} ${CNAME[c]}` : `Other (${ccRows.length - 7})`}</span><div class="bar-track"><div class="bar-fill" style="width:${(n / cmax) * 100}%;${c ? "" : "opacity:.45"}"></div></div><span class="num">${pct(n / S.visitors)}</span></div>`).join("");
+
+        // devices
+        const uniq = new Map(); for (const v of cur) uniq.set(v.v.id, v.v);
+        const U = [...uniq.values()];
+        const dev = ["Mobile", "Desktop", "Tablet"].map((k, i) => [k, U.filter((u) => u.device === k).length, ["var(--s1)", "var(--s2)", "var(--s3)"][i]]);
+        const br = {}; for (const u of U) br[u.browser] = (br[u.browser] || 0) + 1;
+        const os = {}; for (const u of U) os[u.os] = (os[u.os] || 0) + 1;
+        const list = (obj) => { const r = Object.entries(obj).sort((a, b) => b[1] - a[1]); const m = Math.max(1, ...r.map(([, n]) => n)); return r.map(([k, n]) => `<div class="bar-row"><span class="name">${k}</span><div class="bar-track"><div class="bar-fill" style="width:${(n / m) * 100}%"></div></div><span class="num">${pct(n / U.length)}</span></div>`).join(""); };
+        $("vis-devices").innerHTML = `<div class="split">${dev.map(([k, n, c]) => `<div style="width:${(n / Math.max(1, U.length)) * 100}%;background:${c}" data-tip="${tipRows(k, [["Visitors", fmtInt(n)], ["Share", pct1(n / U.length)]])}"></div>`).join("")}</div>
+          <div class="legend" style="margin-bottom:14px">${dev.map(([k, n, c]) => `<span><i class="sw" style="background:${c}"></i>${k} <b class="num" style="color:var(--text);font-weight:500">${pct(n / Math.max(1, U.length))}</b></span>`).join("")}</div>
+          <div class="sub" style="color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Browser</div><div class="bars">${list(br)}</div>
+          <div class="sub" style="color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px">OS</div><div class="bars">${list(os)}</div>`;
+
+        // matches
+        const mm = {};
+        for (const v of cur) for (const m of v.matches) { const r = (mm[m.id] ||= { m, ids: new Set(), tg: 0 }); r.ids.add(v.v.id); if (v.tgFree || v.tgPaid) r.tg++; }
+        const mRows = Object.values(mm).sort((a, b) => b.ids.size - a.ids.size).slice(0, 8);
+        $("vis-matches").innerHTML = `<thead><tr><th>Match</th><th class="r">Viewers</th></tr></thead><tbody>` + mRows.map((r) => `<tr><td>${esc(r.m.home)} v ${esc(r.m.away)}<small>${flag(r.m.cc)} ${esc(r.m.league)}</small></td><td class="r num">${r.ids.size}</td></tr>`).join("") + `</tbody>`;
+
+        // weekday x hour
+        const WD = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        const grid = WD.map(() => Array(24).fill(0));
+        const src2 = days === 1 ? VISITS.filter((v) => v.d < 7) : cur;
+        for (const v of src2) { const wd = (dayDate(v.d).getDay() + 6) % 7; grid[wd][v.hour]++; }
+        const gmax = Math.max(1, ...grid.flat());
+        const heat = $("vis-heat");
+        heat.style.gridTemplateColumns = `40px repeat(24, minmax(20px, 1fr))`;
+        heat.innerHTML = `<div></div>` + Array.from({ length: 24 }, (_, h) => `<div class="hh">${h % 3 === 0 ? String(h).padStart(2, "0") : ""}</div>`).join("") +
+          WD.map((wd, i) => `<div class="hl">${wd}</div>` + grid[i].map((n, h) => `<div class="hc" style="height:22px;background:${sequential(n / gmax)}" data-tip="${tipRows(`${wd} ${String(h).padStart(2, "0")}:00`, [["Visits", n]])}"></div>`).join("")).join("");
+
+        // raw log
+        $("vis-log").innerHTML = `<thead><tr><th>Seen</th><th>Visitor</th><th>Country</th><th>Device</th><th>Came from</th><th class="r">Length</th><th class="r">Matches</th><th>Telegram</th></tr></thead><tbody>` +
+          cur.slice(-18).reverse().map((v) => `<tr><td class="num">${fmtShort(v.d)} ${String(v.hour).padStart(2, "0")}:xx</td><td>${v.returning ? '<span class="pill">returning</span>' : '<span class="pill">new</span>'}</td><td>${flag(v.v.country)} ${v.v.country}</td><td>${v.v.browser} · ${v.v.os}<small>${v.v.device}</small></td><td>${v.source}</td><td class="r num">${fmtDur(v.dur)}</td><td class="r num">${v.matches.length || ""}</td><td>${v.tgPaid ? '<span class="pill ok"><i>✓</i>paid</span>' : v.tgFree ? '<span class="pill ok"><i>✓</i>free</span>' : ""}</td></tr>`).join("") + `</tbody>`;
+      }
+
+      /* ================= OVERVIEW ================= */
+      function renderOverview() {
+        const today = ALERTS.filter((a) => a.d === 0), yday = ALERTS.filter((a) => a.d === 1);
+        const T = settledStats(today), Y = settledStats(yday);
+        const VT = visitorStats(VISITS.filter((v) => v.d === 0)), VY = visitorStats(VISITS.filter((v) => v.d === 1));
+        $("ov-kpis").innerHTML = [
+          { hero: true, lbl: "Hit rate", val: pct(T.rate), d: deltaHtml(T.rate, Y.rate, { pts: true, label: " vs yday" }) },
+          { lbl: "Alerts", val: `${T.total}<small>${T.open} open</small>`, d: deltaHtml(T.total, Y.total, { label: " vs yday" }) },
+          { lbl: "Visitors", val: fmtInt(VT.visitors), d: deltaHtml(VT.visitors, VY.visitors, { label: " vs yday" }) },
+          { lbl: "Live now", val: `<span style="display:inline-flex;align-items:center;gap:10px">7 <span class="dot"></span></span>`, d: `<span class="delta">peak 23 at 19:40</span>` },
+          { lbl: "Telegram clicks", val: fmtInt(VT.tgVisitors), d: deltaHtml(VT.tgVisitors, VY.tgVisitors, { label: " vs yday" }) },
+        ].map((k) => `<div class="kpi ${k.hero ? "is-hero" : ""}"><div class="lbl">${k.lbl}</div><div class="val">${k.val}</div><div class="foot">${k.d}</div></div>`).join("");
+
+        // attention: computed strategy drift + traffic + static config checks
+        const items = [];
+        for (const s of STRATS.filter((x) => x.on)) {
+          const w = settledStats(ALERTS.filter((a) => a.strat === s.k && a.d < 7)), m = settledStats(ALERTS.filter((a) => a.strat === s.k && a.d >= 7 && a.d < 37));
+          if (w.n >= 10 && m.rate != null && w.rate < m.rate - 0.1) items.push(["w", "!", `${s.s} is running ${Math.round((m.rate - w.rate) * 100)} pts below its usual rate`, `${pct(w.rate)} this week on ${w.n} settled vs ${pct(m.rate)} over the 30 days before. Check its threshold or the slices it is losing on.`, ["results", s.k]]);
+        }
+        const srcT = {}; for (const v of VISITS.filter((x) => x.d < 7)) (srcT[v.source] ||= new Set()).add(v.v.id);
+        const srcP = {}; for (const v of VISITS.filter((x) => x.d >= 7 && x.d < 14)) (srcP[v.source] ||= new Set()).add(v.v.id);
+        const best = Object.keys(srcT).map((k) => [k, srcT[k].size, (srcP[k] || new Set()).size]).filter(([, a, b]) => b > 10).sort((a, b) => b[1] / b[2] - a[1] / a[2])[0];
+        if (best) items.push(["i", "↗", `${best[0]} traffic is up ${Math.round((best[1] / best[2] - 1) * 100)}% this week`, `${best[1]} visitors vs ${best[2]} the week before.`, ["visitors"]]);
+        items.push(["w", "!", "Free Discord channel has no channel id", "Fires are not being cross-posted to the free channel.", ["discord"]]);
+        items.push(["w", "!", "NPEI is disabled", "It still shows in Results for older alerts. Turn it back on or archive it.", ["strategies"]]);
+        items.push(["g", "✓", "Tips feed healthy", "Last polled 40s ago, 1,284 polls today.", ["tips"]]);
+        $("attn-badge").textContent = items.filter((i) => i[0] === "w").length || "";
+        $("ov-attn").innerHTML = items.map(([c, ic, t, p, go]) => `<div class="attn-item"><span class="ic ${c}">${ic}</span><div>${t}<p>${p}</p></div><button class="link" data-go="${go.join(":")}">Open →</button></div>`).join("");
+
+        $("ov-strats").innerHTML = `<thead><tr><th>Strategy</th><th class="r">Fired</th><th class="r">Hits</th><th class="r">Today</th><th class="r">30 days</th></tr></thead><tbody>` +
+          STRATS.map((s) => { const t = settledStats(today.filter((a) => a.strat === s.k)); const m = settledStats(ALERTS.filter((a) => a.strat === s.k && a.d < 30)); return `<tr class="click" data-go="results:${s.k}"><td><span class="strat-tag">${s.s}</span>${s.on ? "" : "<small>disabled</small>"}</td><td class="r num">${t.total}</td><td class="r num">${t.k}/${t.n}</td><td class="r num">${pct(t.rate)}</td><td class="r num" style="color:var(--text-2)">${pct(m.rate)}</td></tr>`; }).join("") + `</tbody>`;
+
+        lineChart($("ov-hit"), Array.from({ length: 14 }, (_, i) => { const d = 13 - i; const st = settledStats(ALERTS.filter((a) => a.d === d)); return { label: fmtShort(d), full: fmtDay(d), v: st.rate, k: st.k, n: st.n }; }), { baseline: settledStats(ALERTS.filter((a) => a.d < 14)).rate, height: 200 });
+        stackedBars($("ov-vis"), Array.from({ length: 14 }, (_, i) => { const d = 13 - i; const vs = VISITS.filter((v) => v.d === d); const ids = new Map(); for (const v of vs) ids.set(v.v.id, (ids.get(v.v.id) || false) || !v.returning); const a = [...ids.values()].filter(Boolean).length; return { label: fmtShort(d), full: fmtDay(d), a, b: ids.size - a, dim: d === 0 }; }), { height: 200 });
+      }
+
+      /* ================= STRATEGIES ================= */
+      let stSel = "urg", dirty = new Set();
+      const isoOf = (d) => { const x = dayDate(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
+      const daysAgo = (iso) => Math.round((dayDate(0) - new Date(`${iso}T00:00`)) / 864e5);
+      const stRange = { mode: "30", from: isoOf(29), to: isoOf(0) };
+      // Returns [newest, oldest] as days-ago, or null when the custom dates are unusable.
+      function stWindow() {
+        if (stRange.mode !== "custom") return [0, Number(stRange.mode) - 1];
+        if (!stRange.from || !stRange.to) return null;
+        const a = daysAgo(stRange.to), b = daysAgo(stRange.from);
+        return b < a ? null : [Math.max(0, a), Math.min(HISTORY - 1, b)];
+      }
+      function stLabel(win) {
+        if (!win) return "Pick a From date on or before the To date";
+        const [a, b] = win, n = b - a + 1;
+        if (stRange.mode === "1") return `Today, ${fmtShort(0)}`;
+        if (stRange.mode !== "custom") return `Last ${n} days · ${fmtShort(b)} – ${fmtShort(a)}`;
+        return n === 1 ? fmtDay(a) : `${fmtShort(b)} – ${fmtShort(a)} · ${n} days`;
+      }
+      function renderStrategies() {
+        document.querySelectorAll("#st-range button").forEach((b) => b.classList.toggle("is-on", b.dataset.r === stRange.mode));
+        $("st-custom").hidden = stRange.mode !== "custom";
+        $("st-from").value = stRange.from; $("st-to").value = stRange.to;
+        $("st-from").min = $("st-to").min = isoOf(HISTORY - 1);
+        $("st-from").max = $("st-to").max = isoOf(0);
+        const win = stWindow();
+        $("st-span").textContent = stLabel(win);
+        $("st-span").classList.toggle("bad", !win);
+        const inWin = (a) => win && a.d >= win[0] && a.d <= win[1];
+        $("st-list").innerHTML = STRATS.map((s) => { const m = settledStats(ALERTS.filter((a) => a.strat === s.k && inWin(a))); return `<button class="s-item ${stSel === s.k ? "is-on" : ""}" data-st="${s.k}" data-tip="${tipRows(s.s, [["Hit rate", pct1(m.rate)], ["Hits / settled", `${m.k} / ${m.n}`], ["Fired", m.total]])}"><span class="onoff ${s.on ? "" : "off"}"></span><span><span class="strat-tag">${s.s}</span></span><span class="st num"><b>${pct(m.rate)}</b>n ${m.n}</span></button>`; }).join("");
+        const s = SBY[stSel];
+        const w = settledStats(ALERTS.filter((a) => a.strat === s.k && inWin(a)));
+        const periodName = !win ? "No period" : stRange.mode === "1" ? "Today" : stRange.mode === "custom" ? stLabel(win).split(" · ")[0] : `Last ${stRange.mode} days`;
+        const field = (id, label, val, help) => `<label class="field ${dirty.has(id) ? "dirty" : ""}">${label}<input type="number" data-f="${id}" value="${val}" data-orig="${val}" />${help ? `<span class="help">${help}</span>` : ""}</label>`;
+        const sl = (id, label, val) => `<div class="slider"><span>${label}</span><input type="range" min="0" max="2" step="0.05" value="${val}" data-f="${id}" data-orig="${val}" /><span class="num">${Number(val).toFixed(2)}</span></div>`;
+        $("st-form").innerHTML = `
+          <div class="card-head" style="padding-bottom:14px;border-bottom:1px solid var(--border)">
+            <span class="strat-tag" style="font-size:.95rem;padding:5px 12px">${s.s}</span>
+            <span class="sub">${periodName}: ${w.total} fired · ${pct(w.rate)} hit on ${w.n} settled</span>
+            <div class="right"><label class="toggle"><input type="checkbox" ${s.on ? "checked" : ""} data-f="enabled" data-orig="${s.on}" />Enabled</label><button class="link" data-go="results:${s.k}">See results →</button></div>
+          </div>
+          <div class="form-sec"><h3>When it fires</h3><p>Fire threshold, cooldown and the latest minute it may fire.</p><div class="fields">
+            ${field("thr", "Fire threshold", 72, "Fires when the value reaches this")}${field("cool", "Cooldown (min)", 12, "Wait before firing again on the same match")}${field("bypass", "Cooldown bypass Δ", 8, "Re-fire inside cooldown if value jumps this much")}${field("max1", "Latest minute, 1st half", 42)}${field("max2", "Latest minute, 2nd half", 85)}
+          </div></div>
+          <div class="form-sec"><h3>How it settles</h3><p>How an alert moves from Open to Hit or Miss.</p><div class="fields">
+            ${field("win", "Success window (min)", 15, "A goal inside this counts as a hit")}${field("buf", "Expiry buffer (min)", 2)}
+          </div><div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px"><label class="toggle"><input type="checkbox" checked />Team-specific (trigger side must score)</label><label class="toggle"><input type="checkbox" />Expire at half end</label><label class="toggle"><input type="checkbox" />Never expire</label></div></div>
+          <div class="form-sec"><h3>Formula</h3><p>Weights and extra conditions. Preview shows how many of the last 7 days' alerts would still fire.</p>
+            <div class="fields" style="margin-bottom:10px"><label class="field">Preset<select><option>Default</option><option>Aggressive</option><option>Late-game</option></select></label><label class="field">Save current as<input type="text" placeholder="preset name" /></label></div>
+            ${sl("w1", "Shots on target", 1.2)}${sl("w2", "Dangerous attacks", 0.85)}${sl("w3", "Possession", 0.3)}${sl("w4", "Corners", 0.55)}${sl("w5", "xG proxy", 1.4)}
+          </div>`;
+        updateSavebar();
+      }
+      /* ================= BOARD FILTERS ================= */
+      const SS_SAVED = { h1a: 30, h1b: 45, h2a: 70, h2b: 90, inj: true };
+      function renderSweet() {
+        const v = (id) => Number($(`ss-${id}`).value);
+        const cur = { h1a: v("h1a"), h1b: v("h1b"), h2a: v("h2a"), h2b: v("h2b"), inj: $("ss-inj").checked };
+        const half = (a, b, lo, hi, end) => {
+          const ok = a >= lo && b <= hi && a < b;
+          const left = ((clamp(a, lo, hi) - lo) / (hi - lo)) * 100, right = ((clamp(b, lo, hi) - lo) / (hi - lo)) * 100;
+          const ticks = [0, 15, 30, 45].map((t) => `<span class="ss-tick ${t === 0 ? "first" : ""}" style="left:${(t / 45) * 100}%">${lo + t}′</span>`).join("");
+          const toEnd = ok && b === end;
+          const xOn = toEnd && cur.inj;
+          return { ok, html: `<div class="ss-seg"><div class="ss-track">${ok ? `<span class="ss-win ${xOn ? "to-end" : ""}" style="left:${left}%;width:${right - left}%"></span>` : ""}${ticks}</div><div class="ss-x ${xOn ? "on" : ""}" data-tip="${esc(`<div class="tt">Injury time</div>${xOn ? `${end}′+x counts as inside the window` : "Not counted"}`)}"></div></div>` };
+        };
+        const a = half(cur.h1a, cur.h1b, 0, 45, 45), b = half(cur.h2a, cur.h2b, 45, 90, 90);
+        $("ss-line").innerHTML = `${a.html}<div class="ss-ht">HT</div>${b.html}`;
+        const sum = (ok, x, y, end, lo, hi) => ok ? `Shows matches from <b>${x}′</b> to <b>${y}′${cur.inj && y === end ? "+x" : ""}</b> · ${y - x} min window` : `Pick a start before the end, inside ${lo}′–${hi}′`;
+        $("ss-h1s").innerHTML = sum(a.ok, cur.h1a, cur.h1b, 45, 0, 45);
+        $("ss-h2s").innerHTML = sum(b.ok, cur.h2a, cur.h2b, 90, 45, 90);
+        $("ss-h1s").parentElement.classList.toggle("bad", !a.ok);
+        $("ss-h2s").parentElement.classList.toggle("bad", !b.ok);
+        const changed = Object.keys(SS_SAVED).some((k) => SS_SAVED[k] !== cur[k]);
+        $("ss-state").textContent = !a.ok || !b.ok ? "Fix the highlighted half to save" : changed ? "Unsaved changes" : "Saved";
+        $("ss-state").parentElement.classList.toggle("dirty", changed);
+        $("ss-save").disabled = !changed || !a.ok || !b.ok;
+        return cur;
+      }
+
+      function updateSavebar() { $("dirty-n").textContent = dirty.size; $("savebar").hidden = dirty.size === 0; }
+
+      /* ================= routing & events ================= */
+      const TITLES = { overview: ["", "Overview"], results: ["Insights", "Results"], visitors: ["Insights", "Visitors"], strategies: ["Strategy", "Strategies"], board: ["Strategy", "Board filters"], tips: ["Distribution", "Tips feed"], discord: ["Distribution", "Discord"] };
+      function render() {
+        for (const id of Object.keys(TITLES)) $(`p-${id}`).hidden = id !== state.page;
+        document.querySelectorAll(".nav-item[data-page]").forEach((b) => b.classList.toggle("is-on", b.dataset.page === state.page));
+        const [crumb, title] = TITLES[state.page];
+        $("crumb").textContent = crumb || "Today"; $("title").textContent = title;
+        $("range").style.display = state.page === "results" || state.page === "visitors" ? "" : "none";
+        $("live-chip").hidden = state.page !== "visitors";
+        $("live-badge").textContent = "7 live";
+        document.querySelectorAll("#range button").forEach((b) => b.classList.toggle("is-on", Number(b.dataset.days) === state.days));
+        if (state.page === "results") renderResults();
+        if (state.page === "visitors") renderVisitors();
+        if (state.page === "overview") renderOverview();
+        if (state.page === "strategies") renderStrategies();
+        if (state.page === "board") renderSweet();
+        balanceStrips();
+      }
+      function go(spec) {
+        const [page, strat] = spec.split(":");
+        state.page = page;
+        if (page === "results") state.strat = strat || null;
+        if (page === "strategies" && strat) stSel = strat;
+        try { history.replaceState(null, "", `#${page}`); } catch {}
+        render(); window.scrollTo(0, 0);
+      }
+      document.addEventListener("click", (e) => {
+        const t = e.target;
+        const nav = t.closest(".nav-item[data-page]"); if (nav) return go(nav.dataset.page);
+        const g = t.closest("[data-go]"); if (g) return go(g.dataset.go);
+        const r = t.closest("#range button"); if (r) { state.days = Number(r.dataset.days); return render(); }
+        const chip = t.closest("[data-strat]"); if (chip && state.page === "results") { const k = chip.dataset.strat || null; state.strat = state.strat === k ? null : k; return renderResults(); }
+        const ls = t.closest("#log-state button"); if (ls) { state.logState = ls.dataset.s; document.querySelectorAll("#log-state button").forEach((b) => b.classList.toggle("is-on", b === ls)); return renderResults(); }
+        const row = t.closest(".log-row"); if (row) { const id = Number(row.dataset.id); state.openRow = state.openRow === id ? null : id; return renderResults(); }
+        const vb = t.closest("#vis-by button"); if (vb) { state.visBy = vb.dataset.by; document.querySelectorAll("#vis-by button").forEach((b) => b.classList.toggle("is-on", b === vb)); return renderVisitors(); }
+        const sr = t.closest("#st-range button");
+        if (sr) {
+          if (sr.dataset.r === "custom" && stRange.mode !== "custom") { const win = stWindow(); stRange.from = isoOf(win[1]); stRange.to = isoOf(win[0]); }
+          stRange.mode = sr.dataset.r;
+          return renderStrategies();
+        }
+        const si = t.closest("[data-st]"); if (si) { stSel = si.dataset.st; dirty.clear(); return renderStrategies(); }
+        if (t.id === "discard") { dirty.clear(); return renderStrategies(); }
+        if (t.id === "save") { dirty.clear(); updateSavebar(); }
+        if (t.id === "ss-save") { Object.assign(SS_SAVED, renderSweet()); renderSweet(); }
+      });
+      document.addEventListener("input", (e) => {
+        const t = e.target;
+        if (t.id === "log-q") { state.logQ = t.value; return renderResults(); }
+        if (t.id === "minN") { state.minN = t.checked; return renderResults(); }
+        if (t.id && t.id.startsWith("ss-")) return renderSweet();
+        if (t.id === "st-from" || t.id === "st-to") { stRange[t.id === "st-from" ? "from" : "to"] = t.value; return renderStrategies(); }
+        if (t.dataset && t.dataset.f) {
+          const now = t.type === "checkbox" ? String(t.checked) : t.value;
+          if (now !== t.dataset.orig) dirty.add(t.dataset.f); else dirty.delete(t.dataset.f);
+          if (t.type === "range") t.nextElementSibling.textContent = Number(t.value).toFixed(2);
+          t.closest(".field")?.classList.toggle("dirty", dirty.has(t.dataset.f));
+          updateSavebar();
+        }
+      });
+      // Fit as many stats per row as the width allows, then even the rows out (6 -> 3 + 3, never 5 + 1).
+      function balanceStrips() {
+        document.querySelectorAll(".kpis").forEach((el) => {
+          const n = el.children.length;
+          if (!n || !el.clientWidth) return;
+          const rows = Math.ceil(n / Math.max(1, Math.floor(el.clientWidth / 140)));
+          el.style.setProperty("--cols", Math.ceil(n / rows));
+        });
+      }
+      let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(render, 120); });
+      const fromHash = location.hash.slice(1);
+      if (TITLES[fromHash]) state.page = fromHash;
+      render();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Floating live-visitors - 4 reworks</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Sora:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #071018;
+        --surface: #0c1520;
+        --border: rgba(232, 220, 196, 0.1);
+        --text: #f2ebe0;
+        --text-2: #b7b0a3;
+        --muted: #7d776c;
+        --accent: #3dd6c6;
+        --font-display: "Fraunces", Georgia, serif;
+        --font-body: "Sora", sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: var(--font-body);
+        background: var(--bg);
+      }
+      main { max-width: 980px; margin: 0 auto; padding: 2.2rem 1.4rem 4rem; }
+      .intro h1 { font-family: var(--font-display); font-size: 1.4rem; font-weight: 650; margin: 0 0 0.4rem; }
+      .intro p { color: var(--text-2); font-size: 0.86rem; line-height: 1.55; max-width: 42rem; margin: 0 0 2.2rem; }
+
+      .variant { margin-bottom: 2.6rem; }
+      .kicker { margin: 0 0 0.5rem; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-family: var(--font-mono); }
+      .kicker b { color: var(--accent); }
+      .blurb { margin: 0 0 0.9rem; color: var(--text-2); font-size: 0.82rem; line-height: 1.5; max-width: 40rem; }
+
+      /* fake board behind the pill so it reads "floating over content" */
+      .frame {
+        border: 1px solid var(--border);
+        border-radius: 0.6rem;
+        background:
+          repeating-linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.02) 0px,
+            rgba(255, 255, 255, 0.02) 2.1rem,
+            rgba(255, 255, 255, 0.045) 2.1rem,
+            rgba(255, 255, 255, 0.045) 4.2rem
+          ),
+          var(--surface);
+        height: 9.5rem;
+        position: relative;
+        overflow: hidden;
+      }
+      .frame::before {
+        content: "live board rows";
+        position: absolute;
+        top: 0.5rem;
+        left: 0.7rem;
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 0.6rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      /* A: overlapping avatar bubbles */
+      .avatars {
+        position: absolute;
+        bottom: 0.8rem;
+        right: 0.9rem;
+        display: inline-flex;
+        align-items: center;
+      }
+      .avatar {
+        width: 1.7rem;
+        height: 1.7rem;
+        border-radius: 50%;
+        background: var(--surface);
+        border: 1.5px solid var(--bg);
+        display: grid;
+        place-items: center;
+        font-size: 0.82rem;
+        margin-left: -0.5rem;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+      }
+      .avatar:first-child { margin-left: 0; }
+      .avatar.more {
+        background: var(--text);
+        color: #071018;
+        font-family: var(--font-mono);
+        font-size: 0.6rem;
+        font-weight: 600;
+      }
+      .avatars-caption {
+        position: absolute;
+        bottom: -1.1rem;
+        right: 0;
+        white-space: nowrap;
+        color: var(--muted);
+        font-family: var(--font-mono);
+        font-size: 0.6rem;
+      }
+
+      /* B: ghost / no chrome */
+      .ghost {
+        position: absolute;
+        bottom: 0.9rem;
+        right: 1rem;
+        display: inline-flex;
+        align-items: baseline;
+        gap: 0.4rem;
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        color: var(--muted);
+      }
+      .ghost .n { color: var(--text-2); font-weight: 500; }
+      .ghost .dot { display: inline-block; width: 0.3rem; height: 0.3rem; border-radius: 50%; background: var(--accent); margin-right: 0.3rem; vertical-align: middle; }
+      .ghost .flags { font-size: 0.72rem; letter-spacing: 0.08em; opacity: 0.85; }
+
+      /* C: stat tile */
+      .tile {
+        position: absolute;
+        bottom: 0.8rem;
+        right: 0.9rem;
+        background: rgba(12, 21, 32, 0.92);
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        padding: 0.45rem 0.7rem;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+        text-align: right;
+      }
+      .tile .count { font-family: var(--font-display); font-size: 0.85rem; font-weight: 650; color: var(--text); line-height: 1; }
+      .tile .flags { margin-top: 0.3rem; font-size: 0.8rem; letter-spacing: 0.1em; }
+
+      /* D: flag-first row with badge */
+      .flagrow {
+        position: absolute;
+        bottom: 0.9rem;
+        right: 1rem;
+        display: inline-flex;
+        align-items: center;
+      }
+      .flagrow .flag {
+        width: 1.6rem;
+        height: 1.6rem;
+        border-radius: 50%;
+        background: var(--surface);
+        border: 1.5px solid var(--bg);
+        display: grid;
+        place-items: center;
+        font-size: 0.85rem;
+        margin-left: -0.45rem;
+        position: relative;
+      }
+      .flagrow .flag:first-child { margin-left: 0; }
+      .flagrow .badge {
+        position: absolute;
+        top: -0.35rem;
+        left: -0.35rem;
+        background: var(--accent);
+        color: #071018;
+        font-family: var(--font-mono);
+        font-size: 0.52rem;
+        font-weight: 700;
+        border-radius: 999px;
+        padding: 0.05rem 0.28rem;
+        line-height: 1.3;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="intro">
+        <h1>Floating live-visitors, reworked - 4 takes</h1>
+        <p>
+          Keeping the detached bottom-right placement from #5, trying different
+          visual languages instead of the chat-widget pill. Same mock data (14
+          live, led by UK, Italy, Spain) in each.
+        </p>
+      </div>
+
+      <section class="variant">
+        <p class="kicker">A &middot; <b>Overlapping avatar bubbles</b></p>
+        <p class="blurb">Classic "people online" social-proof treatment - small circles, each holding one flag, overlapping like stacked avatars, with a "+N" bubble folding in the rest. Reads as people, not a stat.</p>
+        <div class="frame">
+          <div class="avatars">
+            <span class="avatar">&#127468;&#127463;</span>
+            <span class="avatar">&#127470;&#127481;</span>
+            <span class="avatar">&#127466;&#127480;</span>
+            <span class="avatar more">+11</span>
+          </div>
+          <span class="avatars-caption">14 watching live</span>
+        </div>
+      </section>
+
+      <section class="variant">
+        <p class="kicker">B &middot; <b>Ghost - no chrome at all</b></p>
+        <p class="blurb">Drops the card/pill background entirely - just a live dot, a number, and flags floating directly over the page, same weight as a caption. The most "discreet" of all five original options, at the cost of being easy to miss entirely.</p>
+        <div class="frame">
+          <div class="ghost"><span class="dot"></span><span class="n">14</span> live <span class="flags">&#127468;&#127463;&#127470;&#127481;&#127466;&#127480;</span></div>
+        </div>
+      </section>
+
+      <section class="variant">
+        <p class="kicker">C &middot; <b>Small stat tile</b></p>
+        <p class="blurb">A compact card (not pill-shaped) with the count set large like a stat, flags as a secondary row underneath. Reads as "a number worth knowing" rather than "a notification."</p>
+        <div class="frame">
+          <div class="tile">
+            <div class="count">14</div>
+            <div class="flags">&#127468;&#127463;&#127470;&#127481;&#127466;&#127480;&#127465;&#127466;</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="variant">
+        <p class="kicker">D &middot; <b>Flag-first with count badge</b></p>
+        <p class="blurb">Leads with the flags (bigger, overlapping circles) and folds the total count into a small badge on the first one instead of writing "14" as text anywhere. No "live" label at all - the dot/badge styling does that work.</p>
+        <div class="frame">
+          <div class="flagrow">
+            <span class="flag">&#127468;&#127463;<span class="badge">14</span></span>
+            <span class="flag">&#127470;&#127481;</span>
+            <span class="flag">&#127466;&#127480;</span>
+            <span class="flag">&#127465;&#127466;</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

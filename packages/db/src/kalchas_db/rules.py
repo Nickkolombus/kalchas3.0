@@ -36,9 +36,19 @@ def list_strategy_rules(dsn: str) -> list[dict[str, Any]]:
         return [dict(r) for r in rows]
 
 
+GET_TEAM_SPECIFIC_FOR_UPDATE = text(
+    """
+    SELECT team_specific FROM strategy_rules WHERE strategy_slot = :slot FOR UPDATE
+    """
+)
+
+
 def set_team_specific(dsn: str, slot: int, team_specific: bool) -> dict[str, Any] | None:
+    from kalchas_db.settings import record_config_change
+
     eng = sync_engine(dsn)
     with eng.begin() as conn:
+        before = conn.execute(GET_TEAM_SPECIFIC_FOR_UPDATE, {"slot": slot}).mappings().first()
         row = (
             conn.execute(
                 UPDATE_TEAM_SPECIFIC,
@@ -47,4 +57,12 @@ def set_team_specific(dsn: str, slot: int, team_specific: bool) -> dict[str, Any
             .mappings()
             .first()
         )
+        if row is not None:
+            record_config_change(
+                conn,
+                kind="rule",
+                slot=slot,
+                before={"team_specific": bool(before["team_specific"])} if before else None,
+                after={"team_specific": bool(row["team_specific"])},
+            )
         return dict(row) if row else None

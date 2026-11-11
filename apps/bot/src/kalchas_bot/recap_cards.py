@@ -12,13 +12,14 @@ from ``texts``, which the admin has edited and approved.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Mapping, Sequence
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from kalchas_core.recap import normalize_texts
+from kalchas_core.recap import QUICK, normalize_texts
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from kalchas_bot import banner
@@ -349,9 +350,10 @@ def _mark(size: float) -> Image.Image | None:
 
 def _headline(card: Card, words: Mapping[str, str], *, x: float, y: float, width: float) -> float:
     number = words.get("headline_number", "")
-    size = card.fit(number, width=width, size=72, weight=800, smallest=40)
-    card.text((x, y), number, size=size, weight=800, fill=GOAL)
-    y += size * 1.04
+    if number.strip():  # an emptied field leaves no gap
+        size = card.fit(number, width=width, size=72, weight=800, smallest=40)
+        card.text((x, y), number, size=size, weight=800, fill=GOAL)
+        y += size * 1.04
     return card.wrap(
         (x, y),
         words.get("headline_rest", ""),
@@ -591,12 +593,9 @@ def _calls(data: Mapping[str, Any], words: Mapping[str, str]) -> Card:
         )
         gap = int(call.get("gap") or 0)
         flags = call.get("flags") or [call["minute"]]
-        big = "Same min" if gap == 0 else f"{gap} min"
-        label = (
-            "as the signal"
-            if gap == 0
-            else ("after the last signal" if len(flags) > 1 else "after the signal")
-        )
+        # A goal inside a minute reads as "too fast to act on"; under 2 min reads as quick.
+        big = "Under 2 min" if gap <= QUICK else f"{gap} min"
+        label = "after the last signal" if len(flags) > 1 else "after the signal"
         by = end + 22
         big_w = card.text((x0 + 20, by), big, size=32, weight=800, fill=GOAL)
         card.text((x0 + 20 + big_w + 8, by + 15), label, size=14, fill=INK2)
@@ -752,22 +751,25 @@ def _daily(data: Mapping[str, Any], words: Mapping[str, str]) -> Card:
         (left, y + 8), words.get("cover_line", ""), width=lw, size=18, fill=INK2, max_lines=3
     )
 
-    settled = int(data["goals"]) + int(data["misses"])
     ring_y = max(y + 24, 430.0)
-    _ring(card, (left + 56, ring_y + 56), 46, int(data["goals"]) / settled if settled else 0)
+    ring_text = words.get("ring_value", "").strip()
+    text_x = left
+    if ring_text:
+        _ring(card, (left + 56, ring_y + 56), 46, ring_text)
+        text_x = left + 132
     card.wrap(
-        (left + 132, ring_y + 18),
+        (text_x, ring_y + 18),
         words.get("fastest_title", ""),
-        width=lw - 132,
+        width=left + lw - text_x,
         size=19,
         weight=800,
         leading=1.2,
         max_lines=2,
     )
     card.wrap(
-        (left + 132, ring_y + 46),
+        (text_x, ring_y + 46),
         words.get("fastest_line", ""),
-        width=lw - 132,
+        width=left + lw - text_x,
         size=15,
         fill=INK2,
         leading=1.35,
@@ -841,10 +843,26 @@ def _daily(data: Mapping[str, Any], words: Mapping[str, str]) -> Card:
     return card
 
 
-def _ring(card: Card, center: tuple[float, float], radius: float, share: float) -> None:
+def ring_share(text: str) -> float:
+    """How full the ring is, read from what the admin typed: "55%", "17/31" or "0.55"."""
+    numbers = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", text)]
+    if not numbers:
+        return 0.0
+    if "/" in text and len(numbers) >= 2 and numbers[1]:
+        share = numbers[0] / numbers[1]
+    elif "%" in text or numbers[0] > 1:
+        share = numbers[0] / 100
+    else:
+        share = numbers[0]
+    return max(0.0, min(share, 1.0))
+
+
+def _ring(card: Card, center: tuple[float, float], radius: float, text: str) -> None:
     cx, cy = center
+    share = ring_share(text)
     box = [_s(cx - radius), _s(cy - radius), _s(cx + radius), _s(cy + radius)]
     card.draw.ellipse(box, outline=TRACK, width=_s(12))
     if share > 0:
-        card.draw.arc(box, start=-90, end=-90 + 360 * min(share, 1.0), fill=GOAL, width=_s(12))
-    card.text((cx, cy), f"{round(share * 100)}%", size=22, weight=800, anchor="mm")
+        card.draw.arc(box, start=-90, end=-90 + 360 * share, fill=GOAL, width=_s(12))
+    size = card.fit(text, width=radius * 1.5, size=22, weight=800, smallest=12)
+    card.text((cx, cy), text, size=size, weight=800, anchor="mm")

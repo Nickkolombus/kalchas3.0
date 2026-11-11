@@ -111,3 +111,32 @@ def test_kickoff_home_away_prefers_nested() -> None:
     ) == (1.29, 11.0)
     assert kickoff_home_away({"home": 1.50, "away": 6.0}) == (1.50, 6.0)
     assert kickoff_home_away(None) == (None, None)
+
+
+def test_fresh_live_line_keeps_recent_stamped_lines_only() -> None:
+    from datetime import UTC, datetime
+
+    from kalchas_core.odds import LIVE_ODDS_MAX_AGE_SEC, fresh_live_line
+
+    now = datetime(2026, 11, 3, 21, 24, 10, tzinfo=UTC)
+    line = {"home": 3.1, "draw": 2.0, "away": 4.8}
+
+    def record(stamp: str | None) -> dict:
+        live = dict(line)
+        if stamp is not None:
+            live["fetched_at"] = stamp
+        return {"live": live}
+
+    assert fresh_live_line(record("2026-11-03T21:23:00+00:00"), now=now) is not None
+    # Naive stamps are read as UTC.
+    assert fresh_live_line(record("2026-11-03T21:23:00"), now=now) is not None
+    # Just inside / outside the age limit.
+    assert LIVE_ODDS_MAX_AGE_SEC == 180
+    assert fresh_live_line(record("2026-11-03T21:21:10Z"), now=now) is not None
+    assert fresh_live_line(record("2026-11-03T21:21:09Z"), now=now) is None
+    # Unstamped, unparseable, or from the future beyond clock skew.
+    assert fresh_live_line(record(None), now=now) is None
+    assert fresh_live_line(record("yesterday"), now=now) is None
+    assert fresh_live_line(record("2026-11-03T21:30:00Z"), now=now) is None
+    assert fresh_live_line({"kickoff": line}, now=now) is None
+    assert fresh_live_line(None, now=now) is None

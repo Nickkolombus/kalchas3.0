@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any
 
 from kalchas_core.alert_outcomes.score import parse_score
+from kalchas_core.odds import live_line_fetched_at
 from kalchas_core.sweet_spot import SweetSpotWindows, in_sweet_spot
 
 BOARD_KEYS: tuple[str, ...] = (
@@ -153,9 +154,13 @@ def _kickoff_odds(raw: Any) -> dict[str, float | None]:
 
 
 def _live_odds(raw: Any) -> dict[str, float | None]:
+    """Live 1X2 stored on the alert. Only stamped lines count: alerts written
+    before lines carried ``fetched_at`` often hold prices many minutes old."""
     if not isinstance(raw, Mapping):
         return {"home": None, "away": None}
     live = raw.get("live") if isinstance(raw.get("live"), Mapping) else {}
+    if live_line_fetched_at(dict(live)) is None:
+        return {"home": None, "away": None}
     return {
         "home": _finite(live.get("home")),
         "away": _finite(live.get("away")),

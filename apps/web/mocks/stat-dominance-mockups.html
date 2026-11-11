@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stat dominance steps</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #071018;
+        --row: #101a26;
+        --row-b: #13202e;
+        --border: rgba(232, 220, 196, 0.12);
+        --text: #f2ebe0;
+        --stat: #b7b0a3;
+        --muted: #7d776c;
+        --mark: #cbb892;
+        --font: "Sora", sans-serif;
+        --mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: var(--font);
+        background:
+          radial-gradient(900px 480px at 12% -8%, rgba(61, 214, 198, 0.1), transparent 55%),
+          var(--bg);
+      }
+      main { max-width: 980px; margin: 0 auto; padding: 2.2rem 1.4rem 3rem; }
+      .kicker {
+        margin: 0 0 0.35rem;
+        font-size: 0.68rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      h1 { margin: 0; font-size: 1.55rem; font-weight: 500; letter-spacing: -0.02em; }
+      .lead { max-width: 42rem; margin: 0.7rem 0 0; color: var(--stat); font-size: 0.92rem; line-height: 1.5; }
+      .rules { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; margin-top: 1.3rem; }
+      .rule {
+        border: 1px solid var(--border);
+        border-radius: 0.45rem;
+        padding: 0.65rem 0.7rem 0.7rem;
+        background: rgba(12, 21, 32, 0.86);
+      }
+      .rule b { display: block; font-size: 0.92rem; font-weight: 600; margin-bottom: 0.2rem; }
+      .rule span { display: block; color: var(--muted); font-size: 0.75rem; line-height: 1.35; }
+      .swatch { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 2px; margin-right: 0.3rem; vertical-align: -1px; }
+      table { width: 100%; margin-top: 0.9rem; border-collapse: separate; border-spacing: 0; font-family: var(--mono); font-size: 0.78rem; }
+      th, td { border-bottom: 1px solid var(--border); }
+      th {
+        text-align: center;
+        font-weight: 500;
+        color: var(--muted);
+        font-size: 0.66rem;
+        letter-spacing: 0.04em;
+        padding: 0.45rem 0.3rem;
+      }
+      td { padding: 0.45rem 0.3rem; text-align: center; background: var(--row); }
+      tr:nth-child(even) td { background: var(--row-b); }
+      td.team, th.team { text-align: left; font-family: var(--font); width: 11rem; }
+      .name { font-weight: 600; font-size: 0.82rem; }
+      .num { color: var(--stat); }
+      .num.s39 { color: #918e86; }
+      .num.s48 { color: #85837e; }
+      .num.s83 { color: #4a4e52; }
+      .note { margin: 0.9rem 0 0; color: var(--muted); font-size: 0.78rem; line-height: 1.45; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="kicker">Stats</p>
+      <h1>The smaller number steps back</h1>
+      <p class="lead">
+        Same ladder as the price, measured on that column only. The leader stays the normal stat colour.
+        Cards stay as they are. A column with fewer than 4 combined actions does not step, so 1 against 0 early in the match stays quiet.
+      </p>
+      <section class="rules">
+        <div class="rule"><b>No step</b><span>Leader has under 60% of the pair.</span></div>
+        <div class="rule"><b><i class="swatch" style="background:#918e86"></i>39%</b><span>60% to 70% of the pair. About 1.5 to 2.3 times.</span></div>
+        <div class="rule"><b><i class="swatch" style="background:#85837e"></i>48%</b><span>70% to 80%. About 2.3 to 4 times.</span></div>
+        <div class="rule"><b><i class="swatch" style="background:#4a4e52"></i>83%</b><span>80% or more. About 4 times, or the 8 against 1 case.</span></div>
+      </section>
+      <table>
+        <thead>
+          <tr>
+            <th class="team">Match</th>
+            <th>SOT</th><th>SOFF</th><th>ATT</th><th>DA</th><th>CRN</th><th>POS</th><th>YC</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p class="note">
+        Stats already use a quieter ink than the names, so this 83% step is much fainter than the 83% on a name.
+        Possession uses the same shares. Yellow and red cards never step.
+      </p>
+    </main>
+    <script>
+      const COUNT = ["sot", "soff", "att", "da", "crn"];
+      const rows = [
+        {
+          name: "Inter",
+          other: "Lecce",
+          cells: { sot: [8, 1], soff: [3, 2], att: [61, 40], da: [34, 5], crn: [7, 2], pos: [71, 29], yc: [1, 2] },
+        },
+        {
+          name: "Atalanta",
+          other: "Venezia",
+          cells: { sot: [4, 3], soff: [2, 2], att: [44, 39], da: [18, 15], crn: [3, 3], pos: [54, 46], yc: [2, 1] },
+        },
+      ];
+
+      function step(key, pair) {
+        const [home, away] = pair;
+        if (key === "yc" || key === "rc") return ["", ""];
+        const total = home + away;
+        if (key !== "pos" && total < 4) return ["", ""];
+        if (total <= 0) return ["", ""];
+        const share = Math.max(home, away) / total;
+        if (share < 0.6 || home === away) return ["", ""];
+        const cls = share >= 0.8 ? "s83" : share >= 0.7 ? "s48" : "s39";
+        return home > away ? ["", cls] : [cls, ""];
+      }
+
+      function cell(key, pair) {
+        const [hs, as] = step(key, pair);
+        return `<td><div class="num ${hs}">${pair[0]}</div><div class="num ${as}">${pair[1]}</div></td>`;
+      }
+
+      document.getElementById("rows").innerHTML = rows
+        .map((row) => {
+          const keys = ["sot", "soff", "att", "da", "crn", "pos", "yc"];
+          return `<tr>
+            <td class="team"><div class="name">${row.name}</div><div class="name">${row.other}</div></td>
+            ${keys.map((key) => cell(key, row.cells[key])).join("")}
+          </tr>`;
+        })
+        .join("");
+    </script>
+  </body>
+</html>

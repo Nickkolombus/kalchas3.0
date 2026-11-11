@@ -384,8 +384,7 @@ def apply_preset(request: Request, body: WeightPresetIn) -> dict[str, Any]:
         get_saved_preset_bundle,
         list_weight_overrides,
         replace_strategy_conditions,
-        reset_weights,
-        upsert_weight,
+        replace_weights,
     )
 
     dsn = _dsn()
@@ -398,12 +397,7 @@ def apply_preset(request: Request, body: WeightPresetIn) -> dict[str, Any]:
         if saved is None:
             raise HTTPException(status_code=400, detail=f"unknown preset {body.preset}")
         values, conditions = saved
-    reset_weights(dsn, body.strategy)
-    for key, value in values.items():
-        spec = spec_for(body.strategy, key)
-        if spec is None:
-            continue
-        upsert_weight(dsn, body.strategy, key, spec.clamp(float(value)))
+    replace_weights(dsn, body.strategy, _clamp_weight_map(body.strategy, values))
     if conditions is not None:
         slot = SLOT_BY_KEY.get(body.strategy)
         if slot is not None:
@@ -462,9 +456,8 @@ def save_preset(request: Request, body: WeightPresetSaveIn) -> dict[str, Any]:
         list_saved_presets,
         list_weight_overrides,
         replace_strategy_conditions,
-        reset_weights,
+        replace_weights,
         upsert_saved_preset,
-        upsert_weight,
     )
 
     dsn = _dsn()
@@ -474,9 +467,7 @@ def save_preset(request: Request, body: WeightPresetSaveIn) -> dict[str, Any]:
         name,
         {"weights": values, "conditions": extra},
     )
-    reset_weights(dsn, body.strategy)
-    for key, value in values.items():
-        upsert_weight(dsn, body.strategy, key, value)
+    replace_weights(dsn, body.strategy, values)
     slot = SLOT_BY_KEY.get(body.strategy)
     if slot is not None:
         replace_strategy_conditions(dsn, slot, extra)

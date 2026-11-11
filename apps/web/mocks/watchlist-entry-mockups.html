@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Watchlist picks entry v3</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Sora:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #071018;
+        --surface: #0c1520;
+        --border: rgba(232, 220, 196, 0.1);
+        --text: #f2ebe0;
+        --text-2: #b7b0a3;
+        --muted: #7d776c;
+        --accent: #3dd6c6;
+        --strong: #2fd39a;
+        --loss: #e0685f;
+        --font-display: "Fraunces", Georgia, serif;
+        --font-body: "Sora", sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; color: var(--text); font-family: var(--font-body); background: var(--bg); }
+      main { max-width: 1120px; margin: 0 auto; padding: 2.2rem 1.4rem 4rem; }
+      .intro h1 { font-family: var(--font-display); font-size: 1.5rem; font-weight: 650; margin: 0 0 0.4rem; }
+      .intro p { color: var(--text-2); font-size: 0.86rem; line-height: 1.55; max-width: 48rem; margin: 0 0 0.5rem; }
+      .intro .note { color: var(--muted); font-size: 0.78rem; margin-bottom: 1.6rem; }
+      .decided { display: grid; gap: 0.35rem; margin: 0 0 1rem; padding: 0.9rem 1.1rem; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); font-size: 0.82rem; color: var(--text-2); max-width: 52rem; }
+      .decided b { color: var(--text); font-weight: 600; }
+      h2.part { font-family: var(--font-display); font-weight: 650; font-size: 1.15rem; margin: 2.8rem 0 0.4rem; }
+      p.part-blurb { color: var(--text-2); font-size: 0.84rem; line-height: 1.55; max-width: 50rem; margin: 0 0 1.2rem; }
+      .frame { border: 1px solid var(--border); border-radius: 12px; padding: 1.3rem 1.5rem; background: linear-gradient(180deg, #0a1823, #071018); }
+      .kicker { margin: 0 0 0.55rem; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); font-family: var(--font-mono); }
+      .kicker b { color: var(--accent); }
+      .ico { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+      /* ---- icons ---- */
+      .icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 1.2rem; }
+      .icon-card { display: grid; gap: 0.7rem; padding: 1rem; border-radius: 10px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border); }
+      .icon-big { color: var(--strong); }
+      .icon-big svg { width: 48px; height: 48px; }
+      .icon-card p { margin: 0; font-size: 0.74rem; color: var(--muted); line-height: 1.45; }
+      .sizes { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
+
+      /* ---- buttons ---- */
+      .btn { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.45rem 0.85rem; border-radius: 0.4rem; border: 1px solid transparent; background: var(--text); color: #071018; font-size: 0.78rem; font-weight: 600; text-decoration: none; white-space: nowrap; }
+      .btn span { font-weight: 400; color: #3d4a52; font-size: 0.68rem; }
+      .btn.paid { background: transparent; color: var(--text); border-color: var(--text); }
+      .btn.paid span { color: var(--muted); }
+      .wl { display: inline-grid; grid-template-columns: auto auto auto; align-items: center; gap: 0.1rem 0.55rem; padding: 0.36rem 0.75rem 0.36rem 0.6rem; border-radius: 0.4rem; border: 1px solid rgba(47, 211, 154, 0.38); background: rgba(47, 211, 154, 0.07); color: var(--text); text-decoration: none; min-height: 2.05rem; }
+      .wl .ic { grid-row: span 2; color: var(--strong); display: grid; }
+      .wl .ic svg { width: 18px; height: 18px; }
+      .wl b { font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+      .wl .arrow { grid-row: span 2; grid-column: 3; color: var(--text-2); }
+      .wl small { grid-column: 2; font-size: 0.68rem; color: var(--text-2); white-space: nowrap; }
+      .wl small i { font-style: normal; color: var(--strong); font-weight: 600; }
+      .wl.solo .ic, .wl.solo .arrow { grid-row: auto; }
+
+      .hero { display: flex; gap: 1.2rem; align-items: flex-start; }
+      .mark { width: 84px; height: 84px; border-radius: 50%; flex: none; background: radial-gradient(circle at 40% 35%, #6f7f72, #26343a); border: 2px solid rgba(232, 220, 196, 0.25); }
+      .brand { margin: 0; font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.24em; color: var(--accent); text-transform: uppercase; }
+      .hero h3 { margin: 0.2rem 0 0.4rem; font-family: var(--font-display); font-size: 1.85rem; font-weight: 650; }
+      .lede { margin: 0; max-width: 34rem; color: var(--text-2); font-size: 0.86rem; line-height: 1.5; }
+      .joins { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
+      .states { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.2rem; }
+      .state { border: 1px dashed var(--border); border-radius: 8px; padding: 0.85rem 1rem; }
+      .state p { margin: 0.5rem 0 0; font-size: 0.74rem; color: var(--muted); line-height: 1.45; }
+
+      /* ---- desktop board ---- */
+      .board { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.74rem; }
+      .board th { color: var(--muted); font-weight: 500; text-align: left; padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--border); }
+      .board td { padding: 0.55rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+      .board .num { text-align: center; }
+      .lg { color: var(--muted); font-size: 0.66rem; }
+      .score { font-weight: 600; font-size: 0.85rem; line-height: 1.65; }
+      .teams { font-family: var(--font-body); font-weight: 600; font-size: 0.82rem; line-height: 1.65; }
+      .teams div { display: flex; align-items: center; gap: 0.45rem; }
+      .crest { width: 16px; height: 16px; border-radius: 50%; background: #3a4752; flex: none; }
+      .kidx { background: rgba(230, 180, 80, 0.08); text-align: center; font-family: var(--font-display); font-size: 1.05rem; color: var(--text-2); }
+      .cell-wrap { position: relative; }
+      .wtag { display: inline-flex; align-items: center; gap: 0.3rem; margin-left: 0.4rem; padding: 0.05rem 0.4rem; border-radius: 4px; font-family: var(--font-body); font-size: 0.64rem; font-weight: 600; white-space: nowrap; color: var(--strong); background: rgba(47, 211, 154, 0.12); cursor: default; }
+      .wtag svg { width: 12px; height: 12px; }
+      .wtag .no { color: var(--loss); }
+      .pop { position: absolute; z-index: 3; left: 2.6rem; bottom: calc(100% - 0.4rem); width: 22rem; padding: 0.8rem 0.9rem; border-radius: 9px; background: #0f1a25; border: 1px solid rgba(232, 220, 196, 0.2); box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.55); font-family: var(--font-body); font-size: 0.78rem; line-height: 1.45; color: var(--text-2); }
+      .pop::after { content: ""; position: absolute; left: 4.6rem; bottom: -6px; width: 10px; height: 10px; background: #0f1a25; border-right: 1px solid rgba(232, 220, 196, 0.2); border-bottom: 1px solid rgba(232, 220, 196, 0.2); transform: rotate(45deg); }
+      .pop .k { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.3rem; }
+      .pop b { color: var(--text); font-weight: 600; }
+      .pop .now { margin-top: 0.55rem; padding-top: 0.55rem; border-top: 1px solid var(--border); }
+      .pop a { display: inline-block; margin-top: 0.55rem; color: var(--strong); font-weight: 600; text-decoration: none; }
+
+      /* ---- mobile replica (dense table) ---- */
+      .phones { display: flex; flex-wrap: wrap; gap: 2rem; align-items: flex-start; }
+      .phone-col { display: grid; gap: 0.6rem; }
+      .phone { width: 364px; height: 640px; border: 1px solid var(--border); border-radius: 22px; overflow: hidden; background: var(--bg); position: relative; font-size: 13px; }
+      .m-top { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.7rem; }
+      .m-top .logo { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #6f7f72, #26343a); }
+      .m-top b { font-family: var(--font-display); font-size: 1.05rem; }
+      .m-live { font-family: var(--font-mono); font-size: 0.6rem; color: var(--accent); border: 1px solid rgba(61, 214, 198, 0.4); border-radius: 999px; padding: 0.05rem 0.4rem; }
+      .m-top .here { margin-left: auto; font-family: var(--font-mono); font-size: 0.6rem; color: var(--muted); }
+      .m-top .join { background: var(--text); color: #071018; font-size: 0.68rem; font-weight: 600; border-radius: 999px; padding: 0.3rem 0.6rem; }
+      .m-strip { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.7rem; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: rgba(61, 214, 198, 0.05); font-size: 0.72rem; white-space: nowrap; overflow: hidden; }
+      .m-strip .k { font-family: var(--font-mono); font-size: 0.56rem; letter-spacing: 0.12em; color: var(--accent); }
+      .m-strip .t { overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+      .m-strip .t span { color: var(--text-2); font-weight: 400; }
+      .m-strip .more { margin-left: auto; font-family: var(--font-mono); font-size: 0.6rem; color: var(--muted); }
+      .m-strip.wls { background: rgba(47, 211, 154, 0.05); }
+      .m-strip.wls .k { color: var(--strong); display: inline-flex; align-items: center; gap: 0.3rem; }
+      .m-strip.wls .k svg { width: 12px; height: 12px; }
+      .m-tabs { display: flex; gap: 0.4rem; padding: 0.5rem 0.6rem; }
+      .m-tabs span { flex: 1; text-align: center; padding: 0.4rem 0; font-size: 0.72rem; color: var(--text-2); border-radius: 8px; }
+      .m-tabs span.on { background: #121d29; color: var(--text); font-weight: 600; }
+      .m-tabs .btn-i { flex: none; width: 2rem; border: 1px solid var(--border); }
+      table.m { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.66rem; }
+      table.m th { font-weight: 500; color: var(--muted); padding: 0.35rem 0.25rem; border-bottom: 1px solid var(--border); font-size: 0.58rem; text-align: center; }
+      table.m th:first-child { text-align: left; padding-left: 0.5rem; }
+      table.m td { padding: 0.3rem 0.25rem; border-bottom: 1px solid var(--border); text-align: center; color: var(--text-2); line-height: 1.55; }
+      table.m td.mt { text-align: left; padding-left: 0.5rem; position: relative; }
+      .mt-in { display: grid; grid-template-columns: 1.4rem 0.9rem minmax(0, 1fr); align-items: center; column-gap: 0.25rem; }
+      .flag { width: 12px; height: 8px; border-radius: 1px; background: linear-gradient(#74acdf 33%, #fff 33% 66%, #74acdf 66%); }
+      .flag.br { background: #229e45; }
+      .mn { color: var(--accent); font-size: 0.56rem; }
+      .tm { font-family: var(--font-body); font-weight: 600; font-size: 0.7rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 6.2rem; }
+      .gl { color: var(--text); font-weight: 600; }
+      td.k { font-family: var(--font-display); font-size: 0.95rem; background: rgba(230, 180, 80, 0.07); color: var(--text-2); }
+      td.u { background: rgba(61, 214, 198, 0.04); }
+      td.d5 { background: rgba(224, 104, 95, 0.05); }
+      td.d10 { background: rgba(230, 180, 80, 0.05); }
+      td.fb, td.ph { background: rgba(80, 140, 230, 0.07); }
+      /* marker variants */
+      tr.edge td.mt { box-shadow: inset 3px 0 0 var(--strong); }
+      .mspy { color: var(--strong); display: grid; }
+      .mspy svg { width: 11px; height: 11px; }
+      .m-nav { position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--border); background: #0a141d; padding: 0.35rem 0.3rem 0.45rem; }
+      .m-nav span { display: grid; justify-items: center; gap: 0.15rem; padding: 0.3rem 0; font-size: 0.62rem; color: var(--muted); border-radius: 8px; }
+      .m-nav span.on { color: var(--accent); background: rgba(61, 214, 198, 0.08); }
+      .m-nav span.wlt { color: var(--strong); }
+      .m-nav svg { width: 18px; height: 18px; }
+      .caption { font-size: 0.74rem; color: var(--muted); max-width: 364px; line-height: 1.45; margin: 0; }
+
+      /* overlay block */
+      .sheet { position: absolute; left: 0; right: 0; bottom: 0; top: 120px; background: #0c1520; border-top: 1px solid rgba(232, 220, 196, 0.2); border-radius: 16px 16px 0 0; padding: 0.9rem 1rem; }
+      .sheet .grab { width: 36px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.15); margin: 0 auto 0.8rem; }
+      .sheet h4 { margin: 0 0 0.2rem; font-size: 0.95rem; }
+      .sheet .sub { font-size: 0.7rem; color: var(--muted); margin-bottom: 0.9rem; font-family: var(--font-mono); }
+      .wlbox { border: 1px solid rgba(47, 211, 154, 0.35); background: rgba(47, 211, 154, 0.06); border-radius: 10px; padding: 0.75rem 0.8rem; font-size: 0.76rem; line-height: 1.45; color: var(--text-2); }
+      .wlbox .k { display: flex; align-items: center; gap: 0.35rem; font-family: var(--font-mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--strong); margin-bottom: 0.35rem; }
+      .wlbox .k svg { width: 12px; height: 12px; }
+      .wlbox b { color: var(--text); }
+      .wlbox a { display: inline-block; margin-top: 0.5rem; color: var(--strong); font-weight: 600; text-decoration: none; }
+      .rest { margin-top: 0.9rem; display: grid; gap: 0.4rem; }
+      .rest i { display: block; height: 2.2rem; border-radius: 8px; background: rgba(255, 255, 255, 0.03); }
+
+      /* wording table */
+      table.words { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+      table.words th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.7rem; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
+      table.words td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--border); color: var(--text-2); vertical-align: top; }
+      table.words td b { color: var(--text); font-weight: 600; }
+      table.words tr.change td { background: rgba(47, 211, 154, 0.04); }
+      .old { text-decoration: line-through; color: var(--muted); }
+      .pick-row { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1rem; }
+      .opt { flex: 1 1 14rem; border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.85rem; font-size: 0.78rem; color: var(--text-2); line-height: 1.45; }
+      .opt b { display: block; color: var(--text); margin-bottom: 0.2rem; }
+      .opt.rec { border-color: rgba(47, 211, 154, 0.45); }
+
+      @media (max-width: 760px) { .states { grid-template-columns: 1fr; } .hero { flex-direction: column; } }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden>
+      <defs>
+        <!-- S1: three-draw spyglass, eyepiece bottom-left to lens top-right -->
+        <symbol id="s1" viewBox="0 0 24 24">
+          <g transform="rotate(-35 12 12)">
+            <rect x="1.5" y="10.4" width="5" height="3.2" rx="0.8" />
+            <rect x="6.5" y="9.6" width="6" height="4.8" rx="0.8" />
+            <rect x="12.5" y="8.4" width="9" height="7.2" rx="1" />
+            <path d="M15.5 8.4v7.2" />
+          </g>
+        </symbol>
+        <!-- S2: S1 with a small star where it's pointing -->
+        <symbol id="s2" viewBox="0 0 24 24">
+          <g transform="rotate(-35 11 13)">
+            <rect x="0.5" y="11.4" width="4.5" height="3.2" rx="0.8" />
+            <rect x="5" y="10.6" width="5.5" height="4.8" rx="0.8" />
+            <rect x="10.5" y="9.6" width="8" height="6.8" rx="1" />
+          </g>
+          <path d="M20 2.5l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7z" />
+        </symbol>
+        <!-- S3: spyglass on a small tripod -->
+        <symbol id="s3" viewBox="0 0 24 24">
+          <g transform="rotate(-25 12 9)">
+            <rect x="2" y="7.6" width="3.2" height="2.8" rx="0.7" />
+            <rect x="5.2" y="6.6" width="15" height="4.8" rx="1" />
+            <path d="M16 6.6v4.8" />
+          </g>
+          <path d="M12 12.2l-4 9M12 12.2l4 9M12 12.2v9" />
+        </symbol>
+        <!-- S4: flat brass spyglass with bands -->
+        <symbol id="s4" viewBox="0 0 24 24">
+          <g transform="rotate(-15 12 12)">
+            <path d="M1.5 10.6h4.5v2.8H1.5z" />
+            <path d="M6 9.8h6v4.4H6z" />
+            <path d="M12 8.6l9.5-1.2v9.2L12 15.4z" />
+            <path d="M14.5 8.3v7.4M18 7.9v8.2" />
+          </g>
+        </symbol>
+      </defs>
+    </svg>
+
+    <main>
+      <div class="intro">
+        <h1>Watchlist picks, round three</h1>
+        <p>Pick a spyglass, the phone marker and the new wording for the "one side blanks" tag. The rest is settled.</p>
+        <p class="note">Sample matches, times and numbers.</p>
+      </div>
+
+      <div class="decided">
+        <span><b>Name:</b> Watchlist picks. <b>Second line:</b> "Coming up next" and the next strong watch still to kick off. None left today: just the name. Clicking opens today's list.</span>
+        <span><b>Main page:</b> no "worth a look", no results line. Tomorrow, past days and the calendar only inside the watchlist.</span>
+        <span><b>Board:</b> only strong watches get a mark. Desktop hover card floats <b>above</b> the row, over the board, without moving anything.</span>
+      </div>
+
+      <!-- ============================================================ ICON -->
+      <h2 class="part">1 · The spyglass</h2>
+      <p class="part-blurb">Four drawings, each at full size, on the button and at board-tag size (12px), which is where it has to stay readable.</p>
+      <div class="frame">
+        <div class="icons">
+          <div class="icon-card">
+            <p class="kicker"><b>S1 · my pick</b> · three-draw spyglass</p>
+            <div class="icon-big"><svg class="ico"><use href="#s1" /></svg></div>
+            <div class="sizes">
+              <a class="wl solo"><span class="ic"><svg class="ico"><use href="#s1" /></svg></span><b>Watchlist picks</b><span class="arrow">→</span></a>
+              <span class="wtag"><svg class="ico"><use href="#s1" /></svg>Both score: Yes</span>
+            </div>
+            <p>The classic sailor's spyglass, drawn out. Clean at every size.</p>
+          </div>
+          <div class="icon-card">
+            <p class="kicker">S2 · spyglass and star</p>
+            <div class="icon-big"><svg class="ico"><use href="#s2" /></svg></div>
+            <div class="sizes">
+              <a class="wl solo"><span class="ic"><svg class="ico"><use href="#s2" /></svg></span><b>Watchlist picks</b><span class="arrow">→</span></a>
+              <span class="wtag"><svg class="ico"><use href="#s2" /></svg>Both score: Yes</span>
+            </div>
+            <p>Looking at something that stands out. The star blurs a little at tag size.</p>
+          </div>
+          <div class="icon-card">
+            <p class="kicker">S3 · on a tripod</p>
+            <div class="icon-big"><svg class="ico"><use href="#s3" /></svg></div>
+            <div class="sizes">
+              <a class="wl solo"><span class="ic"><svg class="ico"><use href="#s3" /></svg></span><b>Watchlist picks</b><span class="arrow">→</span></a>
+              <span class="wtag"><svg class="ico"><use href="#s3" /></svg>Both score: Yes</span>
+            </div>
+            <p>Reads as a telescope more than a spyglass. Taller, so it sits less neatly in a tag.</p>
+          </div>
+          <div class="icon-card">
+            <p class="kicker">S4 · banded brass</p>
+            <div class="icon-big"><svg class="ico"><use href="#s4" /></svg></div>
+            <div class="sizes">
+              <a class="wl solo"><span class="ic"><svg class="ico"><use href="#s4" /></svg></span><b>Watchlist picks</b><span class="arrow">→</span></a>
+              <span class="wtag"><svg class="ico"><use href="#s4" /></svg>Both score: Yes</span>
+            </div>
+            <p>Flatter, flared lens end, old-brass feel. Close to the seer avatar's style.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================ BUTTON -->
+      <h2 class="part">2 · The button</h2>
+      <div class="frame">
+        <div class="hero">
+          <div class="mark"></div>
+          <div>
+            <p class="brand">Kalchas</p>
+            <h3>Live Match Intelligence</h3>
+            <p class="lede">Live board of pressure and goal signals, free on this site. Free Telegram: Mon-Thu GMT, one alert per hour. Every fire goes to the full feed.</p>
+            <div class="joins">
+              <a class="btn">Join free alerts <span>Mon-Thu GMT, 1 per hour</span></a>
+              <a class="btn paid">Join full feed <span>€2.99 a week</span></a>
+              <a class="wl"><span class="ic"><svg class="ico"><use href="#s1" /></svg></span><b>Watchlist picks</b><span class="arrow">→</span><small>Coming up next <i>22:00 Barcelona v Aston Villa</i></small></a>
+            </div>
+          </div>
+        </div>
+        <div class="states">
+          <div class="state">
+            <p class="kicker">Strong watches still to come</p>
+            <a class="wl"><span class="ic"><svg class="ico"><use href="#s1" /></svg></span><b>Watchlist picks</b><span class="arrow">→</span><small>Coming up next <i>17:30 East Kilbride v Stirling</i></small></a>
+            <p>Moves on as each one kicks off.</p>
+          </div>
+          <div class="state">
+            <p class="kicker">Last strong watch has started</p>
+            <a class="wl solo"><span class="ic"><svg class="ico"><use href="#s1" /></svg></span><b>Watchlist picks</b><span class="arrow">→</span></a>
+            <p>Just the name. Still opens today's list.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================ DESKTOP BOARD -->
+      <h2 class="part">3 · Desktop board: the hover card floats above</h2>
+      <p class="part-blurb">The card opens over the rows above the match and covers them while you hover. Nothing below moves. Near the top of the board it flips to open underneath instead.</p>
+      <div class="frame">
+        <table class="board">
+          <thead><tr><th></th><th>League</th><th>Score</th><th>Match</th><th class="num">Time</th><th class="num">K-idx</th></tr></thead>
+          <tbody>
+            <tr><td>☆</td><td class="lg">Primera División</td><td class="score">1<br />1</td><td><div class="teams"><div><span class="crest"></span>Defensa y Justicia</div><div><span class="crest"></span>Independiente</div></div></td><td class="num">66'</td><td class="kidx">13</td></tr>
+            <tr><td>☆</td><td class="lg">Serie A</td><td class="score">1<br />0</td><td><div class="teams"><div><span class="crest"></span>Bragantino</div><div><span class="crest"></span>Santos</div></div></td><td class="num">27'</td><td class="kidx">12</td></tr>
+            <tr><td>☆</td><td class="lg">Primera División</td><td class="score">1<br />0</td><td><div class="teams"><div><span class="crest"></span>Platense</div><div><span class="crest"></span>Central Córdoba</div></div></td><td class="num">70'</td><td class="kidx">8</td></tr>
+            <tr>
+              <td>☆</td><td class="lg">Championship</td>
+              <td class="score">1<br />0</td>
+              <td class="cell-wrap">
+                <div class="teams">
+                  <div><span class="crest"></span>Norwich<span class="wtag"><svg class="ico"><use href="#s1" /></svg>Both score: Yes</span></div>
+                  <div><span class="crest"></span>Hull</div>
+                </div>
+                <div class="pop">
+                  <div class="k">Watchlist pick · strong watch</div>
+                  <b>Both teams to score looks likely.</b> Both teams scored in 8 of 10 and 7 of 10 of their last games.
+                  <div class="now">Now: <b>1–0 at 63'</b>. Hull still need a goal for this to land.</div>
+                  <a>Open the research page →</a>
+                </div>
+              </td>
+              <td class="num">63'</td><td class="kidx">22</td>
+            </tr>
+            <tr><td>☆</td><td class="lg">Primera A</td><td class="score">0<br />0</td><td><div class="teams"><div><span class="crest"></span>U. Magdalena</div><div><span class="crest"></span>Envigado</div></div></td><td class="num">20'</td><td class="kidx">8</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ============================================================ MOBILE -->
+      <h2 class="part">4 · Phone: the real dense board</h2>
+      <p class="part-blurb">
+        The phone has no hero buttons, and the board is the K-idx / UrG / Δ5 / Δ10 / F Bar / ΦI table with names already
+        cut short, so a word tag can't fit. Two ways to mark a strong watch without taking a column, plus where the
+        details go: in the match overlay that already opens when you tap a row.
+      </p>
+      <div class="phones">
+        <div class="phone-col">
+          <p class="kicker"><b>M1 · my pick</b> · green edge on the row</p>
+          <div class="phone">
+            <div class="m-top"><span class="logo"></span><b>Kalchas</b><span class="m-live">● LIVE</span><span class="here">3 here</span><span class="join">Join alerts</span></div>
+            <div class="m-strip"><span class="k">● SIGNAL</span><span class="t">Aguilas v Fortaleza <span>· Form Bar 1.4 · 52' ago</span></span><span class="more">18 ›</span></div>
+            <div class="m-tabs"><span class="on">Signals</span><span>Stats</span><span>Odds</span></div>
+            <table class="m">
+              <thead><tr><th>Match</th><th>K↓</th><th>UrG</th><th>Δ5'</th><th>Δ10'</th><th>F Bar</th><th>ΦI</th></tr></thead>
+              <tbody>
+                <tr><td class="mt"><div class="mt-in"><span class="flag"></span><span class="gl">1</span><span class="tm">Defensa y Justicia</span><span class="mn">66'</span><span class="gl">1</span><span class="tm">Independiente</span></div></td><td class="k">13</td><td class="u">0.5<br />0.5</td><td class="d5">1.5<br />0.5</td><td class="d10">17<br />38</td><td class="fb">0.1<br />Done</td><td class="ph">43<br />15</td></tr>
+                <tr class="edge"><td class="mt"><div class="mt-in"><span class="flag"></span><span class="gl">1</span><span class="tm">Norwich</span><span class="mn">63'</span><span class="gl">0</span><span class="tm">Hull</span></div></td><td class="k">22</td><td class="u">0.9<br />1.2</td><td class="d5">2.0<br />1.5</td><td class="d10">21<br />30</td><td class="fb">0.4<br />0.6</td><td class="ph">38<br />26</td></tr>
+                <tr><td class="mt"><div class="mt-in"><span class="flag br"></span><span class="gl">1</span><span class="tm">Bragantino</span><span class="mn">27'</span><span class="gl">0</span><span class="tm">Santos</span></div></td><td class="k">12</td><td class="u">-0.7<br />0.6</td><td class="d5">1.5<br />1.5</td><td class="d10">11<br />43</td><td class="fb">Done<br />0.5</td><td class="ph">15<br />21</td></tr>
+                <tr><td class="mt"><div class="mt-in"><span class="flag"></span><span class="gl">1</span><span class="tm">Platense</span><span class="mn">70'</span><span class="gl">0</span><span class="tm">Central Córdoba</span></div></td><td class="k">8</td><td class="u">0.1<br />0.7</td><td class="d5">1.0<br />0.5</td><td class="d10">20<br />32</td><td class="fb">0.2<br />0.8</td><td class="ph">12<br />7</td></tr>
+              </tbody>
+            </table>
+            <nav class="m-nav">
+              <span class="on"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2" /><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4" /></svg>Live</span>
+              <span><svg class="ico" viewBox="0 0 24 24"><path d="M13 3L5 13h6l-1 8 8-10h-6z" /></svg>Signals</span>
+              <span><svg class="ico" viewBox="0 0 24 24"><path d="M12 4l2.4 5 5.6.6-4.2 3.8 1.2 5.6L12 16.3 7 19l1.2-5.6L4 9.6 9.6 9z" /></svg>Pinned</span>
+              <span><svg class="ico" viewBox="0 0 24 24"><path d="M4 12l16-7-6 16-3-6z" /></svg>Join</span>
+              <span class="wlt"><svg class="ico"><use href="#s1" /></svg>Picks</span>
+            </nav>
+          </div>
+          <p class="caption">A 3px green edge on the match cell, like the pinned rows use their own colour. Takes no space at all. The bottom tab becomes "Picks" with the spyglass and opens today's list.</p>
+        </div>
+
+        <div class="phone-col">
+          <p class="kicker">M2 · tiny spyglass by the minute</p>
+          <div class="phone">
+            <div class="m-top"><span class="logo"></span><b>Kalchas</b><span class="m-live">● LIVE</span><span class="here">3 here</span><span class="join">Join alerts</span></div>
+            <div class="m-strip wls"><span class="k"><svg class="ico"><use href="#s1" /></svg>COMING UP NEXT</span><span class="t">22:00 Barcelona v Aston Villa</span><span class="more">›</span></div>
+            <div class="m-tabs"><span class="on">Signals</span><span>Stats</span><span>Odds</span></div>
+            <table class="m">
+              <thead><tr><th>Match</th><th>K↓</th><th>UrG</th><th>Δ5'</th><th>Δ10'</th><th>F Bar</th><th>ΦI</th></tr></thead>
+              <tbody>
+                <tr><td class="mt"><div class="mt-in"><span class="flag"></span><span class="gl">1</span><span class="tm">Defensa y Justicia</span><span class="mn">66'</span><span class="gl">1</span><span class="tm">Independiente</span></div></td><td class="k">13</td><td class="u">0.5<br />0.5</td><td class="d5">1.5<br />0.5</td><td class="d10">17<br />38</td><td class="fb">0.1<br />Done</td><td class="ph">43<br />15</td></tr>
+                <tr><td class="mt"><div class="mt-in"><span class="mspy"><svg class="ico"><use href="#s1" /></svg></span><span class="gl">1</span><span class="tm">Norwich</span><span class="mn">63'</span><span class="gl">0</span><span class="tm">Hull</span></div></td><td class="k">22</td><td class="u">0.9<br />1.2</td><td class="d5">2.0<br />1.5</td><td class="d10">21<br />30</td><td class="fb">0.4<br />0.6</td><td class="ph">38<br />26</td></tr>
+                <tr><td class="mt"><div class="mt-in"><span class="flag br"></span><span class="gl">1</span><span class="tm">Bragantino</span><span class="mn">27'</span><span class="gl">0</span><span class="tm">Santos</span></div></td><td class="k">12</td><td class="u">-0.7<br />0.6</td><td class="d5">1.5<br />1.5</td><td class="d10">11<br />43</td><td class="fb">Done<br />0.5</td><td class="ph">15<br />21</td></tr>
+                <tr><td class="mt"><div class="mt-in"><span class="flag"></span><span class="gl">1</span><span class="tm">Platense</span><span class="mn">70'</span><span class="gl">0</span><span class="tm">Central Córdoba</span></div></td><td class="k">8</td><td class="u">0.1<br />0.7</td><td class="d5">1.0<br />0.5</td><td class="d10">20<br />32</td><td class="fb">0.2<br />0.8</td><td class="ph">12<br />7</td></tr>
+              </tbody>
+            </table>
+            <nav class="m-nav">
+              <span class="on"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2" /><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4" /></svg>Live</span>
+              <span><svg class="ico" viewBox="0 0 24 24"><path d="M13 3L5 13h6l-1 8 8-10h-6z" /></svg>Signals</span>
+              <span><svg class="ico" viewBox="0 0 24 24"><path d="M12 4l2.4 5 5.6.6-4.2 3.8 1.2 5.6L12 16.3 7 19l1.2-5.6L4 9.6 9.6 9z" /></svg>Pinned</span>
+              <span><svg class="ico" viewBox="0 0 24 24"><path d="M4 12l16-7-6 16-3-6z" /></svg>Join</span>
+              <span class="wlt"><svg class="ico"><use href="#s1" /></svg>Picks</span>
+            </nav>
+          </div>
+          <p class="caption">The spyglass takes the flag's place for that row (the flag is back in the overlay). Also shown: an optional "Coming up next" strip, the phone's version of the button's second line, if you want it on phones too.</p>
+        </div>
+
+        <div class="phone-col">
+          <p class="kicker">Tapping the row · the overlay you already get</p>
+          <div class="phone">
+            <div class="m-top"><span class="logo"></span><b>Kalchas</b><span class="m-live">● LIVE</span></div>
+            <div class="sheet">
+              <div class="grab"></div>
+              <h4>Norwich 1–0 Hull</h4>
+              <div class="sub">63' · Championship</div>
+              <div class="wlbox">
+                <div class="k"><svg class="ico"><use href="#s1" /></svg>Watchlist pick · strong watch</div>
+                <b>Both teams to score looks likely.</b> Both teams scored in 8 of 10 and 7 of 10 of their last games.
+                <div style="margin-top: 0.45rem">Now: <b>1–0 at 63'</b>. Hull still need a goal.</div>
+                <a>Open the research page →</a>
+              </div>
+              <div class="rest"><i></i><i></i><i></i><i></i></div>
+            </div>
+          </div>
+          <p class="caption">The watchlist box sits at the top of the existing match overlay (stats, events, etc. below it). Same box on desktop when you open a match.</p>
+        </div>
+      </div>
+
+      <!-- ============================================================ WORDING -->
+      <h2 class="part">5 · Tag wording</h2>
+      <p class="part-blurb">
+        "One side blanks" is the bookmaker market "Both teams to score: No". I'd name the pair after that market so the
+        two read as yes and no of the same thing. While at it, the full set, with my suggested changes highlighted.
+      </p>
+      <div class="frame">
+        <table class="words">
+          <thead><tr><th>Pattern</th><th>Tag now</th><th>Suggested tag</th><th>Headline on the page</th></tr></thead>
+          <tbody>
+            <tr class="change"><td>Both teams score</td><td><span class="old">Both score</span></td><td><b>Both score: Yes</b></td><td>Both teams to score looks likely.</td></tr>
+            <tr class="change"><td>At least one team doesn't score</td><td><span class="old">One side blanks</span></td><td><b>Both score: No</b></td><td><span class="old">One side could well fail to score.</span><br /><b>Both teams to score looks unlikely.</b></td></tr>
+            <tr class="change"><td>3+ goals</td><td><span class="old">Goals</span></td><td><b>Over 2.5</b></td><td>Expect goals.</td></tr>
+            <tr class="change"><td>0–2 goals</td><td><span class="old">Low scoring</span></td><td><b>Under 2.5</b></td><td>Likely a tight, low-scoring game.</td></tr>
+            <tr class="change"><td>A team rarely scores</td><td><span class="old">Goal-shy</span></td><td><b>Struggles to score</b></td><td>[Team] struggle to score.</td></tr>
+            <tr><td>A team rarely keeps a clean sheet</td><td>Leaky defence</td><td>Leaky defence</td><td>[Team] rarely keep a clean sheet.</td></tr>
+            <tr><td>Goal after 75'</td><td>Late goals</td><td>Late goals</td><td>Leave it open after 75'.</td></tr>
+            <tr><td>Goal before half-time</td><td>First-half goals</td><td>First-half goals</td><td>Goals tend to come before half-time.</td></tr>
+            <tr><td>Long scoring run</td><td>Scoring run</td><td>Scoring run</td><td>[Team] keep scoring at home.</td></tr>
+            <tr><td>Short-priced and in form</td><td>Strong favourite</td><td>Strong favourite</td><td>[Team] are clear favourites, and in form.</td></tr>
+          </tbody>
+        </table>
+        <div class="pick-row">
+          <div class="opt rec"><b>Both score: Yes / No (my pick)</b>Same words as the bookmaker market, so bettors know it instantly.</div>
+          <div class="opt"><b>Both score / Not both score</b>No colon, a little clumsier.</div>
+          <div class="opt"><b>Both score / Clean sheet likely</b>True (no goal for one side means a clean sheet for the other) but a different market's name.</div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

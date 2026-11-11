@@ -18,7 +18,7 @@ from kalchas_core import __version__ as core_version
 from kalchas_core.alert_outcomes import DEFAULT_RULES, evaluator_from_rule_rows, match_is_terminal
 from kalchas_core.events import count_cards_by_side
 from kalchas_core.match import MatchTimeline
-from kalchas_core.odds import kickoff_home_away
+from kalchas_core.odds import fresh_live_line, kickoff_home_away
 from kalchas_core.runner import board_snapshot, home_away_odds, live_home_away_odds
 from kalchas_core.weights import WeightSet, strategy_names
 from kalchas_football import apifootball_badge_url, https_asset_url
@@ -394,7 +394,8 @@ def _odds_out(raw: Any) -> OddsOut | None:
         kickoff = _odds_line_out(
             {"home": data.get("home"), "draw": data.get("draw"), "away": data.get("away")}
         )
-    live = _odds_line_out(data.get("live"))
+    # Old or unstamped live lines are not shown; they are often minutes stale.
+    live = _odds_line_out(fresh_live_line(data))
     if kickoff is None and live is None:
         return None
     return OddsOut(

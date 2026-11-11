@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Underdog mark, tidier hover</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #071018;
+        --row: #101a26;
+        --border: rgba(232, 220, 196, 0.12);
+        --text: #f2ebe0;
+        --stat: #b7b0a3;
+        --muted: #7d776c;
+        --mark: #cbb892;
+        --font: "Sora", sans-serif;
+        --mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: var(--font);
+        background:
+          radial-gradient(900px 480px at 12% -8%, rgba(61, 214, 198, 0.1), transparent 55%),
+          var(--bg);
+      }
+      main { max-width: 880px; margin: 0 auto; padding: 2.2rem 1.4rem 3rem; }
+      .kicker {
+        margin: 0 0 0.35rem;
+        font-size: 0.68rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      h1 { margin: 0; font-size: 1.45rem; font-weight: 500; letter-spacing: -0.02em; }
+      .lead { max-width: 38rem; margin: 0.65rem 0 1.2rem; color: var(--stat); font-size: 0.92rem; line-height: 1.5; }
+      .grid { display: grid; gap: 0.8rem; }
+      .card {
+        display: grid;
+        grid-template-columns: 8.5rem 1fr auto;
+        gap: 1rem;
+        align-items: center;
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        background: rgba(12, 21, 32, 0.9);
+        padding: 0.85rem 0.95rem;
+      }
+      .card header { min-width: 0; }
+      .idx { font-family: var(--mono); font-size: 0.68rem; color: var(--mark); }
+      h2 { margin: 0.15rem 0 0; font-size: 0.95rem; font-weight: 600; }
+      .why { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.75rem; line-height: 1.35; }
+      .line { display: flex; align-items: center; gap: 6px; min-height: 22px; }
+      .line + .line { margin-top: 4px; }
+      .badge {
+        width: 18px; height: 18px; flex: 0 0 18px; border-radius: 4px;
+        display: grid; place-items: center; font-size: 0.48rem; font-weight: 600;
+      }
+      .name { font-size: 0.82rem; font-weight: 600; line-height: 1; }
+      .name.dim { color: #c0bdb7; font-weight: 500; }
+      .mark {
+        font-size: 0.72rem;
+        line-height: 1;
+        opacity: 0.9;
+      }
+      .mark.arrow {
+        font-size: 0.68rem;
+        color: var(--mark);
+      }
+      .popup {
+        width: 15.5rem;
+        padding: 0.65rem 0.75rem 0.7rem;
+        border: 1px solid var(--border);
+        border-top: 2px solid var(--mark);
+        border-radius: 0.4rem;
+        background: #0b1520;
+        box-shadow: 0 14px 32px rgba(0, 0, 0, 0.48);
+      }
+      .popup p { margin: 0; font-size: 0.78rem; line-height: 1.35; }
+      .popup .sub { margin-top: 0.15rem; color: var(--stat); font-size: 0.74rem; }
+      .rows { margin: 0.55rem 0 0; display: grid; gap: 0.22rem; }
+      .rows div {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.8rem;
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        color: var(--stat);
+      }
+      .rows b { font-weight: 500; color: var(--text); }
+      .note { margin: 1rem 0 0; color: var(--muted); font-size: 0.78rem; line-height: 1.45; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="kicker">Underdog</p>
+      <h1>Standing dog, same tidy hover</h1>
+      <p class="lead">
+        🐕 is the dog without the face. The sentence stays. The stats sit on their own lines. Cards appear only when the favourite has more.
+      </p>
+      <section class="grid">
+        <article class="card">
+          <header>
+            <div class="idx">A</div>
+            <h2>Dog</h2>
+            <p class="why">The standing dog. Not the face.</p>
+          </header>
+          <div>
+            <div class="line">
+              <span class="badge" style="background:#1b2838;color:#d7e2ea">AT</span>
+              <span class="name">Atalanta</span>
+            </div>
+            <div class="line">
+              <span class="badge" style="background:#3a2a14;color:#f0d7b0">VE</span>
+              <span class="name dim">Venezia</span>
+              <span class="mark">🐕</span>
+            </div>
+          </div>
+          <div class="popup" id="pop"></div>
+        </article>
+        <article class="card">
+          <header>
+            <div class="idx">B</div>
+            <h2>Arrow</h2>
+            <p class="why">The longer price is ahead. No animal.</p>
+          </header>
+          <div>
+            <div class="line">
+              <span class="badge" style="background:#1b2838;color:#d7e2ea">AT</span>
+              <span class="name">Atalanta</span>
+            </div>
+            <div class="line">
+              <span class="badge" style="background:#3a2a14;color:#f0d7b0">VE</span>
+              <span class="name dim">Venezia</span>
+              <span class="mark arrow">⬆</span>
+            </div>
+          </div>
+          <div class="popup"></div>
+        </article>
+        <article class="card">
+          <header>
+            <div class="idx">C</div>
+            <h2>Spark</h2>
+            <p class="why">A small live mark. Easy to miss next to a crest.</p>
+          </header>
+          <div>
+            <div class="line">
+              <span class="badge" style="background:#1b2838;color:#d7e2ea">AT</span>
+              <span class="name">Atalanta</span>
+            </div>
+            <div class="line">
+              <span class="badge" style="background:#3a2a14;color:#f0d7b0">VE</span>
+              <span class="name dim">Venezia</span>
+              <span class="mark">✦</span>
+            </div>
+          </div>
+          <div class="popup cards-off"></div>
+        </article>
+      </section>
+      <p class="note">A is 🐕. B is the arrow. C is the spark, with the cards line left out. 🐕 says underdog before the hover opens. The arrow is quieter beside a crest.</p>
+    </main>
+    <script>
+      function popup(cards) {
+        const extra = cards
+          ? `<div><span>Cards</span><b>Favourite has more</b></div>`
+          : "";
+        return `
+          <p>Underdog of 4.20</p>
+          <p class="sub">Overperforming the favourite</p>
+          <div class="rows">
+            <div><span>Possession</span><b>61 - 39</b></div>
+            <div><span>Shots on target</span><b>6 - 2</b></div>
+            <div><span>Corners</span><b>7 - 3</b></div>
+            ${extra}
+          </div>`;
+      }
+      for (const el of document.querySelectorAll(".popup")) {
+        el.innerHTML = popup(!el.classList.contains("cards-off"));
+      }
+    </script>
+  </body>
+</html>

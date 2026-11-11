@@ -92,9 +92,18 @@ def build_recap(
     week_start: date,
     thresholds: Mapping[str, float] | None = None,
     zone: tzinfo = UTC,
+    strategies: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Stats, picks and first-draft text for the week starting `week_start`."""
-    return _build(rows, kind="week", start=week_start, days=7, thresholds=thresholds, zone=zone)
+    return _build(
+        rows,
+        kind="week",
+        start=week_start,
+        days=7,
+        thresholds=thresholds,
+        zone=zone,
+        strategies=strategies,
+    )
 
 
 def build_daily(
@@ -103,9 +112,18 @@ def build_daily(
     day: date,
     thresholds: Mapping[str, float] | None = None,
     zone: tzinfo = UTC,
+    strategies: Sequence[str] = (),
 ) -> dict[str, Any]:
     """The same for one day, posted only when the admin chooses to: no miss, up to four calls."""
-    return _build(rows, kind="day", start=day, days=1, thresholds=thresholds, zone=zone)
+    return _build(
+        rows,
+        kind="day",
+        start=day,
+        days=1,
+        thresholds=thresholds,
+        zone=zone,
+        strategies=strategies,
+    )
 
 
 def _build(
@@ -116,8 +134,13 @@ def _build(
     days: int,
     thresholds: Mapping[str, float] | None,
     zone: tzinfo,
+    strategies: Sequence[str] = (),
 ) -> dict[str, Any]:
+    """`strategies` narrows the recap to those strategies' alerts; empty means all of them."""
     thresholds = thresholds or {}
+    only = sorted({str(key) for key in strategies if key})
+    if only:
+        rows = [row for row in rows if str(row.get("strategy_key") or "") in only]
     signals = [s for s in group_signals(rows) if s.result is not None]
     goals = [s for s in signals if s.result == "goal"]
     misses = [s for s in signals if s.result == "miss"]
@@ -155,6 +178,7 @@ def _build(
     end = start + timedelta(days=days - 1)
     data: dict[str, Any] = {
         "kind": kind,
+        "strategies": only,
         # `week_start`/`week_end` name the period for both kinds (a day starts and ends on itself).
         "week_start": start.isoformat(),
         "week_end": end.isoformat(),
@@ -480,6 +504,7 @@ DAY_FIELDS: tuple[tuple[str, str, str, int], ...] = (
     ("headline_number", "Headline, big part", "card", 1),
     ("headline_rest", "Headline, small part", "card", 1),
     ("cover_line", "Line under the headline", "card", 2),
+    ("ring_value", "Number in the ring (the ring fills to it; empty hides it)", "card", 1),
     ("fastest_title", "Beside the ring, bold", "card", 1),
     ("fastest_line", "Beside the ring", "card", 2),
     ("call_1", "Call 1", "card", 2),
@@ -491,6 +516,35 @@ DAY_FIELDS: tuple[tuple[str, str, str, int], ...] = (
     ("caption", "Telegram and Discord caption", "posts", 8),
 )
 FOOTER = "Every signal is posted live, before the goal."
+
+
+# A goal a minute or less after the signal reads as "too fast to act on", so the
+# words say "inside two minutes" instead of "the same minute" or "a minute later".
+QUICK = 1
+
+
+def _strategy_names(data: Mapping[str, Any]) -> str:
+    from kalchas_core.weights import display_name_for
+
+    names = [display_name_for(key) for key in data.get("strategies") or []]
+    if len(names) <= 1:
+        return names[0] if names else ""
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _week_kicker(data: Mapping[str, Any]) -> str:
+    names = _strategy_names(data)
+    return f"Every {names} signal we sent" if names else "Every signal we sent"
+
+
+def _day_kicker(data: Mapping[str, Any]) -> str:
+    names = _strategy_names(data)
+    return f"A good day for {names}" if names else "A good day"
+
+
+def ring_value(data: Mapping[str, Any]) -> str:
+    settled = int(data["goals"]) + int(data["misses"])
+    return f"{round(int(data['goals']) / settled * 100)}%" if settled else ""
 
 
 def text_fields(kind: str) -> tuple[tuple[str, str, str, int], ...]:
@@ -507,7 +561,7 @@ def draft_texts(data: Mapping[str, Any]) -> dict[str, str]:
     texts = {
         "period_label": "The week in signals",
         "period_dates": period_dates(data),
-        "kicker": "Every signal we sent",
+        "kicker": _week_kicker(data),
         "headline_number": headline_number(data),
         "headline_rest": "signals found a goal",
         "cover_line": cover_line(data),
@@ -541,7 +595,8 @@ def _draft_day(data: Mapping[str, Any]) -> dict[str, str]:
     texts = {
         "period_label": "The day in signals",
         "period_dates": period_dates(data),
-        "kicker": "A good day",
+        "kicker": _day_kicker(data),
+        "ring_value": ring_value(data),
         "headline_number": headline_number(data),
         "headline_rest": "signals found a goal",
         "cover_line": day_line(data),
@@ -621,8 +676,8 @@ def day_line(data: Mapping[str, Any]) -> str:
 def fastest_line(call: Mapping[str, Any]) -> str:
     team = call.get("team_name") or "They"
     gap = int(call.get("gap") or 0)
-    if gap == 0:
-        return f"{team} scored in the minute we posted."
+    if gap <= QUICK:
+        return f"{team} scored inside two minutes of our signal."
     return f"{team} scored {_minutes(gap)} after we posted."
 
 
@@ -631,7 +686,7 @@ def daily_line(call: Mapping[str, Any]) -> str:
     if len(call.get("flags") or []) > 1:
         return f"{opener}. We flagged them at {_flag_minutes(call)}. Goal at {call.get('goal_minute')}′."
     gap = int(call.get("gap") or 0)
-    when = "in the same minute" if gap == 0 else f"{_minutes(gap)} later"
+    when = "inside two minutes" if gap <= QUICK else f"{_minutes(gap)} later"
     return f"{opener}. We posted at {call['minute']}′; they scored {when}."
 
 
@@ -658,12 +713,12 @@ def _score_state(call: Mapping[str, Any]) -> str:
 
 def _after_signal(gap: Any) -> str:
     n = int(gap or 0)
-    return "Same minute as the signal" if n == 0 else f"{n} min after the signal"
+    return "Under 2 min after the signal" if n <= QUICK else f"{n} min after the signal"
 
 
 def _short_gap(gap: Any) -> str:
     n = int(gap or 0)
-    return "same minute" if n == 0 else f"{n} min"
+    return "under 2 min" if n <= QUICK else f"{n} min"
 
 
 def headline(data: Mapping[str, Any]) -> str:
@@ -679,8 +734,8 @@ def cover_line(data: Mapping[str, Any]) -> str:
             f"{_day_name(worst['day'])} was the hardest ({worst['goals']} of {worst['total']})."
         )
     if data.get("fastest") is not None:
-        if int(data["fastest"]) == 0:
-            return "The quickest goal came the same minute as the signal."
+        if int(data["fastest"]) <= QUICK:
+            return "The quickest goal came inside two minutes of the signal."
         return f"The quickest goal came {_minutes(data['fastest'])} after the signal."
     return ""
 
@@ -692,7 +747,7 @@ def call_story(call: Mapping[str, Any]) -> str:
     lead = f"{opener}: {stat[0]} {stat[2]} to {stat[1]}{stat[3]}." if stat else f"{opener}."
     gap = int(call.get("gap") or 0)
     own_goal = call.get("scorer") and call.get("scorer") == call.get("team")
-    when = "that same minute" if gap == 0 else f"{_minutes(gap)} later"
+    when = "inside two minutes" if gap <= QUICK else f"{_minutes(gap)} later"
     end = f"They scored {when}." if own_goal else f"The goal came {when}."
     if len(call.get("flags") or []) > 1:
         return f"{lead} We flagged them at {_flag_minutes(call)}. The goal came at {call.get('goal_minute')}′."
@@ -835,9 +890,9 @@ def _day_name(short: str) -> str:
 
 def _goal_after(gap: Any) -> str:
     n = int(gap or 0)
-    return (
-        "goal the same minute as the signal" if n == 0 else f"goal {_minutes(n)} after the signal"
-    )
+    if n <= QUICK:
+        return "goal inside two minutes of the signal"
+    return f"goal {_minutes(n)} after the signal"
 
 
 def _minutes(gap: Any) -> str:

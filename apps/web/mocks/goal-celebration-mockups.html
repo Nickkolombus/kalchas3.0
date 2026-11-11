@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kalchas goal celebration mockups</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Sora:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #071018;
+        --surface: #0c1520;
+        --border: rgba(232, 220, 196, 0.12);
+        --text: #f2ebe0;
+        --text-2: #b7b0a3;
+        --muted: #7d776c;
+        --accent: #3dd6c6;
+        --goal: #5dce8a;
+        --gold: #e8d9b0;
+        --cd: #f97316;
+        --font-display: "Fraunces", Georgia, serif;
+        --font-body: "Sora", sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+        --row-line-h: 22px;
+        --row-gap: 4px;
+        --row-band-h: calc(var(--row-line-h) * 2 + var(--row-gap));
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: var(--font-body);
+        background:
+          radial-gradient(900px 480px at 12% -8%, rgba(61, 214, 198, 0.12), transparent 55%),
+          radial-gradient(700px 420px at 100% 0%, rgba(242, 235, 224, 0.05), transparent 50%),
+          var(--bg);
+      }
+      .page {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 2rem 1.3rem 3.2rem;
+      }
+      h1 {
+        font-family: var(--font-display);
+        font-weight: 500;
+        font-size: 1.7rem;
+        margin: 0 0 0.35rem;
+      }
+      .lede {
+        color: var(--text-2);
+        font-size: 0.92rem;
+        line-height: 1.5;
+        max-width: 46rem;
+        margin: 0 0 1.6rem;
+      }
+      .lede em {
+        font-style: normal;
+        color: var(--text);
+      }
+      .slot {
+        border: 1px solid var(--border);
+        background: rgba(12, 21, 32, 0.55);
+        border-radius: 0.7rem;
+        padding: 1rem 1.1rem 1.15rem;
+        margin-bottom: 1.15rem;
+      }
+      .slot-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.85rem;
+      }
+      .kicker {
+        font-size: 0.66rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .slot h2 {
+        margin: 0.1rem 0 0.2rem;
+        font-size: 1.02rem;
+      }
+      .why {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.78rem;
+        line-height: 1.4;
+      }
+      .play {
+        flex: 0 0 auto;
+        font: inherit;
+        font-size: 0.78rem;
+        color: var(--text);
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 0.35rem;
+        padding: 0.28rem 0.7rem;
+        cursor: pointer;
+      }
+      .play:hover { border-color: var(--accent); color: var(--accent); }
+      .timer {
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        color: var(--muted);
+        margin-left: 0.4rem;
+      }
+      .stage {
+        position: relative;
+        overflow: hidden;
+        border: 1px dashed rgba(232, 220, 196, 0.12);
+        border-radius: 0.45rem;
+        background: #071018;
+        padding: 0.7rem 0.55rem 0.55rem;
+      }
+      .filter-note {
+        font-size: 0.72rem;
+        color: var(--muted);
+        margin: 0 0 0.45rem 0.2rem;
+      }
+      .filter-note b { color: var(--text-2); font-weight: 500; }
+
+      table.mini {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.78rem;
+      }
+      table.mini th {
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 0.62rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        text-align: left;
+        padding: 0.2rem 0.45rem 0.45rem;
+        border-bottom: 1px solid var(--border);
+      }
+      table.mini td {
+        padding: 0.35rem 0.45rem;
+        border-bottom: 1px solid var(--border);
+        vertical-align: middle;
+        height: calc(var(--row-band-h) + 0.5rem);
+      }
+      .ghost td { opacity: 0.42; }
+      .k {
+        font-family: var(--font-mono);
+        font-size: 1.05rem;
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .score {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        line-height: 1.15;
+      }
+      .score b { display: block; font-weight: 700; font-size: 0.92rem; }
+      .teams { line-height: 1.35; }
+      .teams span { display: block; }
+      .away { color: var(--text-2); }
+      .time { color: var(--text-2); font-family: var(--font-mono); font-size: 0.78rem; }
+      .tslg { font-family: var(--font-mono); color: var(--text-2); }
+      .tslg .hot { color: var(--cd); font-weight: 700; }
+      .it { color: var(--muted); font-size: 0.62rem; display: block; }
+      .star { color: var(--muted); }
+
+      /* A hold then leave */
+      .a-on {
+        animation: leave 5s ease forwards;
+      }
+      @keyframes leave {
+        0% { opacity: 1; background: rgba(232, 220, 196, 0.1); }
+        70% { opacity: 1; background: rgba(232, 220, 196, 0.06); }
+        100% { opacity: 0.22; background: transparent; }
+      }
+
+      /* B scorer mark */
+      .ball {
+        display: inline-block;
+        width: 0.52rem;
+        height: 0.52rem;
+        border-radius: 50%;
+        background: var(--goal);
+        box-shadow: 0 0 0 1px rgba(93, 206, 138, 0.35);
+        vertical-align: 0.05rem;
+        margin-right: 0.38rem;
+        opacity: 0;
+        transform: scale(0.4);
+      }
+      .b-on .ball {
+        animation: ball 5s ease forwards;
+      }
+      .b-on .home { color: var(--gold); }
+      @keyframes ball {
+        0% { opacity: 0; transform: scale(0.4); }
+        14% { opacity: 1; transform: scale(1); }
+        100% { opacity: 1; transform: scale(1); }
+      }
+
+      /* C digit roll */
+      .roll {
+        display: inline-block;
+        height: 1.05em;
+        overflow: hidden;
+        vertical-align: bottom;
+      }
+      .roll-inner {
+        display: flex;
+        flex-direction: column;
+        transform: translateY(0);
+      }
+      .c-on .roll-inner {
+        animation: roll 5s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+      }
+      @keyframes roll {
+        0% { transform: translateY(0); color: var(--text); }
+        16% { transform: translateY(-50%); color: var(--gold); }
+        100% { transform: translateY(-50%); color: var(--gold); }
+      }
+
+      /* D signals panel */
+      .d-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 16.5rem;
+        gap: 0.7rem;
+        align-items: start;
+      }
+      .signals-mini {
+        border: 1px solid var(--border);
+        border-radius: 0.45rem;
+        padding: 0.45rem 0.55rem 0.5rem;
+        background: rgba(255, 255, 255, 0.025);
+      }
+      .signals-mini .sh {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.62rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 0.4rem;
+      }
+      .sig {
+        padding: 0.35rem 0.4rem;
+        border-radius: 0.3rem;
+        margin-bottom: 0.28rem;
+        border: 1px solid transparent;
+      }
+      .sig.dim { opacity: 0.45; }
+      .sig .m { font-size: 0.72rem; color: var(--text-2); }
+      .sig .s { font-family: var(--font-mono); color: var(--accent); font-size: 0.72rem; }
+      .sig .p {
+        color: var(--goal);
+        font-size: 0.66rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-align: right;
+      }
+      .d-on .sig.goal {
+        animation: sigpulse 5s ease forwards;
+      }
+      @keyframes sigpulse {
+        0% { background: transparent; border-color: transparent; }
+        10% { background: rgba(93, 206, 138, 0.12); border-color: rgba(93, 206, 138, 0.45); }
+        100% { background: rgba(93, 206, 138, 0.1); border-color: rgba(93, 206, 138, 0.4); }
+      }
+
+      /* E cream rail */
+      .e-on td:first-child {
+        box-shadow: inset 3px 0 0 var(--gold);
+      }
+      .e-on .home { color: var(--gold); }
+      .e-on {
+        animation: rail 5s ease forwards;
+      }
+      @keyframes rail {
+        0% { background: rgba(232, 217, 176, 0.08); }
+        100% { background: rgba(232, 217, 176, 0.05); }
+      }
+      .e-on td:first-child {
+        animation: railbar 5s ease forwards;
+      }
+      @keyframes railbar {
+        0%, 100% { box-shadow: inset 3px 0 0 var(--gold); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Goal on the board, take 2</h1>
+      <p class="lede">
+        Five different treatments. No chips, no toasts, no GOAL stamps.
+        Replay plays the motion, then holds the peak so you can compare.
+        Hide TSLG &lt; 10' still wants the row gone, so A / B / C / E hold it
+        for 5 seconds on the live board. D lets the row vanish and uses
+        Recent Signals instead.
+      </p>
+
+      <article class="slot" data-kind="a">
+        <div class="slot-head">
+          <div>
+            <div class="kicker">A</div>
+            <h2>Hold then leave</h2>
+            <p class="why">No extra chrome. Score is 3-0, TSLG already orange at 0', then the row fades out of the table.</p>
+          </div>
+          <div><button class="play" type="button">Replay</button><span class="timer">5.0s</span></div>
+        </div>
+        <div class="stage" id="stage-a"></div>
+      </article>
+
+      <article class="slot" data-kind="b">
+        <div class="slot-head">
+          <div>
+            <div class="kicker">B</div>
+            <h2>Ball on the scorer</h2>
+            <p class="why">A small green mark sits next to Ravenna for 5 seconds. Name goes cream. Score is already 3-0.</p>
+          </div>
+          <div><button class="play" type="button">Replay</button><span class="timer">5.0s</span></div>
+        </div>
+        <div class="stage" id="stage-b"></div>
+      </article>
+
+      <article class="slot" data-kind="c">
+        <div class="slot-head">
+          <div>
+            <div class="kicker">C</div>
+            <h2>Stadium roll</h2>
+            <p class="why">Only the home digit rolls 2 to 3, like a stadium clock. Nothing else moves.</p>
+          </div>
+          <div><button class="play" type="button">Replay</button><span class="timer">5.0s</span></div>
+        </div>
+        <div class="stage" id="stage-c"></div>
+      </article>
+
+      <article class="slot" data-kind="d">
+        <div class="slot-head">
+          <div>
+            <div class="kicker">D</div>
+            <h2>Signals takes it</h2>
+            <p class="why">Table already dropped the row. The Recent Signals card is the 5-second moment - it already says GOAL.</p>
+          </div>
+          <div><button class="play" type="button">Replay</button><span class="timer">5.0s</span></div>
+        </div>
+        <div class="stage" id="stage-d"></div>
+      </article>
+
+      <article class="slot" data-kind="e">
+        <div class="slot-head">
+          <div>
+            <div class="kicker">E</div>
+            <h2>Cream rail</h2>
+            <p class="why">A thin gold edge on the row, scoring name in cream. No GOAL copy. Brand, not an alert.</p>
+          </div>
+          <div><button class="play" type="button">Replay</button><span class="timer">5.0s</span></div>
+        </div>
+        <div class="stage" id="stage-e"></div>
+      </article>
+    </div>
+    <script>
+      const ROW = (opts = {}) => {
+        const scoreHome = opts.roll
+          ? `<span class="roll"><span class="roll-inner"><b>2</b><b class="home-n">3</b></span></span>`
+          : `<b class="home-n">${opts.home ?? "3"}</b>`;
+        const ball = opts.ball
+          ? `<span class="ball" aria-hidden="true"></span>`
+          : "";
+        return `
+        <td class="star">☆</td>
+        <td><span class="it">IT · Serie C</span></td>
+        <td class="score">${scoreHome}<b>0</b></td>
+        <td class="teams">
+          <span class="home">${ball}Ravenna</span>
+          <span class="away">Campobasso</span>
+        </td>
+        <td class="time">68'<span class="it">2H</span></td>
+        <td class="k">30</td>
+        <td class="tslg"><span class="hot">0'</span><br>23'</td>
+      `;
+      };
+
+      function ghost(league, home, away, scoreH, scoreA, min, k, t1, t2) {
+        return `
+        <td class="star">☆</td>
+        <td><span class="it">${league}</span></td>
+        <td class="score"><b>${scoreH}</b><b>${scoreA}</b></td>
+        <td class="teams"><span>${home}</span><span class="away">${away}</span></td>
+        <td class="time">${min}'<span class="it">2H</span></td>
+        <td class="k">${k}</td>
+        <td class="tslg">${t1}'<br>${t2}'</td>
+      `;
+      }
+
+      function table(opts) {
+        const rav = opts.hideRavenna
+          ? ""
+          : `<tr class="focus">${ROW(opts)}</tr>`;
+        return `
+          <p class="filter-note">${opts.note}</p>
+          <table class="mini">
+            <thead>
+              <tr>
+                <th></th><th>League</th><th>Score</th><th>Match</th><th>Time</th><th>K</th><th>TSLG</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="ghost">${ghost("PL · Ekstraklasa", "Piast Gliwice", "Widzew Lodz", 1, 0, 57, 31, 29, 40)}</tr>
+              ${rav}
+              <tr class="ghost">${ghost("NL · Eredivisie", "Zwolle", "Cambuur", 1, 1, 69, 24, 14, 8)}</tr>
+            </tbody>
+          </table>
+        `;
+      }
+
+      const dHtml = `
+        <p class="filter-note">Hide TSLG &lt; 10' already hid the row. Signals still fires.</p>
+        <div class="d-layout">
+          <table class="mini">
+            <thead>
+              <tr>
+                <th></th><th>League</th><th>Score</th><th>Match</th><th>Time</th><th>K</th><th>TSLG</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="ghost">${ghost("PL · Ekstraklasa", "Piast Gliwice", "Widzew Lodz", 1, 0, 57, 31, 29, 40)}</tr>
+              <tr class="ghost">${ghost("NL · Eredivisie", "Zwolle", "Cambuur", 1, 1, 69, 24, 14, 8)}</tr>
+            </tbody>
+          </table>
+          <aside class="signals-mini">
+            <div class="sh"><span>Recent signals</span><span>LIVE</span></div>
+            <div class="sig dim"><div class="m">Hammarby vs Djurgarden</div><div class="p" style="color:#3dd6c6">MONITORING</div></div>
+            <div class="sig goal">
+              <div class="m">Ravenna vs Campobasso <span class="s">3-0</span></div>
+              <div class="p">⚽ GOAL! · RAVENNA</div>
+            </div>
+          </aside>
+        </div>
+      `;
+
+      const stages = {
+        a: { el: document.getElementById("stage-a"), html: table({ note: "Hide TSLG &lt; 10' is on. Row is held, then it leaves." }) },
+        b: { el: document.getElementById("stage-b"), html: table({ ball: true, note: "Hide TSLG &lt; 10' is on. Row is held for 5s." }) },
+        c: { el: document.getElementById("stage-c"), html: table({ roll: true, note: "Hide TSLG &lt; 10' is on. Row is held for 5s." }) },
+        d: { el: document.getElementById("stage-d"), html: dHtml },
+        e: { el: document.getElementById("stage-e"), html: table({ note: "Hide TSLG &lt; 10' is on. Row is held for 5s." }) },
+      };
+
+      const timers = {};
+      const freezes = {};
+      const PEAK_MS = 1400;
+
+      function freezePeak(root) {
+        const anims = document.getAnimations().filter((a) => {
+          const t = a.effect && a.effect.target;
+          return t === root || (t && root.contains(t));
+        });
+        anims.forEach((a) => {
+          a.currentTime = PEAK_MS;
+          a.pause();
+        });
+      }
+
+      function play(kind) {
+        const stage = stages[kind];
+        stage.el.innerHTML = stage.html;
+        const row = stage.el.querySelector(".focus");
+        if (row) {
+          row.classList.remove(kind + "-on");
+          void row.offsetWidth;
+          row.classList.add(kind + "-on");
+        }
+        if (kind === "d") {
+          stage.el.classList.remove("d-on");
+          void stage.el.offsetWidth;
+          stage.el.classList.add("d-on");
+        }
+        const slot = document.querySelector('[data-kind="' + kind + '"]');
+        const label = slot.querySelector(".timer");
+        const started = performance.now();
+        cancelAnimationFrame(timers[kind]);
+        clearTimeout(freezes[kind]);
+        function tick(now) {
+          const left = Math.max(0, 5 - (now - started) / 1000);
+          label.textContent = left.toFixed(1) + "s";
+          if (left > 0) timers[kind] = requestAnimationFrame(tick);
+        }
+        timers[kind] = requestAnimationFrame(tick);
+        freezes[kind] = setTimeout(() => {
+          freezePeak(kind === "d" ? stage.el : row || stage.el);
+          label.textContent = "peak";
+        }, PEAK_MS);
+      }
+
+      document.querySelectorAll(".slot").forEach((slot) => {
+        const kind = slot.dataset.kind;
+        stages[kind].el.innerHTML = stages[kind].html;
+        slot.querySelector(".play").addEventListener("click", () => play(kind));
+        play(kind);
+      });
+    </script>
+  </body>
+</html>

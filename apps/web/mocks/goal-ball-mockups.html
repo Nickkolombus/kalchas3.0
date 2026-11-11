@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Goal ball options</title>
+<link rel="stylesheet" href="../src/styles/tokens.css" />
+<style>
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
+  .page { max-width: 1000px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+  h1 { font-size: 1.3rem; font-weight: 600; margin: 0 0 0.3rem; }
+  .page > p { color: var(--text-2); margin: 0 0 1.2rem; font-size: 0.92rem; }
+  .opt { background: #0c1520; border: 1px solid var(--border); border-radius: 12px; padding: 0.9rem 1.1rem 0.6rem; margin-bottom: 1rem; }
+  .opt h2 { font-size: 0.98rem; font-weight: 600; margin: 0; }
+  .opt h2 span { color: var(--muted); font-weight: 400; font-size: 0.85rem; margin-left: 0.4rem; }
+  .row { display: flex; align-items: center; gap: 1.6rem; margin-top: 0.4rem; }
+  .row svg.chart { flex: 1; min-width: 0; height: auto; display: block; }
+  .big { display: flex; gap: 0.9rem; align-items: center; color: var(--muted); font-size: 0.78rem; }
+  .list { display: flex; align-items: center; gap: 0.5rem; font-size: 0.86rem; margin: 0.5rem 0 0.2rem; color: var(--text); }
+  .list small { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Goal ball: four options</h1>
+  <p>Each drawn at the size it would be on the timeline (16px), on a slice of a real match graph, then larger beside it so the detail is visible, and in the events list.</p>
+  <div id="opts"></div>
+</div>
+<script>
+const OPTIONS = [
+  ["B1", "Football icon, light", "The standard football icon (Material Design's): a cream ball with the panels cut in. Made to read at small sizes."],
+  ["B2", "Minimal", "A white disc with one dark centre panel. Nothing else, so it stays clean when small."],
+  ["B3", "Line icon", "Drawn in light lines like the spyglass and the site's other icons. No white fill."],
+  ["B4", "Football icon on a dark disc", "B1 sitting on a dark circle, so it stands out where it crosses a bar."],
+];
+let n = 0;
+function ball(kind, cx, cy, size) {
+  const id = `c${n++}`;
+  const s = size / 20;
+  const pent = (r, rot = -90) => Array.from({ length: 5 }, (_, i) => {
+    const a = ((rot + i * 72) * Math.PI) / 180;
+    return `${(r * Math.cos(a)).toFixed(2)},${(r * Math.sin(a)).toFixed(2)}`;
+  }).join(" ");
+  const edge = (fill) => Array.from({ length: 5 }, (_, i) => {
+    const a = ((-90 + 36 + i * 72) * Math.PI) / 180;
+    const ox = 10.4 * Math.cos(a), oy = 10.4 * Math.sin(a);
+    return `<polygon points="${pent(3.6, -90 + 36 + i * 72 + 180).split(" ").map(p => { const [x, y] = p.split(",").map(Number); return `${(x + ox).toFixed(2)},${(y + oy).toFixed(2)}`; }).join(" ")}" fill="${fill}"/>`;
+  }).join("");
+  let inner = "";
+  const MAT = "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 3.3l1.35-.95c1.82.56 3.37 1.76 4.38 3.34l-.39 1.34-1.35.46L13 6.7V5.3zm-3.35-.95L11 5.3v1.4L7.01 9.49l-1.35-.46-.39-1.34c1.01-1.57 2.56-2.77 4.38-3.34zM7.08 17.11l-1.14.1C4.73 15.81 4 13.99 4 12c0-.12.01-.23.02-.35l1-.73 1.38.48 1.46 4.34-.78 1.37zm7.42 2.48c-.79.26-1.63.41-2.5.41s-1.71-.15-2.5-.41l-.69-1.49.64-1.1h5.11l.64 1.11-.7 1.48zM14.27 15H9.73l-1.35-4.02L12 8.44l3.63 2.54L14.27 15zm3.79 2.21l-1.14-.1-.79-1.37 1.46-4.34 1.39-.47 1 .73c.01.11.02.22.02.34 0 1.99-.73 3.81-1.94 5.21z";
+  if (kind === "B1") {
+    inner = `<g transform="scale(${20 / 20}) translate(-12,-12)"><path d="${MAT}" fill="#f2ebe0"/></g>`;
+  } else if (kind === "B4") {
+    inner = `<circle r="10.5" fill="#0c1520"/><g transform="translate(-12,-12)"><path d="${MAT}" fill="#f2ebe0"/></g>`;
+  } else if (false) {
+    const skin = kind === "B1" ? "#ffffff" : "#f2ebe0";
+    const ink = kind === "B1" ? "#111820" : "#1b5f58";
+    inner = `<defs><clipPath id="${id}"><circle r="9.3"/></clipPath></defs>
+      <circle r="9.3" fill="${skin}"/>
+      <g clip-path="url(#${id})">${edge(ink)}
+        <path d="${Array.from({ length: 5 }, (_, i) => { const a = ((-90 + i * 72) * Math.PI) / 180; return `M${(3.4 * Math.cos(a)).toFixed(2)},${(3.4 * Math.sin(a)).toFixed(2)}L${(7.4 * Math.cos(a)).toFixed(2)},${(7.4 * Math.sin(a)).toFixed(2)}`; }).join("")}" stroke="${ink}" stroke-width="1"/>
+      </g>
+      <polygon points="${pent(3.5)}" fill="${ink}"/>
+      <circle r="9.3" fill="none" stroke="${ink}" stroke-width="0.9"/>`;
+  } else if (kind === "B2") {
+    inner = `<circle r="9.3" fill="#f2ebe0"/><polygon points="${pent(4.4)}" fill="#0c1520"/>`;
+  } else {
+    inner = `<circle r="8.8" fill="#0c1520" stroke="#f2ebe0" stroke-width="1.6"/>
+      <polygon points="${pent(3.6)}" fill="none" stroke="#f2ebe0" stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="${Array.from({ length: 5 }, (_, i) => { const a = ((-90 + i * 72) * Math.PI) / 180; return `M${(3.6 * Math.cos(a)).toFixed(2)},${(3.6 * Math.sin(a)).toFixed(2)}L${(8.6 * Math.cos(a)).toFixed(2)},${(8.6 * Math.sin(a)).toFixed(2)}`; }).join("")}" stroke="#f2ebe0" stroke-width="1.4" stroke-linecap="round"/>`;
+  }
+  return `<g transform="translate(${cx},${cy}) scale(${s})">${inner}</g>`;
+}
+// a slice of Scunthorpe v Wolves U21: net pressure per minute, 0-60'
+const NET = [0,-.4,-.7,-1,-1.2,-.9,-.3,.2,.8,1.4,1.9,2.3,2.1,1.5,.6,0,-.4,-.6,-.3,.4,1,1.5,1.7,1.6,1.2,.6,0,-.5,-.8,-.9,-.9,-.8,-.6,-.2,.3,.8,1.2,1.1,.7,.4,.3,.6,.4,0,-.3,-.7,-1,-.8,-.5,-.6,-.3,.1,.3,.5,.6,.6,.4,0,-.5,-.9];
+function chart(kind) {
+  const W = 700, L = 10, mid = 70, half = 50, step = (W - L * 2) / 60, bw = step - 1.2;
+  const x = (m) => L + m * step;
+  let s = `<svg class="chart" viewBox="0 0 ${W} 140" width="${W}">`;
+  s += `<line x1="${x(45)}" x2="${x(45)}" y1="18" y2="122" stroke="rgba(255,255,255,.18)" stroke-dasharray="3 4"/>`;
+  NET.forEach((v, i) => {
+    const h = Math.abs(v) / 2.3 * half;
+    if (h < .5) return;
+    s += `<rect x="${x(i) + .6}" y="${v > 0 ? mid - h : mid}" width="${bw}" height="${h}" rx="1" fill="${v > 0 ? "#3dd6c6" : "#6f9bd1"}"/>`;
+  });
+  s += `<line x1="${L}" x2="${W - L}" y1="${mid}" y2="${mid}" stroke="rgba(255,255,255,.22)"/>`;
+  const goal = (m, home) => {
+    const cx = x(m - .5), row = home ? 10 : 130;
+    return `<line x1="${cx}" x2="${cx}" y1="${home ? row + 8 : row - 8}" y2="${mid}" stroke="rgba(242,235,224,.55)"/>` + ball(kind, cx, row, 16);
+  };
+  s += goal(5, true) + goal(4, false) + goal(48, false) + goal(56, true);
+  s += `<rect x="${x(37.5) - 3.5}" y="125" width="7" height="10" rx="1.5" fill="#e6c34a"/><rect x="${x(58.5) - 3.5}" y="5" width="7" height="10" rx="1.5" fill="#e6c34a"/>`;
+  return s + "</svg>";
+}
+document.getElementById("opts").innerHTML = OPTIONS.map(([k, name, why]) => `
+  <section class="opt">
+    <h2>${k} · ${name}<span>${why}</span></h2>
+    <div class="row">${chart(k)}
+      <div class="big"><svg width="22" height="22" viewBox="-11 -11 22 22">${ball(k, 0, 0, 20)}</svg>
+        <svg width="44" height="44" viewBox="-22 -22 44 44">${ball(k, 0, 0, 40)}</svg></div>
+    </div>
+    <div class="list"><span style="color:var(--muted);width:2.4rem">56'</span><svg width="14" height="14" viewBox="-7 -7 14 14">${ball(k, 0, 0, 13)}</svg><b>D. Howe</b><small>Scunthorpe</small></div>
+  </section>`).join("");
+</script>
+</body>
+</html>

@@ -15,6 +15,7 @@ type Recap = {
   editable: boolean;
   deadline: string | null;
   headline: string;
+  data: { strategies?: string[] };
   texts: Texts;
   fields: FieldSpec[];
   needs_lesson: boolean;
@@ -33,6 +34,7 @@ type Payload = {
   this_week?: string;
   today?: string;
   yesterday?: string;
+  strategies?: { key: string; name: string }[];
 };
 
 const CHANNELS: [string, string][] = [
@@ -106,6 +108,8 @@ export function AdminRecap({ api }: { api: Api }) {
   const [channels, setChannels] = useState<Channels>({});
   const [week, setWeek] = useState<string | null>(null);
   const [pickDay, setPickDay] = useState("");
+  // Strategies the next draft counts; empty means all of them.
+  const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -114,9 +118,10 @@ export function AdminRecap({ api }: { api: Api }) {
   const recap = payload?.recap ?? null;
 
   const adopt = useCallback((next: Payload) => {
-    setPayload((prev) => ({ ...prev, ...next, weeks: next.weeks ?? prev?.weeks }));
+    setPayload((prev) => ({ ...prev, ...next, weeks: next.weeks ?? prev?.weeks, strategies: next.strategies ?? prev?.strategies }));
     setTexts(next.recap ? { ...next.recap.texts } : null);
     setChannels(next.recap?.channels ?? {});
+    if (next.recap) setPicked(next.recap.data?.strategies ?? []);
   }, []);
 
   const load = useCallback(async () => {
@@ -204,7 +209,8 @@ export function AdminRecap({ api }: { api: Api }) {
 
   const draft = (target?: string) =>
     run("Draft built from the signals.", async () => {
-      adopt(await api<Payload>(`/api/admin/recap/draft?kind=${kind}${target ? `&week=${target}` : ""}`, { method: "POST" }));
+      const only = picked.map((key) => `&strategy=${encodeURIComponent(key)}`).join("");
+      adopt(await api<Payload>(`/api/admin/recap/draft?kind=${kind}${target ? `&week=${target}` : ""}${only}`, { method: "POST" }));
       setWeek(target ?? null);
     });
 
@@ -241,6 +247,24 @@ export function AdminRecap({ api }: { api: Api }) {
     </div>
   );
 
+  const toggle = (key: string) =>
+    setPicked((now) => (now.includes(key) ? now.filter((k) => k !== key) : [...now, key]));
+  const strategyPicker = payload?.strategies?.length ? (
+    <div className="rc-strats" role="group" aria-label="Strategies to count">
+      <span className="kit-muted">Count</span>
+      <button type="button" className={picked.length === 0 ? "is-on" : ""} onClick={() => setPicked([])}>
+        All strategies
+      </button>
+      {payload.strategies.map((s) => (
+        <button key={s.key} type="button" className={picked.includes(s.key) ? "is-on" : ""} onClick={() => toggle(s.key)}>
+          {s.name}
+        </button>
+      ))}
+    </div>
+  ) : null;
+  const strategyNames = (keys: string[] | undefined) =>
+    (keys ?? []).map((key) => payload?.strategies?.find((s) => s.key === key)?.name ?? key).join(", ");
+
   const dayPicker =
     kind === "day" && payload ? (
       <div className="rc-draft-day">
@@ -271,6 +295,7 @@ export function AdminRecap({ api }: { api: Api }) {
                 The bot drafts last week's recap every Monday at 08:00 UTC and messages you on Telegram. You can build it
                 now instead to see how it looks.
               </p>
+              {strategyPicker}
               <div className="rc-actions">
                 <button type="button" className="kit-btn is-primary" disabled={busy} onClick={() => void draft(payload.last_week)}>
                   Draft last week ({payload.last_week ? fmtPeriod(payload.last_week, "week") : "…"})
@@ -286,6 +311,7 @@ export function AdminRecap({ api }: { api: Api }) {
             <>
               <h2>No daily recap yet</h2>
               <p>Daily recaps are never drafted for you. On a day that went well, draft it here, edit every word, and approve.</p>
+              {strategyPicker}
               {dayPicker}
             </>
           )}
@@ -334,6 +360,7 @@ export function AdminRecap({ api }: { api: Api }) {
         </span>
         <b>{fmtPeriod(recap.week_start, recap.kind)}</b>
         <span className="kit-muted">{recap.headline}</span>
+        {recap.data?.strategies?.length ? <span className="kit-pill">{strategyNames(recap.data.strategies)} only</span> : null}
         <div className="kit-card-right">
           {recap.status === "draft" && recap.deadline ? <span className="kit-muted">Approve by {fmtWhen(recap.deadline)}</span> : null}
           {recap.posted_at ? <span className="kit-muted">Posted {fmtWhen(recap.posted_at)}</span> : null}
@@ -361,6 +388,7 @@ export function AdminRecap({ api }: { api: Api }) {
           ) : null}
         </div>
       </div>
+      {recap.status === "draft" || kind === "day" ? strategyPicker : null}
       {dayPicker}
 
       {Object.keys(recap.post_log || {}).length ? (

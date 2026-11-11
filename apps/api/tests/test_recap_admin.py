@@ -207,3 +207,26 @@ def test_daily_needs_no_lesson_and_any_date(client: TestClient, monkeypatch) -> 
     res = client.post("/api/admin/recap/2026-11-03/approve?kind=day")
     assert res.status_code == 200
     assert state["status_calls"] == [("approved", ["draft", "failed"])]
+
+
+def test_draft_can_be_narrowed_to_strategies(client: TestClient, monkeypatch) -> None:
+    import kalchas_db.settings
+
+    saved = {}
+    _store(monkeypatch, _row())
+    monkeypatch.setattr(kalchas_db.recaps, "fetch_week_signals_sync", lambda dsn, a, b: [])
+    monkeypatch.setattr(kalchas_db.settings, "list_thresholds", lambda dsn: {})
+
+    def save(dsn, week, data, texts, kind="week"):
+        saved.update(data=data, texts=texts)
+        return True
+
+    monkeypatch.setattr(kalchas_db.recaps, "save_draft_sync", save)
+    res = client.post("/api/admin/recap/draft?kind=day&week=2026-11-03&strategy=delta_goal")
+    assert res.status_code == 200
+    assert saved["data"]["strategies"] == ["delta_goal"]
+    assert saved["texts"]["kicker"] == "A good day for Form Bar"
+    bad = client.post("/api/admin/recap/draft?kind=day&strategy=nonsense")
+    assert bad.status_code == 400
+    choices = client.get("/api/admin/recap").json()["strategies"]
+    assert {"key": "delta_goal", "name": "Form Bar"} in choices

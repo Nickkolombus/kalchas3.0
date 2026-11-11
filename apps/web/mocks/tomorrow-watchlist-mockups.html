@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tomorrow watchlist</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Roboto:wght@400;500;700;900&family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --f: "Manrope", system-ui, sans-serif;
+        --bg: #0b1118;
+        --surface: #121a23;
+        --surface-2: #18222d;
+        --line: rgba(255, 255, 255, 0.08);
+        --ink: #eef1f5;
+        --ink2: #a9b2bf;
+        --mut: #6e7988;
+        --goal: #2fd39a;
+        --goal-soft: rgba(47, 211, 154, 0.14);
+        --amber: #e6b450;
+        --amber-soft: rgba(230, 180, 80, 0.14);
+        --loss: #e0685f;
+        --pin: rgb(203, 184, 146);
+        --track: rgba(255, 255, 255, 0.07);
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+      a { color: inherit; }
+
+      .page { max-width: 1120px; margin: 0 auto; padding: 36px 16px 90px; }
+      .page > h1 { font-size: 1.8rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 6px; }
+      .page > p { color: var(--ink2); max-width: 72ch; margin: 0 0 6px; line-height: 1.55; }
+      .page > h2 { font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em; margin: 64px 0 4px; padding-top: 22px; border-top: 1px solid var(--line); }
+      .page > h2 + p { margin-bottom: 18px; }
+      .sample { display: inline-block; margin-top: 8px; font-size: 0.85rem; color: var(--amber); background: var(--amber-soft); padding: 4px 10px; border-radius: 6px; }
+
+      .fonts { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px 0; margin-top: 14px; background: var(--bg); border-bottom: 1px solid var(--line); }
+      .fonts span { font-size: 0.85rem; color: var(--ink2); margin-right: 4px; }
+      .fonts button { font: inherit; font-size: 0.88rem; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+      .fonts button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+      /* ---------- shared bits ---------- */
+      .shell { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+      .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+      .tabs { display: flex; gap: 4px; }
+      .tabs button { font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--ink2); background: none; border: 0; padding: 7px 12px; border-radius: 6px; cursor: pointer; }
+      .tabs button.on { color: var(--ink); background: var(--surface-2); }
+      .topbar .meta { font-size: 0.85rem; color: var(--mut); }
+      .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+      .filters button { font: inherit; font-size: 0.82rem; color: var(--ink2); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; cursor: pointer; }
+      .filters button.on { color: var(--ink); border-color: rgba(255,255,255,.28); }
+
+      .crest { width: 18px; height: 18px; border-radius: 50%; flex: none; display: inline-grid; place-items: center; font-size: 9px; font-weight: 800; color: #0b1118; }
+      .watch { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
+      .watch i { width: 8px; height: 8px; border-radius: 50%; }
+      .watch.strong { color: var(--goal); } .watch.strong i { background: var(--goal); }
+      .watch.look { color: var(--amber); } .watch.look i { background: var(--amber); }
+      .watch.quiet { color: var(--mut); } .watch.quiet i { background: var(--mut); }
+      .tag { display: inline-block; font-size: 0.78rem; color: var(--ink2); background: var(--surface-2); border-radius: 5px; padding: 3px 8px; white-space: nowrap; }
+
+      /* ---------- Direction A: fixture list ---------- */
+      .lg-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 18px; background: rgba(255,255,255,.025); border-bottom: 1px solid var(--line); }
+      .lg-head b { font-size: 0.86rem; font-weight: 700; }
+      .lg-head b small { color: var(--mut); font-weight: 500; margin-left: 6px; }
+      .lg-head .rec { font-size: 0.8rem; color: var(--ink2); }
+      .lg-head .rec em { font-style: normal; color: var(--goal); font-weight: 700; }
+      .lg-head .rec em.mid { color: var(--ink); }
+      .fx { display: grid; grid-template-columns: 52px minmax(0, 1.25fr) 150px minmax(0, 1.2fr) 112px; align-items: center; column-gap: 16px; padding: 10px 18px; border-bottom: 1px solid var(--line); text-decoration: none; cursor: pointer; }
+      .fx:hover { background: rgba(255,255,255,.03); }
+      .fx .t { font-size: 0.88rem; color: var(--ink2); font-weight: 600; }
+      .fx .teams { display: grid; gap: 4px; min-width: 0; }
+      .fx .teams div { display: flex; align-items: center; gap: 8px; font-size: 0.92rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .fx .teams .pos { color: var(--mut); font-weight: 500; font-size: 0.78rem; }
+      .odds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+      .odds span { font-size: 0.82rem; text-align: center; background: var(--surface-2); border-radius: 5px; padding: 5px 0; color: var(--ink2); }
+      .odds span b { display: block; font-size: 0.66rem; color: var(--mut); font-weight: 600; }
+      .odds span.fav { color: var(--ink); font-weight: 700; }
+      .fx .why { font-size: 0.84rem; color: var(--ink2); line-height: 1.4; }
+      .fx .end { text-align: right; }
+
+      /* ---------- Direction B: shortlist first ---------- */
+      .intro { padding: 18px 18px 6px; }
+      .intro h3 { margin: 0 0 4px; font-size: 1.15rem; letter-spacing: -0.01em; }
+      .intro p { margin: 0; color: var(--ink2); font-size: 0.92rem; line-height: 1.5; }
+      .picks { display: grid; gap: 10px; padding: 14px 18px 18px; }
+      .pick { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 14px 16px; background: var(--surface-2); border-radius: 8px; text-decoration: none; cursor: pointer; border-left: 3px solid transparent; }
+      .pick:hover { border-left-color: var(--goal); }
+      .pick .n { font-size: 1.3rem; font-weight: 800; color: var(--mut); line-height: 1.1; }
+      .pick .m { font-size: 1rem; font-weight: 700; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .pick .m small { font-size: 0.8rem; color: var(--mut); font-weight: 500; }
+      .pick p { margin: 6px 0 8px; color: var(--ink2); font-size: 0.9rem; line-height: 1.5; max-width: 70ch; }
+      .pick .tags { display: flex; gap: 6px; flex-wrap: wrap; }
+      .pick .k { text-align: right; font-size: 0.86rem; font-weight: 700; color: var(--ink2); white-space: nowrap; }
+      .rest { border-top: 1px solid var(--line); }
+      .rest summary { list-style: none; cursor: pointer; padding: 14px 18px; font-size: 0.9rem; font-weight: 600; color: var(--ink2); display: flex; justify-content: space-between; }
+      .rest summary::-webkit-details-marker { display: none; }
+      .mini { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 9px 18px; border-top: 1px solid var(--line); font-size: 0.88rem; }
+      .mini .t { color: var(--ink2); font-weight: 600; }
+      .mini .lg { color: var(--mut); font-size: 0.78rem; display: block; }
+
+      /* ---------- Match page ---------- */
+      .mp-head { padding: 20px 18px 18px; border-bottom: 1px solid var(--line); }
+      .crumb { font-size: 0.82rem; color: var(--mut); margin-bottom: 14px; }
+      .crumb a { color: var(--ink2); text-decoration: none; }
+      .vs { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; }
+      .side { display: flex; align-items: center; gap: 12px; min-width: 0; }
+      .side.away { justify-content: flex-end; text-align: right; }
+      .side .crest { width: 44px; height: 44px; font-size: 15px; }
+      .side b { display: block; font-size: 1.2rem; font-weight: 800; letter-spacing: -0.01em; }
+      .side span { font-size: 0.82rem; color: var(--mut); }
+      .ko { text-align: center; }
+      .ko b { display: block; font-size: 1.35rem; font-weight: 800; }
+      .ko span { font-size: 0.8rem; color: var(--mut); }
+      .mp-odds { display: flex; justify-content: center; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+      .mp-odds span { font-size: 0.85rem; color: var(--ink2); background: var(--surface-2); border-radius: 6px; padding: 6px 12px; }
+      .mp-odds span b { color: var(--ink); }
+
+      .mp-body { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 0; }
+      .col { min-width: 0; }
+      .col + .col { border-left: 1px solid var(--line); }
+      .sec { padding: 18px; border-bottom: 1px solid var(--line); }
+      .sec:last-child { border-bottom: 0; }
+      .sec h4 { margin: 0 0 4px; font-size: 1rem; font-weight: 700; letter-spacing: -0.01em; }
+      .sec > .sub { margin: 0 0 14px; font-size: 0.84rem; color: var(--mut); }
+
+      .points { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+      .points li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; font-size: 0.95rem; line-height: 1.5; }
+      .points li::before { content: attr(data-n); width: 22px; height: 22px; border-radius: 50%; background: var(--goal-soft); color: var(--goal); font-size: 0.78rem; font-weight: 800; display: grid; place-items: center; margin-top: 1px; }
+      .points li b { color: var(--ink); }
+      .points li span { color: var(--ink2); }
+
+      .form-row { display: grid; grid-template-columns: 130px 1fr; gap: 12px; align-items: center; padding: 8px 0; }
+      .form-row + .form-row { border-top: 1px solid var(--line); }
+      .form-row .who { font-size: 0.9rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+      .pills { display: flex; gap: 5px; flex-wrap: wrap; }
+      .pill { position: relative; width: 44px; text-align: center; border-radius: 5px; padding: 4px 0 3px; font-size: 0.7rem; font-weight: 700; color: #0b1118; cursor: default; }
+      .pill small { display: block; font-size: 0.66rem; font-weight: 600; opacity: .75; }
+      .pill.w { background: var(--goal); } .pill.d { background: #9aa3af; } .pill.l { background: var(--loss); }
+      .form-sum { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+      .form-sum div { background: var(--surface-2); border-radius: 7px; padding: 10px 12px; font-size: 0.85rem; color: var(--ink2); line-height: 1.45; }
+      .form-sum b { color: var(--ink); }
+
+      /* goal timing mirror chart */
+      .tm-legend { display: flex; gap: 16px; font-size: 0.8rem; color: var(--ink2); margin-bottom: 10px; flex-wrap: wrap; }
+      .tm-legend span { display: inline-flex; align-items: center; gap: 6px; }
+      .tm-legend i { width: 12px; height: 10px; border-radius: 2px; }
+      .k-for { background: var(--goal); } .k-ag { background: repeating-linear-gradient(135deg, #8b95a3 0 2px, transparent 2px 5px); }
+      .tm-cols { display: grid; grid-template-columns: 1fr 70px 1fr; font-size: 0.8rem; font-weight: 700; color: var(--ink2); margin-bottom: 6px; }
+      .tm-cols span:last-child { text-align: right; }
+      .tm { display: grid; grid-template-columns: 1fr 70px 1fr; align-items: center; height: 26px; }
+      .tm .lab { text-align: center; font-size: 0.78rem; color: var(--mut); font-weight: 600; }
+      .tm .lab.late { color: var(--amber); }
+      .bars { display: flex; gap: 2px; height: 12px; align-items: stretch; }
+      .bars.l { justify-content: flex-end; }
+      .bars i { display: block; border-radius: 2px; }
+      .bars .f { background: var(--goal); }
+      .bars .a { background: repeating-linear-gradient(135deg, #8b95a3 0 2px, transparent 2px 5px); }
+      .bars em { font-style: normal; font-size: 0.74rem; color: var(--mut); align-self: center; padding: 0 6px; }
+      .callout { margin-top: 12px; padding: 10px 12px; border-radius: 7px; background: var(--amber-soft); color: var(--ink); font-size: 0.88rem; line-height: 1.45; }
+
+      /* h2h */
+      .h2h-split { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 2px; margin: 8px 0 6px; }
+      .h2h-split i { display: block; }
+      .h2h-keys { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--ink2); }
+      .h2h-keys b { color: var(--ink); }
+      .meet { display: grid; grid-template-columns: 76px 1fr auto 1fr; gap: 10px; align-items: center; padding: 8px 0; font-size: 0.86rem; border-top: 1px solid var(--line); }
+      .meet:first-of-type { margin-top: 12px; }
+      .meet .d { color: var(--mut); font-size: 0.78rem; }
+      .meet .h { text-align: right; }
+      .meet .s { font-weight: 800; background: var(--surface-2); border-radius: 5px; padding: 2px 8px; }
+      .meet .win { font-weight: 700; }
+      .stat { margin-top: 12px; }
+      .stat .row { display: flex; justify-content: space-between; font-size: 0.84rem; color: var(--ink2); margin-bottom: 5px; }
+      .stat .row b { color: var(--ink); }
+      .track { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+      .track i { display: block; height: 100%; background: var(--ink2); border-radius: 3px; }
+
+      /* table */
+      .tbl { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+      .tbl th { text-align: left; font-weight: 600; color: var(--mut); font-size: 0.75rem; padding: 0 0 6px; }
+      .tbl th.n, .tbl td.n { text-align: right; width: 38px; }
+      .tbl td { padding: 6px 0; border-top: 1px solid var(--line); color: var(--ink2); }
+      .tbl tr.me td { color: var(--ink); font-weight: 700; }
+      .tbl tr.me td:first-child { box-shadow: inset 3px 0 0 var(--pin); padding-left: 8px; }
+      .tbl td:first-child { width: 30px; }
+      .gap { text-align: center; color: var(--mut); font-size: 0.75rem; }
+
+      /* our record */
+      .ours { display: grid; gap: 14px; }
+      .ours .line { font-size: 0.9rem; line-height: 1.45; color: var(--ink2); }
+      .ours .line b { color: var(--ink); }
+      .cmp { position: relative; height: 8px; border-radius: 4px; background: var(--track); margin-top: 7px; }
+      .cmp i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--goal); }
+      .cmp u { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); border-radius: 1px; }
+      .cmp-key { display: flex; justify-content: space-between; font-size: 0.74rem; color: var(--mut); margin-top: 5px; }
+
+      /* news */
+      .draft { display: inline-block; font-size: 0.74rem; font-weight: 700; color: var(--amber); background: var(--amber-soft); padding: 2px 8px; border-radius: 5px; margin-left: 8px; vertical-align: 2px; }
+      .news { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+      .news li { font-size: 0.88rem; line-height: 1.45; color: var(--ink2); padding-left: 12px; border-left: 2px solid var(--line); }
+      .news li b { color: var(--ink); }
+      .news li a { color: var(--mut); font-size: 0.78rem; }
+      .soon { font-size: 0.85rem; color: var(--mut); background: var(--surface-2); border-radius: 7px; padding: 10px 12px; }
+
+      @media (max-width: 860px) {
+        .fx { grid-template-columns: 46px minmax(0, 1fr) auto; row-gap: 8px; }
+        .fx .odds { display: none; }
+        .fx .why { grid-column: 2 / -1; grid-row: 2; }
+        .fx .end { grid-column: 3; grid-row: 1; }
+        .mp-body { grid-template-columns: 1fr; }
+        .col + .col { border-left: 0; border-top: 1px solid var(--line); }
+        .lg-head { flex-direction: column; align-items: flex-start; gap: 2px; }
+      }
+      @media (max-width: 560px) {
+        .fx { grid-template-columns: 46px minmax(0, 1fr); row-gap: 6px; }
+        .fx .end { grid-column: 2; grid-row: 3; text-align: left; }
+        .pick { grid-template-columns: 24px minmax(0, 1fr); }
+        .pick .k { grid-column: 2; text-align: left; }
+        .side .crest { width: 32px; height: 32px; font-size: 12px; }
+        .side b { font-size: 1rem; }
+        .vs { gap: 8px; }
+        .form-row { grid-template-columns: 1fr; gap: 6px; }
+        .pill { width: 40px; }
+        .form-sum { grid-template-columns: 1fr; }
+        .meet { grid-template-columns: 1fr auto 1fr; }
+        .meet .d { grid-column: 1 / -1; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <h1>Tomorrow's watchlist</h1>
+      <p>
+        Kalchas picks out the matches worth having open tomorrow. It doesn't tip a winner.
+        It points to games where our live alerts have the best chance: busy late periods,
+        leagues where we land often, and favourites who usually get going.
+      </p>
+      <p>Two ways to show the list, then the research page you land on when you tap a match.</p>
+      <span class="sample">Sample matches and numbers. The live version will use the real fixtures and our real alert history.</span>
+
+      <div class="fonts" role="group" aria-label="Font">
+        <span>Font</span>
+        <button data-font='"Manrope", system-ui, sans-serif' aria-pressed="true">Manrope (current)</button>
+        <button data-font='"Inter", system-ui, sans-serif' aria-pressed="false">Inter</button>
+        <button data-font='"Roboto", system-ui, sans-serif' aria-pressed="false">Roboto</button>
+      </div>
+
+      <!-- =============================================================== -->
+      <h2>A · Full list, grouped by league</h2>
+      <p>
+        Familiar fixture-list layout like Sofascore or Forebet. Each league header shows how our alerts
+        do there, and each match gets a one-line reason in plain words. Easy to scan and nothing
+        is hidden. Best for people who already know which leagues they follow.
+      </p>
+
+      <div class="shell">
+        <div class="topbar">
+          <div class="tabs">
+            <button>Live now</button>
+            <button class="on">Tomorrow · Tue 3 Nov</button>
+          </div>
+          <div class="filters">
+            <button class="on">All 46</button>
+            <button>Strong watch 7</button>
+            <button>Evening only</button>
+          </div>
+        </div>
+
+        <div class="lg-head">
+          <b>England · Championship <small>12 matches</small></b>
+          <span class="rec">Our alerts here: <em>67% landed</em> (38 of 57)</span>
+        </div>
+        <a class="fx" href="#match">
+          <span class="t">19:45</span>
+          <div class="teams">
+            <div><i class="crest" style="background:#f3d34a">N</i>Norwich City <span class="pos">4th</span></div>
+            <div><i class="crest" style="background:#f19a3e">H</i>Hull City <span class="pos">17th</span></div>
+          </div>
+          <div class="odds"><span class="fav"><b>1</b>1.95</span><span><b>X</b>3.60</span><span><b>2</b>3.90</span></div>
+          <div class="why">Both sides' games get busy late: 11 of their 29 goals came after 75'.</div>
+          <div class="end"><span class="watch strong"><i></i>Strong watch</span></div>
+        </a>
+        <a class="fx" href="#match">
+          <span class="t">19:45</span>
+          <div class="teams">
+            <div><i class="crest" style="background:#6cabdd">C</i>Coventry City <span class="pos">2nd</span></div>
+            <div><i class="crest" style="background:#e03a3e">M</i>Middlesbrough <span class="pos">6th</span></div>
+          </div>
+          <div class="odds"><span class="fav"><b>1</b>2.25</span><span><b>X</b>3.40</span><span><b>2</b>3.20</span></div>
+          <div class="why">Top-six meeting. Both have scored in 8 of their last 10.</div>
+          <div class="end"><span class="watch strong"><i></i>Strong watch</span></div>
+        </a>
+        <a class="fx" href="#match">
+          <span class="t">20:00</span>
+          <div class="teams">
+            <div><i class="crest" style="background:#1b458f;color:#fff">P</i>Preston <span class="pos">14th</span></div>
+            <div><i class="crest" style="background:#d71920;color:#fff">B</i>Bristol City <span class="pos">11th</span></div>
+          </div>
+          <div class="odds"><span><b>1</b>2.60</span><span><b>X</b>3.10</span><span><b>2</b>2.85</span></div>
+          <div class="why">Tight and low-scoring lately: under 2 goals in 6 of Preston's last 8.</div>
+          <div class="end"><span class="watch quiet"><i></i>Quiet</span></div>
+        </a>
+
+        <div class="lg-head">
+          <b>Europe · Champions League <small>9 matches</small></b>
+          <span class="rec">Our alerts here: <em class="mid">58% landed</em> (21 of 36), about our average</span>
+        </div>
+        <a class="fx" href="#match">
+          <span class="t">20:00</span>
+          <div class="teams">
+            <div><i class="crest" style="background:#0a4fa3;color:#fff">I</i>Inter <span class="pos">Group 5th</span></div>
+            <div><i class="crest" style="background:#ffffff">S</i>Sporting CP <span class="pos">Group 19th</span></div>
+          </div>
+          <div class="odds"><span class="fav"><b>1</b>1.55</span><span><b>X</b>4.20</span><span><b>2</b>6.00</span></div>
+          <div class="why">Big home favourite. When favourites like this are level at half-time, we land 71%.</div>
+          <div class="end"><span class="watch look"><i></i>Worth a look</span></div>
+        </a>
+
+        <div class="lg-head">
+          <b>Netherlands · Eerste Divisie <small>6 matches</small></b>
+          <span class="rec">Our alerts here: <em>72% landed</em> (26 of 36), our best league this month</span>
+        </div>
+        <a class="fx" href="#match">
+          <span class="t">20:00</span>
+          <div class="teams">
+            <div><i class="crest" style="background:#c8102e;color:#fff">J</i>Jong Ajax <span class="pos">9th</span></div>
+            <div><i class="crest" style="background:#008a4b;color:#fff">D</i>FC Dordrecht <span class="pos">3rd</span></div>
+          </div>
+          <div class="odds"><span><b>1</b>2.70</span><span><b>X</b>3.90</span><span class="fav"><b>2</b>2.30</span></div>
+          <div class="why">3.6 goals a game across both teams' last 10. Our busiest league for goals.</div>
+          <div class="end"><span class="watch strong"><i></i>Strong watch</span></div>
+        </a>
+      </div>
+
+      <!-- =============================================================== -->
+      <h2>B · Our five first, the rest below</h2>
+      <p>
+        Opens with a short, ranked list where each pick tells its story in a sentence or two. The
+        full list is folded underneath. Closer to a tipster's daily post, and it doubles as the
+        source for a "tomorrow" Telegram or X post.
+      </p>
+
+      <div class="shell">
+        <div class="topbar">
+          <div class="tabs">
+            <button>Live now</button>
+            <button class="on">Tomorrow · Tue 3 Nov</button>
+          </div>
+          <span class="meta">46 matches · updated 22:10</span>
+        </div>
+        <div class="intro">
+          <h3>Five to have open tomorrow</h3>
+          <p>Picked for late goals, leagues where we land often, and favourites who usually get going.</p>
+        </div>
+        <div class="picks">
+          <a class="pick" href="#match">
+            <span class="n">1</span>
+            <div>
+              <div class="m"><i class="crest" style="background:#f3d34a">N</i>Norwich City v Hull City <small>Championship</small></div>
+              <p>Both sides' games keep going right to the end: 11 of their last 29 goals came after 75'. Norwich have also scored in each of their last 9 at home.</p>
+              <div class="tags"><span class="tag">Late goals</span><span class="tag">Home favourite</span><span class="tag">Championship 67%</span></div>
+            </div>
+            <span class="k">19:45</span>
+          </a>
+          <a class="pick" href="#match">
+            <span class="n">2</span>
+            <div>
+              <div class="m"><i class="crest" style="background:#c8102e;color:#fff">J</i>Jong Ajax v FC Dordrecht <small>Eerste Divisie</small></div>
+              <p>3.6 goals a game across both teams' last 10, in the league where our alerts land most often this month.</p>
+              <div class="tags"><span class="tag">Lots of goals</span><span class="tag">Eerste Divisie 72%</span></div>
+            </div>
+            <span class="k">20:00</span>
+          </a>
+          <a class="pick" href="#match">
+            <span class="n">3</span>
+            <div>
+              <div class="m"><i class="crest" style="background:#6cabdd">C</i>Coventry City v Middlesbrough <small>Championship</small></div>
+              <p>Top-six meeting where both sides score most weeks (8 of their last 10 each). The last three meetings had 10 goals.</p>
+              <div class="tags"><span class="tag">Both score</span><span class="tag">Busy head-to-head</span></div>
+            </div>
+            <span class="k">19:45</span>
+          </a>
+        </div>
+        <details class="rest">
+          <summary><span>All 46 matches tomorrow</span><span>Show</span></summary>
+          <div class="mini"><span class="t">19:45</span><span>Preston v Bristol City<span class="lg">Championship</span></span><span class="watch quiet"><i></i>Quiet</span></div>
+          <div class="mini"><span class="t">20:00</span><span>Inter v Sporting CP<span class="lg">Champions League</span></span><span class="watch look"><i></i>Worth a look</span></div>
+        </details>
+      </div>
+
+      <!-- =============================================================== -->
+      <h2 id="match">Match research page</h2>
+      <p>
+        What you see after tapping a match. It opens with "what to watch" in plain sentences, then
+        the evidence behind it: form, when goals come, head-to-head, the table, and how our alerts
+        have done in games like this. Team news is a later add-on and shows here only after an admin
+        approves it.
+      </p>
+
+      <div class="shell">
+        <div class="mp-head">
+          <div class="crumb"><a href="#">Tomorrow</a> · England · Championship · Round 15</div>
+          <div class="vs">
+            <div class="side">
+              <i class="crest" style="background:#f3d34a">N</i>
+              <div><b>Norwich City</b><span>4th · 27 pts</span></div>
+            </div>
+            <div class="ko"><b>19:45</b><span>Tue 3 Nov</span></div>
+            <div class="side away">
+              <div><b>Hull City</b><span>17th · 16 pts</span></div>
+              <i class="crest" style="background:#f19a3e">H</i>
+            </div>
+          </div>
+          <div class="mp-odds">
+            <span>Norwich <b>1.95</b></span><span>Draw <b>3.60</b></span><span>Hull <b>3.90</b></span><span>Over 2.5 goals <b>1.80</b></span>
+          </div>
+        </div>
+
+        <div class="mp-body">
+          <div class="col">
+            <div class="sec">
+              <h4>What to watch</h4>
+              <p class="sub">Written from the numbers below.</p>
+              <ol class="points">
+                <li data-n="1"><div><b>Leave it open after 75'.</b> <span>11 of the 29 goals in these teams' last 10 games came in the final 15 minutes. Hull have conceded 7 of theirs that late.</span></div></li>
+                <li data-n="2"><div><b>Norwich usually score at home.</b> <span>They've scored in each of their last 9 home games, and in 7 of those the first goal came before half-time.</span></div></li>
+                <li data-n="3"><div><b>If it's still 0–0 at half-time, Norwich are the side to watch.</b> <span>In the Championship, our alerts on a home favourite level at the break landed 26 of 37 times.</span></div></li>
+              </ol>
+            </div>
+
+            <div class="sec">
+              <h4>Recent form</h4>
+              <p class="sub">Last 6 league games, newest on the left.</p>
+              <div class="form-row">
+                <div class="who"><i class="crest" style="background:#f3d34a">N</i>Norwich</div>
+                <div class="pills">
+                  <span class="pill w" title="2–1 v Millwall">W<small>2–1</small></span>
+                  <span class="pill w" title="3–1 at Luton">W<small>3–1</small></span>
+                  <span class="pill d" title="1–1 v Derby">D<small>1–1</small></span>
+                  <span class="pill w" title="2–0 at QPR">W<small>2–0</small></span>
+                  <span class="pill l" title="1–2 at Leeds">L<small>1–2</small></span>
+                  <span class="pill w" title="4–2 v Stoke">W<small>4–2</small></span>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="who"><i class="crest" style="background:#f19a3e">H</i>Hull</div>
+                <div class="pills">
+                  <span class="pill l" title="1–3 at Watford">L<small>1–3</small></span>
+                  <span class="pill d" title="2–2 v Sheff Wed">D<small>2–2</small></span>
+                  <span class="pill l" title="0–2 v Coventry">L<small>0–2</small></span>
+                  <span class="pill w" title="2–1 at Oxford">W<small>2–1</small></span>
+                  <span class="pill l" title="2–3 at Portsmouth">L<small>2–3</small></span>
+                  <span class="pill d" title="1–1 v Swansea">D<small>1–1</small></span>
+                </div>
+              </div>
+              <div class="form-sum">
+                <div><b>Norwich</b> score 2.1 and concede 1.0 a game. 4 wins in 6.</div>
+                <div><b>Hull</b> score 1.3 and concede 2.0 a game. 1 win in 6, and only 1 clean sheet all season.</div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <h4>When the goals come</h4>
+              <p class="sub">All goals in each team's last 10 games, by part of the match.</p>
+              <div class="tm-legend">
+                <span><i class="k-for"></i>Scored</span>
+                <span><i class="k-ag"></i>Conceded</span>
+              </div>
+              <div class="tm-cols"><span>Norwich</span><span></span><span>Hull</span></div>
+              <div class="tm"><div class="bars l"><em>2</em><i class="a" style="width:12px"></i><i class="f" style="width:12px"></i></div><div class="lab">0–15'</div><div class="bars"><i class="f" style="width:12px"></i><i class="a" style="width:12px"></i><em>2</em></div></div>
+              <div class="tm"><div class="bars l"><em>3</em><i class="a" style="width:12px"></i><i class="f" style="width:24px"></i></div><div class="lab">16–30'</div><div class="bars"><i class="f" style="width:12px"></i><i class="a" style="width:24px"></i><em>3</em></div></div>
+              <div class="tm"><div class="bars l"><em>4</em><i class="a" style="width:12px"></i><i class="f" style="width:36px"></i></div><div class="lab">31–45'</div><div class="bars"><i class="f" style="width:12px"></i><i class="a" style="width:12px"></i><em>2</em></div></div>
+              <div class="tm"><div class="bars l"><em>3</em><i class="a" style="width:12px"></i><i class="f" style="width:24px"></i></div><div class="lab">46–60'</div><div class="bars"><i class="f" style="width:24px"></i><i class="a" style="width:36px"></i><em>5</em></div></div>
+              <div class="tm"><div class="bars l"><em>3</em><i class="a" style="width:12px"></i><i class="f" style="width:24px"></i></div><div class="lab">61–75'</div><div class="bars"><i class="f" style="width:12px"></i><i class="a" style="width:24px"></i><em>3</em></div></div>
+              <div class="tm"><div class="bars l"><em>6</em><i class="a" style="width:24px"></i><i class="f" style="width:48px"></i></div><div class="lab late">76–90+'</div><div class="bars"><i class="f" style="width:24px"></i><i class="a" style="width:60px"></i><em>7</em></div></div>
+              <div class="callout">The last 15 minutes is the busiest part of the game for both teams. Norwich score late and Hull concede late, and that's when our Delta Goal and Pressure alerts usually fire.</div>
+            </div>
+          </div>
+
+          <div class="col">
+            <div class="sec">
+              <h4>Head-to-head</h4>
+              <p class="sub">Last 5 meetings.</p>
+              <div class="h2h-split">
+                <i style="flex:3;background:#f3d34a"></i><i style="flex:1;background:#8b95a3"></i><i style="flex:1;background:#f19a3e"></i>
+              </div>
+              <div class="h2h-keys"><span><b>3</b> Norwich</span><span><b>1</b> draw</span><span><b>1</b> Hull</span></div>
+              <div class="meet"><span class="d">Mar 2026</span><span class="h">Hull</span><span class="s">1–2</span><span class="win">Norwich</span></div>
+              <div class="meet"><span class="d">Oct 2025</span><span class="h win">Norwich</span><span class="s">3–1</span><span>Hull</span></div>
+              <div class="meet"><span class="d">Feb 2025</span><span class="h">Norwich</span><span class="s">2–2</span><span>Hull</span></div>
+              <div class="meet"><span class="d">Sep 2024</span><span class="h win">Hull</span><span class="s">2–1</span><span>Norwich</span></div>
+              <div class="meet"><span class="d">Apr 2024</span><span class="h win">Norwich</span><span class="s">2–0</span><span>Hull</span></div>
+              <div class="stat">
+                <div class="row"><span>Goals per meeting</span><b>3.2</b></div>
+                <div class="track"><i style="width:64%"></i></div>
+              </div>
+              <div class="stat">
+                <div class="row"><span>Both teams scored</span><b>4 of 5</b></div>
+                <div class="track"><i style="width:80%"></i></div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <h4>Table</h4>
+              <p class="sub">Championship, after 14 games.</p>
+              <table class="tbl">
+                <tr><th>#</th><th>Team</th><th class="n">GD</th><th class="n">Pts</th></tr>
+                <tr><td>3</td><td>Sheffield Utd</td><td class="n">+9</td><td class="n">28</td></tr>
+                <tr class="me"><td>4</td><td>Norwich City</td><td class="n">+11</td><td class="n">27</td></tr>
+                <tr><td>5</td><td>West Brom</td><td class="n">+6</td><td class="n">25</td></tr>
+                <tr><td colspan="4" class="gap">· · ·</td></tr>
+                <tr><td>16</td><td>Millwall</td><td class="n">−4</td><td class="n">17</td></tr>
+                <tr class="me"><td>17</td><td>Hull City</td><td class="n">−9</td><td class="n">16</td></tr>
+                <tr><td>18</td><td>Oxford Utd</td><td class="n">−8</td><td class="n">15</td></tr>
+              </table>
+            </div>
+
+            <div class="sec">
+              <h4>How our alerts do in games like this</h4>
+              <p class="sub">From every alert Kalchas has settled. The line marks our overall average (58%).</p>
+              <div class="ours">
+                <div class="line">
+                  In the <b>Championship</b>: <b>38 of 57</b> landed (67%).
+                  <div class="cmp"><i style="width:67%"></i><u style="left:58%"></u></div>
+                </div>
+                <div class="line">
+                  <b>Home favourite</b> priced 1.80–2.10: <b>44 of 70</b> (63%).
+                  <div class="cmp"><i style="width:63%"></i><u style="left:58%"></u></div>
+                </div>
+                <div class="line">
+                  Alerts after <b>75'</b>, any league: <b>61 of 118</b> (52%). A bit below average, so late goals still don't come cheap.
+                  <div class="cmp"><i style="width:52%"></i><u style="left:58%"></u></div>
+                  <div class="cmp-key"><span>0%</span><span>100%</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <h4>Team news <span class="draft">Draft · needs approval</span></h4>
+              <p class="sub">Researched from club sites and local press 2 hours ago. Added later, with an LLM doing the research.</p>
+              <ul class="news">
+                <li><b>Norwich:</b> first-choice striker back in full training after a hamstring problem. Expected on the bench. <a href="#">club site</a></li>
+                <li><b>Hull:</b> both first-choice centre-backs suspended after reaching five bookings. <a href="#">local paper</a></li>
+              </ul>
+              <div class="soon" style="margin-top:12px">Confirmed lineups appear here about an hour before kick-off.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      document.querySelectorAll(".fonts button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document.documentElement.style.setProperty("--f", btn.dataset.font);
+          document.querySelectorAll(".fonts button").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+        });
+      });
+      document.querySelectorAll(".rest").forEach((d) => {
+        d.addEventListener("toggle", () => { d.querySelector("summary span:last-child").textContent = d.open ? "Hide" : "Show"; });
+      });
+    </script>
+  </body>
+</html>

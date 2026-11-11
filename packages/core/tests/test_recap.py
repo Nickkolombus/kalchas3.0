@@ -199,7 +199,7 @@ def test_call_story_reads_like_a_person_wrote_it():
     noah, olimpia, far = data["calls"]
     assert call_story(olimpia) == (
         "Still 0–0, and Olimpia were all over it: 11 dangerous attacks to 2 in the last five "
-        "minutes. We posted at 12′. They scored a minute later."
+        "minutes. We posted at 12′. They scored inside two minutes."
     )
     assert call_story(noah).startswith(
         "Two goals down, but Noah were the side pushing: 51 dangerous"
@@ -208,7 +208,7 @@ def test_call_story_reads_like_a_person_wrote_it():
 
 
 def test_other_side_goal_is_worded_honestly():
-    assert call_story(recap()["honourable"]).endswith("The goal came a minute later.")
+    assert call_story(recap()["honourable"]).endswith("The goal came inside two minutes.")
 
 
 def test_miss_story_and_notes():
@@ -285,9 +285,9 @@ def test_a_goal_in_the_signal_minute_is_worded_as_such():
     same = {**FAR, "match_id": "same", "detail": {**FAR["detail"], "goal_minute": 76}}
     data = build_recap([same], week_start=WEEK)
     assert data["fastest"] == 0
-    assert data["texts"]["cover_line"] == "The quickest goal came the same minute as the signal."
-    assert "goal the same minute as the signal" in data["texts"]["x"]
-    assert call_story(data["calls"][0]).endswith("They scored that same minute.")
+    assert data["texts"]["cover_line"] == "The quickest goal came inside two minutes of the signal."
+    assert "goal inside two minutes of the signal" in data["texts"]["x"]
+    assert call_story(data["calls"][0]).endswith("They scored inside two minutes.")
 
 
 def test_every_field_has_a_draft_so_every_word_is_editable():
@@ -306,8 +306,8 @@ def test_daily_has_up_to_four_calls_and_no_miss():
     assert [c["match_id"] for c in data["calls"]] == ["noah", "olimpia", "far", "brag"]
     texts = data["texts"]
     assert texts["period_dates"] == "Wednesday 28 Oct"
-    assert texts["fastest_title"] == "Fastest: 1 min"
-    assert texts["call_1"] == "Two goals down. We posted at 79′; they scored a minute later."
+    assert texts["fastest_title"] == "Fastest: under 2 min"
+    assert texts["call_1"] == "Two goals down. We posted at 79′; they scored inside two minutes."
     assert "yesterday" in texts["x"]
 
 
@@ -340,3 +340,25 @@ def test_old_drafts_keep_their_words_under_the_new_fields():
     assert (texts["call_1"], texts["call_3"], texts["calls_footer"]) == ("a", "c", "Hon.")
     assert texts["cover_line"] == "Mine." and texts["lesson"] == "L."
     assert texts["kicker"] == "Every signal we sent"
+
+
+def test_a_recap_can_be_narrowed_to_one_strategy():
+    rows = [OLIMPIA, NOAH, FAR, KOZAKKEN]
+    data = build_daily(rows, day=date(2026, 10, 28), strategies=["delta_5min"])
+    assert data["strategies"] == ["delta_5min"]
+    assert (data["goals"], data["misses"]) == (1, 0)
+    assert [c["match_id"] for c in data["calls"]] == ["olimpia"]
+    assert data["texts"]["kicker"] == "A good day for 5-minute pressure"
+    week = build_recap(rows, week_start=WEEK, strategies=["delta_goal", "delta_5min"])
+    assert week["texts"]["kicker"] == "Every 5-minute pressure and Form Bar signal we sent"
+    assert build_recap(rows, week_start=WEEK)["strategies"] == []
+
+
+def test_the_ring_number_is_a_field():
+    data = build_daily([OLIMPIA, NOAH, KOZAKKEN], day=date(2026, 10, 28))
+    assert data["texts"]["ring_value"] == "67%"
+    assert "ring_value" in {key for key, *_ in DAY_FIELDS}
+
+
+def test_goals_two_minutes_or_more_keep_their_minutes():
+    assert recap()["texts"]["call_3"].endswith("They scored 5 minutes later.")

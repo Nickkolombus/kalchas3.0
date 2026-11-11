@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Δ5 / Δ10 window hover mockups</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #071018;
+        --card: #0b1520;
+        --border: rgba(232, 220, 196, 0.12);
+        --text: #f2ebe0;
+        --text-2: #b7b0a3;
+        --muted: #7d776c;
+        --d10: #fde68a;
+        --font-body: "Sora", sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: var(--font-body);
+        background: var(--bg);
+      }
+      .page { max-width: 1080px; margin: 0 auto; padding: 1.6rem 1.2rem 3rem; }
+      h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 0.3rem; }
+      .lede { color: var(--text-2); font-size: 0.88rem; line-height: 1.45; margin: 0 0 1.4rem; max-width: 46rem; }
+      .panel {
+        margin: 0 0 1.6rem;
+        border: 1px solid var(--border);
+        border-radius: 0.7rem;
+        background: #0c1520;
+      }
+      .panel-head {
+        padding: 0.85rem 1rem 0.7rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .kicker { font-size: 0.64rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+      .panel-head h2 { margin: 0.1rem 0 0.2rem; font-size: 1.05rem; }
+      .panel-head p { margin: 0; color: var(--muted); font-size: 0.78rem; line-height: 1.4; }
+      .scene {
+        padding: 1.1rem 1rem 1.4rem;
+        background:
+          radial-gradient(700px 280px at 10% -20%, rgba(61, 214, 198, 0.08), transparent 55%),
+          #071018;
+      }
+      table.board {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.72rem;
+      }
+      .board th {
+        text-align: left;
+        color: var(--muted);
+        font-weight: 500;
+        font-size: 0.62rem;
+        letter-spacing: 0.04em;
+        padding: 0.35rem 0.45rem;
+      }
+      .board td { padding: 0.45rem 0.45rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+      .col-d10 { background: rgba(234, 179, 8, 0.08); }
+      .board th.col-d10 { color: var(--d10); }
+      .team { display: grid; gap: 0.12rem; }
+      .team b { font-weight: 500; }
+      .pair { display: grid; gap: 0.15rem; font-family: var(--font-mono); }
+      .pair span { display: flex; gap: 0.35rem; }
+      .tag { color: var(--muted); width: 0.7rem; }
+      .hot { color: var(--text); }
+      .anchor {
+        outline: 1px solid rgba(253, 230, 138, 0.55);
+        background: rgba(234, 179, 8, 0.16) !important;
+      }
+
+      .tip {
+        position: relative;
+        width: 22rem;
+        margin: 0.85rem auto 0;
+        padding: 0.7rem 0.8rem 0.75rem;
+        border-radius: 0.4rem;
+        border: 1px solid var(--border);
+        border-top: 2px solid var(--d10);
+        background: #0b1520;
+        box-shadow: 0 14px 32px rgba(0, 0, 0, 0.48);
+        text-align: left;
+        z-index: 2;
+      }
+      .title { font-size: 0.72rem; font-weight: 600; margin-bottom: 0.35rem; }
+      .body { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-2); line-height: 1.35; }
+      .body p { margin: 0.2rem 0; }
+      .ledger { margin-top: 0.45rem; }
+      .row {
+        display: grid;
+        grid-template-columns: 0.7rem minmax(0, 1fr) auto;
+        gap: 0.4rem 0.45rem;
+        align-items: center;
+        margin: 0.22rem 0;
+      }
+      .dot { width: 0.42rem; height: 0.42rem; border-radius: 99px; background: var(--muted); }
+      .dot.is-lead { background: var(--d10); }
+      .name {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        color: var(--text); font-family: var(--font-body); font-size: 0.74rem;
+      }
+      .val { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text); min-width: 2.2rem; text-align: right; }
+      .mini { grid-column: 2 / 3; height: 4px; border-radius: 99px; background: rgba(242, 235, 224, 0.08); }
+      .mini > i { display: block; height: 100%; border-radius: 99px; background: var(--d10); }
+      .win-head {
+        margin: 0.7rem 0 0.35rem;
+        color: var(--d10);
+        font-family: var(--font-body);
+        font-size: 0.68rem;
+        font-weight: 600;
+      }
+      .chips { display: flex; flex-wrap: wrap; gap: 0.28rem; }
+      .chip {
+        border: 1px solid var(--border);
+        border-radius: 0.28rem;
+        padding: 0.18rem 0.38rem;
+        color: var(--text);
+        font-size: 0.64rem;
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .team-block { margin: 0.12rem 0 0.28rem; }
+      .recipe {
+        margin: 0.12rem 0 0 1.15rem;
+        color: var(--muted);
+        font-size: 0.62rem;
+      }
+      .recipe b { color: var(--text-2); font-weight: 500; }
+      .grid-stats { width: 100%; border-collapse: collapse; margin-top: 0.1rem; }
+      .grid-stats th, .grid-stats td { font-size: 0.64rem; padding: 0.18rem 0; text-align: right; }
+      .grid-stats th:first-child, .grid-stats td:first-child { text-align: left; color: var(--muted); }
+      .grid-stats th { color: var(--muted); font-weight: 500; }
+      .grid-stats td { color: var(--text); }
+      .grid-stats td.is-hot { color: var(--d10); }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Δ10 hover, last 10 minutes</h1>
+      <p class="lede">
+        Same size and chrome as the live board popup. Zhytomyr 2 is 100 from the
+        72′-82′ window. Δ5 would use this layout on 5 minutes. Scroll A, B, C.
+      </p>
+
+      <section class="panel" id="panel-a">
+        <div class="panel-head">
+          <div class="kicker">A</div>
+          <h2>Window chips</h2>
+          <p>Bars stay as they are. One Telegram-style strip under them for the shared window.</p>
+        </div>
+        <div class="scene">
+          <table class="board">
+            <thead>
+              <tr>
+                <th>Match</th><th>Time</th><th>K</th><th>UrG</th><th>Δ5′</th><th class="col-d10">Δ10′</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <div class="team"><b>Zhytomyr 2</b><span>Kulikiv</span></div>
+                </td>
+                <td>82′<br /><span style="color:var(--muted)">2H</span></td>
+                <td>37</td>
+                <td><div class="pair"><span><i class="tag">H</i> -0.1</span><span><i class="tag">A</i> -1.3</span></div></td>
+                <td><div class="pair"><span><i class="tag">H</i> 3.6</span><span><i class="tag">A</i> 2.6</span></div></td>
+                <td class="col-d10 anchor">
+                  <div class="pair"><span><i class="tag">H</i> 100</span><span><i class="tag">A</i> 75</span></div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="tip" id="tip-a">
+            <div class="title">Sustained pressure - Zhytomyr 2 vs Kulikiv</div>
+            <div class="body">
+              <p>Pressure over about 10 minutes, out of 100. 70 is a surge. 90+ is a siege.</p>
+              <div class="ledger">
+                <div class="row">
+                  <span class="dot is-lead"></span>
+                  <span class="name">Zhytomyr 2</span>
+                  <span class="val">100</span>
+                  <div class="mini"><i style="width:100%"></i></div>
+                </div>
+                <div class="row">
+                  <span class="dot"></span>
+                  <span class="name">Kulikiv</span>
+                  <span class="val">75</span>
+                  <div class="mini"><i style="width:75%"></i></div>
+                </div>
+              </div>
+              <div class="win-head">Last 10 mins (72′-82′)</div>
+              <div class="chips">
+                <span class="chip">SOT <b>8</b>-1</span>
+                <span class="chip">SOFFT <b>3</b>-1</span>
+                <span class="chip">DA <b>18</b>-9</span>
+                <span class="chip">Corners <b>7</b>-2</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-b">
+        <div class="panel-head">
+          <div class="kicker">B</div>
+          <h2>Recipe under each team</h2>
+          <p>Each bar carries that side’s window counts. Why 100 sits on Zhytomyr 2, not mixed into 8-1.</p>
+        </div>
+        <div class="scene">
+          <table class="board">
+            <thead>
+              <tr>
+                <th>Match</th><th>Time</th><th>K</th><th>UrG</th><th>Δ5′</th><th class="col-d10">Δ10′</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <div class="team"><b>Zhytomyr 2</b><span>Kulikiv</span></div>
+                </td>
+                <td>82′<br /><span style="color:var(--muted)">2H</span></td>
+                <td>37</td>
+                <td><div class="pair"><span><i class="tag">H</i> -0.1</span><span><i class="tag">A</i> -1.3</span></div></td>
+                <td><div class="pair"><span><i class="tag">H</i> 3.6</span><span><i class="tag">A</i> 2.6</span></div></td>
+                <td class="col-d10 anchor">
+                  <div class="pair"><span><i class="tag">H</i> 100</span><span><i class="tag">A</i> 75</span></div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="tip" id="tip-b">
+            <div class="title">Sustained pressure - Zhytomyr 2 vs Kulikiv</div>
+            <div class="body">
+              <p>Pressure over about 10 minutes, out of 100. 70 is a surge. 90+ is a siege.</p>
+              <div class="ledger">
+                <div class="team-block">
+                  <div class="row">
+                    <span class="dot is-lead"></span>
+                    <span class="name">Zhytomyr 2</span>
+                    <span class="val">100</span>
+                    <div class="mini"><i style="width:100%"></i></div>
+                  </div>
+                  <div class="recipe"><b>8</b> SOT · 3 SOFF · 18 DA · 7 CRN</div>
+                </div>
+                <div class="team-block">
+                  <div class="row">
+                    <span class="dot"></span>
+                    <span class="name">Kulikiv</span>
+                    <span class="val">75</span>
+                    <div class="mini"><i style="width:75%"></i></div>
+                  </div>
+                  <div class="recipe">2 SOT · 1 SOFF · 9 DA · 2 CRN</div>
+                </div>
+              </div>
+              <div class="win-head" style="margin-top:0.45rem">Last 10 mins (72′-82′)</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-c">
+        <div class="panel-head">
+          <div class="kicker">C</div>
+          <h2>Window table</h2>
+          <p>Home vs away for each input. Same columns as the board stats, but only the 10-minute window.</p>
+        </div>
+        <div class="scene">
+          <table class="board">
+            <thead>
+              <tr>
+                <th>Match</th><th>Time</th><th>K</th><th>UrG</th><th>Δ5′</th><th class="col-d10">Δ10′</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <div class="team"><b>Zhytomyr 2</b><span>Kulikiv</span></div>
+                </td>
+                <td>82′<br /><span style="color:var(--muted)">2H</span></td>
+                <td>37</td>
+                <td><div class="pair"><span><i class="tag">H</i> -0.1</span><span><i class="tag">A</i> -1.3</span></div></td>
+                <td><div class="pair"><span><i class="tag">H</i> 3.6</span><span><i class="tag">A</i> 2.6</span></div></td>
+                <td class="col-d10 anchor">
+                  <div class="pair"><span><i class="tag">H</i> 100</span><span><i class="tag">A</i> 75</span></div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="tip" id="tip-c">
+            <div class="title">Sustained pressure - Zhytomyr 2 vs Kulikiv</div>
+            <div class="body">
+              <p>Pressure over about 10 minutes, out of 100. 70 is a surge. 90+ is a siege.</p>
+              <div class="ledger">
+                <div class="row">
+                  <span class="dot is-lead"></span>
+                  <span class="name">Zhytomyr 2</span>
+                  <span class="val">100</span>
+                  <div class="mini"><i style="width:100%"></i></div>
+                </div>
+                <div class="row">
+                  <span class="dot"></span>
+                  <span class="name">Kulikiv</span>
+                  <span class="val">75</span>
+                  <div class="mini"><i style="width:75%"></i></div>
+                </div>
+              </div>
+              <div class="win-head">Last 10 mins (72′-82′)</div>
+              <table class="grid-stats">
+                <thead>
+                  <tr><th></th><th>H</th><th>A</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>SOT</td><td class="is-hot">8</td><td>1</td></tr>
+                  <tr><td>SOFFT</td><td>3</td><td>1</td></tr>
+                  <tr><td>DA</td><td>18</td><td>9</td></tr>
+                  <tr><td>Corners</td><td>7</td><td>2</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>
