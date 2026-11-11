@@ -6,6 +6,7 @@ Returns alert candidates; does not check cooldown or deliver messages.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from kalchas_core.conditions import (
@@ -16,6 +17,7 @@ from kalchas_core.conditions import (
 from kalchas_core.form import TeamForm
 from kalchas_core.match import MatchTimeline, Side
 from kalchas_core.npei import compute_npei
+from kalchas_core.odds import fresh_live_line
 from kalchas_core.strategies import (
     delta_5min,
     delta_goal,
@@ -164,11 +166,17 @@ def home_away_odds(odds: dict[str, Any] | None) -> tuple[float | None, float | N
     return _odds_pair(odds)
 
 
-def live_home_away_odds(odds: dict[str, Any] | None) -> tuple[float | None, float | None]:
-    """Cached live 1X2. Missing or incomplete lines stay (None, None)."""
-    if not isinstance(odds, dict):
-        return None, None
-    return _odds_pair(odds.get("live"))
+def live_home_away_odds(
+    odds: dict[str, Any] | None,
+    *,
+    now: datetime | None = None,
+) -> tuple[float | None, float | None]:
+    """Live 1X2 home/away, only from a stamped line fetched in the last few minutes.
+
+    Missing, incomplete, unstamped or stale lines stay (None, None), so the
+    ``live_odds`` extra-condition metric never reads an old price.
+    """
+    return _odds_pair(fresh_live_line(odds, now=now))
 
 
 def evaluate_match(

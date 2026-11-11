@@ -7,6 +7,7 @@ Storage / API fetching stays in adapters.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 FAVOURITE_ODDS_THRESHOLD = 1.78
@@ -69,6 +70,59 @@ def kickoff_home_away(odds: Any) -> tuple[float | None, float | None]:
     nested = odds.get("kickoff")
     source = nested if isinstance(nested, dict) else odds
     return _safe_float(source.get("home")), _safe_float(source.get("away"))
+
+
+LIVE_ODDS_MAX_AGE_SEC = 180
+"""A live 1X2 line older than this (about three match minutes) is not used.
+
+The scanner pulls live odds every ~45 s and runs a cycle every ~60 s, so a
+healthy line is under two minutes old wherever it is read (alert, board,
+preview). Older or unstamped lines are what put 20th-minute prices on
+90th-minute alerts.
+"""
+
+
+def live_line_fetched_at(block: Any) -> datetime | None:
+    """UTC fetch time stamped on a live 1X2 line, or None when it has none."""
+    if not isinstance(block, dict):
+        return None
+    raw = block.get("fetched_at")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        stamp = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=UTC)
+    return stamp
+
+
+def fresh_live_line(
+    odds: Any,
+    *,
+    now: datetime | None = None,
+    max_age_sec: float = LIVE_ODDS_MAX_AGE_SEC,
+) -> dict[str, Any] | None:
+    """The record's ``live`` 1X2 block when it is stamped and recent, else None.
+
+    Unstamped lines (written before stamps existed) count as stale: there is
+    no way to tell a 20th-minute price from a current one.
+    """
+    if not isinstance(odds, dict):
+        return None
+    block = odds.get("live")
+    stamp = live_line_fetched_at(block)
+    if stamp is None:
+        return None
+    current = now or datetime.now(UTC)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=UTC)
+    age = (current - stamp).total_seconds()
+    # Small negative ages are clock skew between scanner and API hosts.
+    if age > max_age_sec or age < -60:
+        return None
+    return block
 
 
 def detect_favourite_from_payload(

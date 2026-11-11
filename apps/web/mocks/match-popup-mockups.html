@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Match pop-up mockups</title>
+<link rel="stylesheet" href="../src/styles/tokens.css" />
+<link rel="stylesheet" href="../src/styles/app.css" />
+<link rel="stylesheet" href="../src/styles/watchlist.css" />
+<style>
+
+  body { background: var(--bg); color: var(--text); font-family: var(--font-body); margin: 0; }
+  .mk-page { max-width: 1120px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+  .mk-page > h1 { font-family: var(--font-body); font-size: 1.35rem; font-weight: 600; margin: 0 0 0.35rem; }
+  .mk-page > p { color: var(--text-2); margin: 0 0 0.6rem; max-width: 760px; line-height: 1.5; font-size: 0.92rem; }
+  .mk-switch { display: flex; gap: 0.5rem; margin: 1rem 0 1.25rem; flex-wrap: wrap; }
+  .mk-switch button { font: inherit; font-size: 0.88rem; font-weight: 600; color: var(--text-2); background: transparent;
+    border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.9rem; cursor: pointer; text-align: left; }
+  .mk-switch button small { display: block; font-weight: 400; color: var(--muted); font-size: 0.78rem; margin-top: 2px; }
+  .mk-switch button.on { border-color: var(--accent); color: var(--text); }
+
+  /* the watchlist page's colours, without .wl-shell's page layout */
+  .wl-vars { --wl-surface: #0c1520; --wl-surface-2: #121d29; --wl-strong: #2fd39a; --wl-look: #e6b450;
+    --wl-loss: #e0685f; --wl-draw: #9aa3af; --wl-track: rgba(255,255,255,0.07); font-variant-numeric: tabular-nums; }
+  .wl-vars a { color: inherit; }
+
+  /* the pop-up box itself, as on the board */
+  .mk-pop { width: 100%; border: 1px solid var(--border); border-radius: 12px; background: var(--wl-surface);
+    box-shadow: 0 24px 64px rgba(0,0,0,0.45); overflow: hidden; }
+  .mk-head { padding: 1rem 1.1rem 0.9rem; position: relative; }
+  .mk-crumb { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 0.8rem; margin-bottom: 0.8rem; }
+  .mk-close { font: inherit; font-size: 0.8rem; color: var(--text-2); background: transparent; border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.3rem 0.6rem; }
+  .mk-head .wl-side b { display: block; font-size: 1.05rem; }
+  .mk-head .wl-side span { color: var(--muted); font-size: 0.8rem; }
+  .mk-head .wl-side.is-away { justify-content: flex-end; text-align: right; }
+  .mk-head .wl-ko b { font-size: 1.9rem; letter-spacing: 0.02em; }
+  .mk-crest { width: 44px; height: 44px; border-radius: 50%; background: #fff; object-fit: contain; padding: 3px; }
+  .mk-prices { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.4rem; margin-top: 0.9rem; font-size: 0.8rem; color: var(--text-2); }
+  .mk-prices span { background: var(--wl-surface-2); border-radius: 6px; padding: 0.25rem 0.55rem; }
+  .mk-prices em { font-style: normal; color: var(--muted); padding: 0.25rem 0.2rem; }
+  .mk-prices b { color: var(--text); font-weight: 600; }
+
+  /* tabs: plain words, the active one underlined in teal */
+  .mk-tabs { display: flex; gap: 0.25rem; padding: 0 0.9rem; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .mk-tabs button { font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--muted); background: none; border: 0;
+    padding: 0.75rem 0.55rem 0.65rem; border-bottom: 2px solid transparent; cursor: pointer; }
+  .mk-tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
+  .mk-tabs button small { color: var(--muted); font-weight: 500; margin-left: 0.3rem; font-size: 0.75rem; }
+  .mk-body { max-height: 620px; overflow: auto; }
+  .mk-body .wl-mbody { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); }
+  .mk-body .wl-col + .wl-col { border-left: 1px solid var(--border); }
+  .mk-full { grid-column: 1 / -1; }
+
+  /* signals: a side-by-side table like "Every pattern", plus what's normal */
+  .mk-sig td.wl-num, .mk-sig th.wl-num { width: 5.2rem; }
+  .mk-sig .norm { color: var(--muted); font-size: 0.8rem; font-weight: 400; }
+  .mk-sig .wl-mini i { background: var(--accent); }
+  .mk-sig .is-quiet { color: var(--muted); }
+
+  /* match stats: number, a split bar, number */
+  .mk-stat { display: grid; grid-template-columns: 8.5rem 2.2rem 1fr 2.2rem; gap: 0.6rem; align-items: center;
+    padding: 0.42rem 0; border-top: 1px solid var(--border); font-size: 0.86rem; }
+  .mk-stat b { font-weight: 600; text-align: right; }
+  .mk-stat b + span + b { text-align: left; }
+  .mk-stat .bar { display: flex; gap: 2px; height: 0.45rem; border-radius: 4px; overflow: hidden; background: var(--wl-track); }
+  .mk-stat .bar i { display: block; }
+  .mk-stat .bar .h { background: var(--accent); }
+  .mk-stat .bar .a { background: #6f9bd1; }
+  .mk-stat .lab { color: var(--text-2); }
+  .mk-keys { display: flex; gap: 1rem; font-size: 0.78rem; color: var(--muted); margin: 0.35rem 0 0.5rem; }
+  .mk-keys i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 0.35rem; vertical-align: -1px; }
+
+  .mk-story { display: grid; grid-template-columns: 3rem 1fr auto; gap: 0.6rem; padding: 0.45rem 0; border-top: 1px solid var(--border); font-size: 0.86rem; }
+  .mk-story span:first-child { color: var(--muted); }
+  .mk-chart { height: 170px; border-radius: 8px; background: var(--wl-surface-2); display: grid; place-items: center; color: var(--muted);
+    font-size: 0.82rem; margin-top: 0.6rem; }
+  .mk-lineups { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; font-size: 0.84rem; }
+  .mk-lineups ol { margin: 0.35rem 0 0; padding: 0; list-style: none; }
+  .mk-lineups li { display: grid; grid-template-columns: 1.8rem 1fr; padding: 0.3rem 0; border-top: 1px solid var(--border); }
+  .mk-lineups li span { color: var(--muted); }
+  .mk-more { display: inline-block; margin-top: 0.7rem; color: var(--accent) !important; font-weight: 600; font-size: 0.86rem; text-decoration: none; }
+  .mk-note { margin: 1.25rem 0 0; padding: 0.9rem 1rem; border: 1px dashed var(--border); border-radius: 10px; color: var(--text-2);
+    font-size: 0.88rem; line-height: 1.55; }
+  .mk-note b { color: var(--text); }
+  .mk-was { color: var(--muted); font-size: 0.82rem; margin: 0.6rem 0 0; }
+
+  .mk-cstat { display: grid; grid-template-columns: 3rem 1fr 3rem; column-gap: 4px; row-gap: 0.4rem; align-items: center;
+    padding: 0.55rem 0 0.6rem; font-size: 0.88rem; }
+  .mk-cstat + .mk-cstat { border-top: 1px solid var(--border); }
+  .mk-cstat .lab { text-align: center; font-weight: 600; color: var(--text); }
+  .mk-cstat b { font-weight: 600; color: var(--text-2); }
+  .mk-cstat b:last-of-type { text-align: right; }
+  .mk-cstat b.lead { color: var(--text); }
+  .mk-cstat .half { height: 6px; border-radius: 3px; background: var(--wl-track); display: flex; overflow: hidden; }
+  .mk-cstat .bars { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .mk-cstat .half.l { justify-content: flex-end; }
+  .mk-cstat .half i { display: block; height: 100%; border-radius: 3px; }
+  .mk-cstat .half.l i { background: rgba(61, 214, 198, 0.45); }
+  .mk-cstat .half.r i { background: rgba(111, 155, 209, 0.45); }
+  .mk-cstat .half.l i.lead { background: var(--accent); }
+  .mk-cstat .half.r i.lead { background: #6f9bd1; }
+  .mk-sig-wrap { max-width: 760px; }
+  .mk-sig tr.is-on th, .mk-sig tr.is-on td.on { color: var(--accent); }
+  .mk-sig td.on .wl-mini i { background: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .mk-sig td.off .wl-mini i { background: rgba(255,255,255,0.28); }
+
+  /* timeline */
+  .mk-tl-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+  .mk-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .mk-seg button { font: inherit; font-size: 0.8rem; font-weight: 600; color: var(--muted); background: none; border: 0;
+    padding: 0.38rem 0.7rem; cursor: pointer; }
+  .mk-seg button + button { border-left: 1px solid var(--border); }
+  .mk-seg button.on { color: var(--text); background: var(--wl-surface-2); }
+  .mk-tl svg { display: block; width: 100%; height: auto; margin-top: 0.7rem; overflow: visible; }
+  .mk-tl .ax { fill: var(--muted); font-size: 11px; font-family: var(--font-body); }
+  .mk-tl .team { fill: var(--text-2); font-size: 11px; font-weight: 600; font-family: var(--font-body); }
+  .mk-tl .grid { stroke: rgba(255,255,255,0.07); }
+  .mk-tl .mid { stroke: rgba(255,255,255,0.22); }
+  .mk-tl .ht { stroke: rgba(255,255,255,0.18); stroke-dasharray: 3 4; }
+  .mk-tl .bh { fill: var(--accent); }
+  .mk-tl .ba { fill: #6f9bd1; }
+  .mk-tl rect.hit:hover + rect, .mk-tl g.b:hover rect { opacity: 0.8; }
+  .mk-tl .goal { fill: #f2ebe0; stroke: var(--wl-surface); stroke-width: 2; }
+  .mk-tl .goal-l { fill: var(--text); font-size: 11px; font-weight: 700; font-family: var(--font-body); }
+  .mk-tl .yc { fill: #e6c34a; }
+  .mk-tl .rc { fill: #e0685f; }
+  .mk-tl .ln-h { fill: none; stroke: var(--accent); stroke-width: 2; }
+  .mk-tl .ln-a { fill: none; stroke: #6f9bd1; stroke-width: 2; }
+  .mk-tl .due { stroke: #e6b450; stroke-dasharray: 4 4; }
+  .mk-tl .due-l { fill: #e6b450; font-size: 11px; font-family: var(--font-body); }
+  .mk-ev { display: grid; grid-template-columns: 2.6rem 1.2rem 1fr auto; gap: 0.5rem; align-items: center; padding: 0.42rem 0;
+    border-top: 1px solid var(--border); font-size: 0.86rem; }
+  .mk-ev > span:first-child { color: var(--muted); }
+  .mk-ev small { color: var(--muted); margin-left: 0.35rem; }
+  .mk-ev.is-sub { color: var(--text-2); font-size: 0.82rem; }
+  .mk-ev b.sc { font-weight: 700; }
+  .mk-ic { display: inline-block; width: 9px; height: 12px; border-radius: 2px; }
+  .mk-ball { width: 11px; height: 11px; border-radius: 50%; background: #f2ebe0; display: inline-block; }
+  .mk-subs-toggle { font: inherit; font-size: 0.8rem; color: var(--text-2); background: none; border: 0; padding: 0.5rem 0 0; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="mk-page">
+  <h1>Match pop-up: five tabs, a simple timeline</h1>
+  <p>Real data: Al Hilal v Shabab Al Ahli Dubai, 90th minute. Signals and stats now have a tab each. The timeline is one short graph instead of two tall charts: dangerous attacks every 5 minutes, goals and cards marked on the line. A small switch above it shows shots on target or unrealised goals instead, but it opens on the simple view every time.</p>
+
+  <div class="mk-pop wl-vars">
+    <header class="mk-head">
+      <div class="mk-crumb">
+        <span>AFC Champions League Elite · League Phase</span>
+        <button class="mk-close" type="button">Close</button>
+      </div>
+      <div class="wl-vs">
+        <div class="wl-side">
+          <img class="mk-crest" id="crest-h" alt="" />
+          <div><b id="name-h"></b><span id="pos-h"></span></div>
+        </div>
+        <div class="wl-ko"><b>2–0</b><span><i class="wl-live-dot" aria-hidden="true"></i>Live · 90+'</span></div>
+        <div class="wl-side is-away">
+          <div><b id="name-a"></b><span id="pos-a"></span></div>
+          <img class="mk-crest" id="crest-a" alt="" />
+        </div>
+      </div>
+      <div class="mk-prices" id="prices"></div>
+    </header>
+    <nav class="mk-tabs" id="tabs"></nav>
+    <div class="mk-body" id="body"></div>
+  </div>
+
+  <div class="mk-note">
+    <b>Tabs:</b> Signals · Stats · Timeline · Before kick-off · Line-ups. The pop-up opens on Signals, the reason to open it from the board.
+    <p class="mk-was">Now: Stats (stats and signals squeezed together) · Timeline (two charts of 436px each, then the match story: 1,841px to scroll) · H2H · Lineups.</p>
+    <p class="mk-was"><b>Timeline:</b> about 230px for the graph, then what's happened. Hover a bar for its numbers. Substitutions are folded away under a "Show substitutions" link so goals and cards stand out.</p>
+  </div>
+</div>
+
+<script>
+const D = {"R": {"league": {"id": 10, "name": "AFC Champions League Elite - League Phase", "country": "intl", "logo": "https://apiv3.apifootball.com/badges/logo_leagues/10_afc-champions-league-elite.png", "round": "4"}, "home": {"id": 366, "name": "Al Hilal", "badge": "https://apiv3.apifootball.com/badges/366_al-hilal-fc.jpg", "position": 7, "points": 6}, "away": {"id": 364, "name": "Shabab Al Ahli Dubai", "badge": "https://apiv3.apifootball.com/badges/364_shabab-al-ahli.jpg", "position": 2, "points": 9}, "odds": {"home": 1.4, "draw": 4.5, "away": 6.0, "over_2_5": 1.57, "under_2_5": 2.35, "btts_yes": 1.7, "btts_no": 2.05}, "watch": "quiet", "points": [{"key": "favourite_home", "tag": "Strong favourite", "title": "Al Hilal are clear favourites, and in form.", "detail": "Priced 1.40 with 8 of 10 wins in their last games.", "brief": "Al Hilal at 1.40, 8 of 10 wins lately.", "score": 0.35, "side": "", "outcome": null, "outcome_note": ""}, {"key": "team_over_1_5_home", "tag": "Home over 1.5", "title": "Al Hilal to score twice or more.", "detail": "Al Hilal scored 2 or more in 7 of 10 of their last games and Shabab Al Ahli Dubai conceded 2 or more in 3 of 10, against a typical 38% for one team.", "brief": "Al Hilal scored 2+ in 7 of 10; Shabab Al Ahli Dubai let in 2+ in 3 of 10.", "score": 0.177, "side": "", "outcome": null, "outcome_note": ""}, {"key": "team_over_1_5_away", "tag": "Away over 1.5", "title": "Shabab Al Ahli Dubai to score twice or more.", "detail": "Shabab Al Ahli Dubai scored 2 or more in 6 of 10 of their last games and Al Hilal conceded 2 or more in 4 of 10, against a typical 38% for one team.", "brief": "Shabab Al Ahli Dubai scored 2+ in 6 of 10; Al Hilal let in 2+ in 4 of 10.", "score": 0.177, "side": "", "outcome": null, "outcome_note": ""}], "pattern_table": [{"key": "btts", "label": "Both teams scored", "home": {"count": 4, "n": 10}, "away": {"count": 7, "n": 10}, "league_pct": 52, "h2h": null, "flagged": false}, {"key": "over_2_5", "label": "Over 2.5 goals", "home": {"count": 5, "n": 10}, "away": {"count": 5, "n": 10}, "league_pct": 50, "h2h": null, "flagged": false}, {"key": "over_3_5", "label": "Over 3.5 goals", "home": {"count": 4, "n": 10}, "away": {"count": 3, "n": 10}, "league_pct": 30, "h2h": null, "flagged": false}, {"key": "scored_2plus", "label": "Scored 2 or more", "home": {"count": 7, "n": 10}, "away": {"count": 6, "n": 10}, "league_pct": 38, "h2h": null, "flagged": false}, {"key": "first_half_goal", "label": "Goal before half-time", "home": {"count": 8, "n": 10}, "away": {"count": 8, "n": 10}, "league_pct": 72, "h2h": null, "flagged": false}, {"key": "late_goal", "label": "Goal after 75'", "home": {"count": 6, "n": 10}, "away": {"count": 5, "n": 10}, "league_pct": 52, "h2h": null, "flagged": false}, {"key": "clean_sheet", "label": "Kept a clean sheet", "home": {"count": 5, "n": 10}, "away": {"count": 3, "n": 10}, "league_pct": 28, "h2h": null, "flagged": false}, {"key": "failed_to_score", "label": "Failed to score", "home": {"count": 1, "n": 10}, "away": {"count": 0, "n": 10}, "league_pct": 28, "h2h": null, "flagged": false}, {"key": "cards_5plus", "label": "5 or more cards", "home": {"count": 2, "n": 10}, "away": {"count": 6, "n": 10}, "league_pct": 39, "h2h": null, "flagged": false}, {"key": "red_card", "label": "A red card", "home": {"count": 1, "n": 10}, "away": {"count": 2, "n": 10}, "league_pct": 28, "h2h": null, "flagged": false}], "form": {"home": {"games": 10, "source": "all", "wins": 8, "draws": 0, "losses": 2, "scored_per_game": 2.2, "conceded_per_game": 1.0, "clean_sheets": 5, "failed_to_score": 1, "results": [{"match_date": "2026-10-31", "opponent": "Al Fateh", "venue": "H", "goals_for": 2, "goals_against": 0, "result": "W"}, {"match_date": "2026-10-27", "opponent": "Shamal", "venue": "A", "goals_for": 1, "goals_against": 3, "result": "L"}, {"match_date": "2026-10-23", "opponent": "Al Qadsiah", "venue": "A", "goals_for": 3, "goals_against": 2, "result": "W"}, {"match_date": "2026-10-19", "opponent": "Al Hazem", "venue": "H", "goals_for": 1, "goals_against": 0, "result": "W"}, {"match_date": "2026-10-13", "opponent": "Al Sadd", "venue": "A", "goals_for": 2, "goals_against": 0, "result": "W"}, {"match_date": "2026-10-10", "opponent": "Al Ittihad", "venue": "H", "goals_for": 3, "goals_against": 2, "result": "W"}]}, "away": {"games": 10, "source": "all", "wins": 6, "draws": 3, "losses": 1, "scored_per_game": 1.7, "conceded_per_game": 1.1, "clean_sheets": 3, "failed_to_score": 0, "results": [{"match_date": "2026-10-27", "opponent": "Esteghlal F.C.", "venue": "H", "goals_for": 2, "goals_against": 0, "result": "W"}, {"match_date": "2026-10-22", "opponent": "Al Ain", "venue": "H", "goals_for": 3, "goals_against": 2, "result": "W"}, {"match_date": "2026-10-17", "opponent": "Al Ain", "venue": "H", "goals_for": 2, "goals_against": 0, "result": "W"}, {"match_date": "2026-10-13", "opponent": "Al Ittihad", "venue": "A", "goals_for": 2, "goals_against": 1, "result": "W"}, {"match_date": "2026-10-08", "opponent": "United FC", "venue": "H", "goals_for": 2, "goals_against": 1, "result": "W"}, {"match_date": "2026-10-02", "opponent": "Al Nasr", "venue": "H", "goals_for": 1, "goals_against": 1, "result": "D"}]}}, "timing": {"labels": ["0–15'", "16–30'", "31–45'", "46–60'", "61–75'", "76–90'"], "home": {"games": 10, "of": 10, "scored": [3, 3, 4, 3, 4, 5], "conceded": [2, 1, 2, 2, 0, 3]}, "away": {"games": 10, "of": 10, "scored": [3, 3, 2, 1, 4, 3], "conceded": [1, 0, 3, 2, 2, 3]}, "note": "The last 15 minutes is the busiest part of these teams' games: 14 of 59 goals. Al Hilal score late and Shabab Al Ahli Dubai concede late."}, "h2h": {"sample": 2, "home_wins": 1, "draws": 1, "away_wins": 0, "avg_goals": 2.0, "btts": 1, "over_2_5": 1, "meetings": [{"match_date": "2026-02-09", "home_team": "Shabab Al-Ahli Dubai", "away_team": "Al Hilal", "home_score": 0, "away_score": 0}, {"match_date": "2023-02-20", "home_team": "Al Hilal", "away_team": "Shabab Al Ahli", "home_score": 3, "away_score": 1}]}, "table": [{"position": 1, "team_id": 383, "team": "Vissel Kobe", "played": 4, "goal_difference": 5, "points": 12}, {"position": 1, "team_id": 374, "team": "Al Ain", "played": 4, "goal_difference": 11, "points": 12}, {"position": 2, "team_id": 5053, "team": "Kashima Antlers", "played": 3, "goal_difference": 10, "points": 9}, {"position": 2, "team_id": 364, "team": "Shabab Al Ahli Dubai", "played": 3, "goal_difference": 4, "points": 9}, {"position": 3, "team_id": 5055, "team": "Kashiwa Reysol", "played": 4, "goal_difference": 5, "points": 7}, {"position": 3, "team_id": 6330, "team": "Al Qadsiah", "played": 4, "goal_difference": 6, "points": 8}, {"position": 6, "team_id": 5078, "team": "Kyoto", "played": 4, "goal_difference": 3, "points": 7}, {"position": 6, "team_id": 360, "team": "Esteghlal F.C.", "played": 3, "goal_difference": 2, "points": 6}, {"position": 7, "team_id": 386, "team": "Johor DT", "played": 4, "goal_difference": 3, "points": 7}, {"position": 7, "team_id": 366, "team": "Al Hilal", "played": 3, "goal_difference": 1, "points": 6}, {"position": 8, "team_id": 389, "team": "Jeonbuk", "played": 4, "goal_difference": 1, "points": 7}, {"position": 8, "team_id": 8583, "team": "Shamal", "played": 3, "goal_difference": 2, "points": 5}]}, "P": {"stats": {"shots_on_target": {"home": 2, "away": 4}, "shots_off_target": {"home": 8, "away": 3}, "attacks": {"home": 117, "away": 96}, "dangerous_attacks": {"home": 44, "away": 36}, "corners": {"home": 3, "away": 1}, "possession": {"home": 25.0, "away": 75.0}, "yellow_cards": {"home": 2, "away": 2}, "red_cards": {"home": 0, "away": 0}}, "signals": {"rule_of_three": {"home": -0.9, "away": 1.2}, "pressure_index": {"home": 6.0, "away": 63.0}, "delta_5min": {"home": 1.5, "away": 5.5}, "delta_goal": {"home": -0.5, "away": 1.2}, "npei": {"home": 35.0, "away": 57.0}, "kscore": {"home": 4.0, "away": 39.0}}, "triggered": {"rule_of_three": {"home": false, "away": false}, "pressure_index": {"home": false, "away": false}, "delta_5min": {"home": false, "away": false}, "delta_goal": {"home": false, "away": true}, "npei": {"home": false, "away": true}, "kscore": {"home": false, "away": false}}, "timeline": [{"m": 0, "da": [21.0, 11.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 3, "da": [0, 0], "r3": [0, 0], "sot": [0, 0]}, {"m": 4, "da": [2.0, 0], "r3": [0, 0], "sot": [0, 0]}, {"m": 5, "da": [2.0, 1.0], "r3": [0, 0], "sot": [0, 0]}, {"m": 6, "da": [3.0, 1.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 7, "da": [3.0, 1.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 8, "da": [4.0, 1.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 9, "da": [4.0, 1.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 10, "da": [5.0, 1.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 11, "da": [5.0, 1.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 12, "da": [5.0, 1.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 13, "da": [5.0, 1.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 14, "da": [5.0, 1.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 15, "da": [7.0, 2.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 16, "da": [7.0, 2.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 17, "da": [7.0, 4.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 18, "da": [7.0, 5.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 19, "da": [7.0, 5.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 20, "da": [8.0, 7.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 21, "da": [9.0, 7.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 22, "da": [9.0, 7.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 23, "da": [10.0, 8.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 24, "da": [10.0, 8.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 25, "da": [11.0, 8.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 26, "da": [11.0, 9.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 27, "da": [11.0, 9.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 28, "da": [11.0, 9.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 29, "da": [11.0, 9.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 30, "da": [13.0, 9.0], "r3": [-0.5, 0], "sot": [1.0, 0]}, {"m": 31, "da": [13.0, 9.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 32, "da": [15.0, 9.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 33, "da": [15.0, 10.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 34, "da": [15.0, 10.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 35, "da": [15.0, 10.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 36, "da": [15.0, 10.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 37, "da": [15.0, 10.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 38, "da": [15.0, 11.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 39, "da": [16.0, 11.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 40, "da": [16.0, 11.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 41, "da": [16.0, 11.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 42, "da": [17.0, 11.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 43, "da": [17.0, 11.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 44, "da": [17.0, 11.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 45, "da": [20.0, 11.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 46, "da": [21.0, 11.0], "r3": [-0.6, 0.1], "sot": [1.0, 0]}, {"m": 47, "da": [22.0, 11.0], "r3": [-0.9, 0], "sot": [2.0, 0]}, {"m": 48, "da": [22.0, 11.0], "r3": [-0.9, 0], "sot": [2.0, 0]}, {"m": 49, "da": [22.0, 11.0], "r3": [-0.9, 0], "sot": [2.0, 0]}, {"m": 50, "da": [22.0, 11.0], "r3": [-0.9, 0], "sot": [2.0, 0]}, {"m": 51, "da": [22.0, 13.0], "r3": [-0.9, 0], "sot": [2.0, 0]}, {"m": 52, "da": [22.0, 13.0], "r3": [-0.9, 0], "sot": [2.0, 0]}, {"m": 53, "da": [25.0, 13.0], "r3": [-0.9, 0], "sot": [2.0, 0]}, {"m": 54, "da": [27.0, 13.0], "r3": [-0.9, 0], "sot": [2.0, 0]}, {"m": 55, "da": [27.0, 13.0], "r3": [-0.9, 0.5], "sot": [2.0, 2.0]}, {"m": 56, "da": [27.0, 13.0], "r3": [-0.9, 0.5], "sot": [2.0, 2.0]}, {"m": 57, "da": [27.0, 13.0], "r3": [-0.9, 0.5], "sot": [2.0, 2.0]}, {"m": 58, "da": [27.0, 13.0], "r3": [-0.9, 0.5], "sot": [2.0, 2.0]}, {"m": 59, "da": [27.0, 13.0], "r3": [-0.9, 0.5], "sot": [2.0, 2.0]}, {"m": 60, "da": [27.0, 14.0], "r3": [-0.9, 0.5], "sot": [2.0, 2.0]}, {"m": 61, "da": [32.0, 14.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 62, "da": [32.0, 14.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 63, "da": [33.0, 14.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 64, "da": [33.0, 14.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 65, "da": [33.0, 15.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 66, "da": [33.0, 16.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 67, "da": [33.0, 19.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 68, "da": [33.0, 19.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 69, "da": [33.0, 19.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 70, "da": [35.0, 19.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 71, "da": [35.0, 23.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 72, "da": [35.0, 23.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 73, "da": [37.0, 23.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 74, "da": [37.0, 23.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 75, "da": [38.0, 24.0], "r3": [-0.8, 0.6], "sot": [2.0, 2.0]}, {"m": 76, "da": [38.0, 24.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 77, "da": [38.0, 25.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 78, "da": [41.0, 25.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 79, "da": [41.0, 25.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 80, "da": [41.0, 27.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 81, "da": [41.0, 29.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 82, "da": [41.0, 31.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 83, "da": [41.0, 33.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 84, "da": [41.0, 33.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 85, "da": [41.0, 33.0], "r3": [-0.9, 0.6], "sot": [2.0, 2.0]}, {"m": 86, "da": [42.0, 34.0], "r3": [-0.9, 0.9], "sot": [2.0, 3.0]}, {"m": 87, "da": [42.0, 35.0], "r3": [-0.9, 0.9], "sot": [2.0, 3.0]}, {"m": 88, "da": [42.0, 35.0], "r3": [-0.9, 1.2], "sot": [2.0, 4.0]}, {"m": 89, "da": [42.0, 35.0], "r3": [-0.9, 1.2], "sot": [2.0, 4.0]}, {"m": 90, "da": [44.0, 36.0], "r3": [-0.9, 1.2], "sot": [2.0, 4.0]}], "events": [{"event_type": "goal", "minute": 6, "side": "home", "team": "Al Hilal", "player_name": "O. Watkins", "detail": "Normal Goal"}, {"event_type": "card", "minute": 17, "side": "home", "team": "Al Hilal", "player_name": "S. Dahal", "detail": "Yellow Card"}, {"event_type": "card", "minute": 38, "side": "home", "team": "Al Hilal", "player_name": "O. Watkins", "detail": "Yellow Card"}, {"event_type": "card", "minute": 43, "side": "away", "team": "Shabab Al Ahli Dubai", "player_name": "S. Azmoun", "detail": "Yellow Card"}, {"event_type": "goal", "minute": 46, "side": "home", "team": "Al Hilal", "player_name": "O. Watkins", "detail": "Normal Goal"}, {"event_type": "card", "minute": 76, "side": "away", "team": "Shabab Al Ahli Dubai", "player_name": "I. Gomes", "detail": "Yellow Card"}], "subs": [{"minute": 28, "side": "home", "player_out": "S. Dahal", "player_in": "M. Mahzari"}, {"minute": 35, "side": "home", "player_out": "S. Bouabre", "player_in": "N. Al Dawsari"}, {"minute": 46, "side": "away", "player_out": "M. Al Mansouri", "player_in": "Juan Alvina"}, {"minute": 46, "side": "home", "player_out": "M. Meite", "player_in": "S. Mandash"}, {"minute": 46, "side": "home", "player_out": "M. Al Harbi", "player_in": "T. Hernandez"}, {"minute": 58, "side": "away", "player_out": "J. Fernandes", "player_in": "Mateusao"}, {"minute": 58, "side": "away", "player_out": "N. Maksimovic", "player_in": "J. Markelo"}, {"minute": 74, "side": "away", "player_out": "Kauan Santos", "player_in": "F. Cartabia"}, {"minute": 82, "side": "away", "player_out": "Mateus Henrique", "player_in": "Rikelme"}, {"minute": 82, "side": "home", "player_out": "A. Lajami", "player_in": "H. Tambakti"}], "lineups": {"home": [["72", "Sabri Abdu Dahal"], ["3", "Kalidou Koulibaly"], ["37", "Yassine Bounou"], ["22", "Sergej Milinković-Savić"], ["28", "Mohamed Kanno"], ["11", "Ollie Watkins"], ["78", "Ali Lajami"], ["24", "Moteb Al-Harbi"], ["70", "Saimon Bouabre"], ["4", "Yusuf Akçiçek"], ["75", "Mohamed Kader Meite"]], "away": [["20", "Sardar Azmoun"], ["6", "Saeid Ezatolahi"], ["88", "Nemanja Maksimović"], ["4", "Wout Faes"], ["44", "Jorge Fernandes"], ["3", "Igor Gomes"], ["33", "Matheus Donelli"], ["75", "Mateus Henrique"], ["80", "Breno Cascardo"], ["8", "Mohammad Juma"], ["31", "Kauan Santos"]]}}};
+const R = D.R, P = D.P;
+const H = R.home, A = R.away;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const ord = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : { 1: "st", 2: "nd", 3: "rd" }[n % 10] || "th");
+const date = (iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
+
+document.getElementById("crest-h").src = H.badge;
+document.getElementById("crest-a").src = A.badge;
+document.getElementById("name-h").textContent = H.name;
+document.getElementById("name-a").textContent = A.name;
+document.getElementById("pos-h").textContent = H.position ? `${ord(H.position)} · ${H.points} pts` : "";
+document.getElementById("pos-a").textContent = A.position ? `${ord(A.position)} · ${A.points} pts` : "";
+const o = R.odds;
+document.getElementById("prices").innerHTML =
+  `<em>Before kick-off</em><span>${H.name} <b>${o.home.toFixed(2)}</b></span><span>Draw <b>${o.draw.toFixed(2)}</b></span>` +
+  `<span>${A.name} <b>${o.away.toFixed(2)}</b></span><span>Over 2.5 <b>${o.over_2_5.toFixed(2)}</b></span><span>Both score <b>${o.btts_yes.toFixed(2)}</b></span>`;
+
+/* ---------------- Signals ---------------- */
+const SIGNALS = [
+  ["rule_of_three", "Unrealised goals", -1, 3, 1, "Around 1 is worth a look"],
+  ["delta_5min", "5-minute pressure", 0, 12, 1, "4 is common, 8+ is a wave"],
+  ["pressure_index", "Sustained pressure", 0, 100, 0, "70 is a surge, 90+ a siege"],
+  ["delta_goal", "Form Bar", -2, 2, 1, "1.0 = a goal behind their pace"],
+  ["npei", "Efficiency", 0, 100, 0, "Attacks turned into shots, out of 100"],
+  ["kscore", "K-Score", 0, 100, 0, "60+ is a picked match"],
+];
+function signalsTab() {
+  const rows = SIGNALS.map(([k, lab, min, max, dig, norm]) => {
+    const v = P.signals[k] || {}, t = P.triggered[k] || {};
+    const w = (x) => Math.max(2, Math.min(100, ((x - min) / (max - min)) * 100));
+    const cell = (side) => {
+      const x = Number(v[side] || 0);
+      return `<td class="wl-num ${t[side] ? "on" : "off"}">${x.toFixed(dig)}<span class="wl-mini" aria-hidden="true"><i style="width:${w(x)}%"></i></span></td>`;
+    };
+    return `<tr class="${t.home || t.away ? "is-on" : ""}"><th scope="row">${lab}</th>${cell("home")}${cell("away")}<td class="norm">${norm}</td></tr>`;
+  }).join("");
+  return `<section class="wl-sec"><div class="mk-sig-wrap">
+    <h3>Kalchas signals</h3>
+    <p class="wl-sub">Who is pushing right now and whether a goal looks due. A value turns teal once that team passes its alert line. Hover a name for how it's worked out.</p>
+    <div class="wl-table-wrap"><table class="wl-ptable mk-sig"><thead><tr><th></th><th class="wl-num">${H.name}</th><th class="wl-num">${A.name}</th><th>What's normal</th></tr></thead><tbody>${rows}</tbody></table></div>
+  </div></section>`;
+}
+
+/* ---------------- Stats ---------------- */
+const STATS = [["shots_on_target", "Shots on target"], ["shots_off_target", "Shots off target"], ["attacks", "Attacks"],
+  ["dangerous_attacks", "Dangerous attacks"], ["corners", "Corners"], ["possession", "Possession %"],
+  ["yellow_cards", "Yellow cards"], ["red_cards", "Red cards"]];
+function statsTab() {
+  const rows = STATS.map(([k, lab]) => {
+    const h = Number(P.stats[k].home), a = Number(P.stats[k].away);
+    // Each team fills its own half from the middle, by its share of the two.
+    const t = h + a, ph = t ? (h / t) * 100 : 0, pa = t ? (a / t) * 100 : 0;
+    const lead = h > a ? "h" : a > h ? "a" : "";
+    return `<div class="mk-cstat"><b class="${lead === "h" ? "lead" : ""}">${h}</b><span class="lab">${lab}</span><b class="${lead === "a" ? "lead" : ""}">${a}</b>
+      <span class="bars"><span class="half l"><i class="${lead === "h" ? "lead" : ""}" style="width:${ph}%"></i></span><span class="half r"><i class="${lead === "a" ? "lead" : ""}" style="width:${pa}%"></i></span></span></div>`;
+  }).join("");
+  const col = (t, list) => `<div><b>${esc(t.name)}</b><ol>${list.map(([n, p]) => `<li><span>${n}</span>${esc(p)}</li>`).join("")}</ol></div>`;
+  return `<section class="wl-sec"><div class="mk-sig-wrap"><h3>Match stats</h3>
+      <div class="mk-keys" style="justify-content:space-between"><span><i style="background:var(--accent)"></i>${H.name}</span><span>${A.name}<i style="background:#6f9bd1;margin:0 0 0 .35rem"></i></span></div>${rows}</div></section>`;
+}
+function lineupsTab() {
+  const col = (t, list) => `<div><b>${esc(t.name)}</b><ol>${list.map(([n, p]) => `<li><span>${n}</span>${esc(p)}</li>`).join("")}</ol></div>`;
+  return `<section class="wl-sec"><div class="mk-sig-wrap"><h3>Line-ups</h3><p class="wl-sub">Starting eleven, as announced. Most lower leagues never publish them; the tab says so when they're missing.</p>
+    <div class="mk-lineups" style="margin-top:.5rem">${col(H, P.lineups.home)}${col(A, P.lineups.away)}</div></div></section>`;
+}
+
+/* ---------------- Timeline ---------------- */
+let view = "pressure", showSubs = false;
+function perMinute(key) {
+  // Cumulative counts -> what was added each minute. A drop is a feed reset, not negative play.
+  const out = {};
+  let prev = null;
+  for (const p of P.timeline) {
+    const cur = p[key];
+    if (prev) out[p.m] = [Math.max(0, cur[0] - prev[0]), Math.max(0, cur[1] - prev[1])];
+    prev = cur;
+  }
+  return out;
+}
+function timelineSvg() {
+  const W = 900, L = 8, Rr = 8, last = Math.max(90, ...P.timeline.map((p) => p.m));
+  const x = (m) => L + (m / last) * (W - L - Rr);
+  const axis = [0, 15, 30, 45, 60, 75, 90].map((m) => `<text class="ax" x="${x(m)}" text-anchor="middle">${m}'</text>`);
+  let body = "", Hh;
+  if (view === "lines") {
+    Hh = 186;
+    const top = 30, bot = 164, min = -1, max = 3;
+    const y = (v) => bot - ((Math.max(min, Math.min(max, v)) - min) / (max - min)) * (bot - top);
+    const path = (i) => P.timeline.filter((p) => p.m > 0).map((p, j) => `${j ? "L" : "M"}${x(p.m).toFixed(1)},${y(p.r3[i]).toFixed(1)}`).join("");
+    body += [-1, 0, 1, 2, 3].map((v) => `<line class="grid" x1="${L + 22}" x2="${W - Rr}" y1="${y(v)}" y2="${y(v)}"/><text class="ax" x="${L}" y="${y(v) + 4}">${v}</text>`).join("");
+    body += `<rect x="${L + 30}" y="${top - 12}" width="14" height="3" rx="1.5" fill="var(--accent)"/><text class="team" x="${L + 50}" y="${top - 7}">${esc(H.name)}</text>`;
+    body += `<rect x="${L + 160}" y="${top - 12}" width="14" height="3" rx="1.5" fill="#6f9bd1"/><text class="team" x="${L + 180}" y="${top - 7}">${esc(A.name)}</text>`;
+    body += `<line class="due" x1="${L}" x2="${W - Rr}" y1="${y(1)}" y2="${y(1)}"/><text class="due-l" x="${W - Rr}" y="${y(1) - 5}" text-anchor="end">1 = a goal is due</text>`;
+    body += `<line class="ht" x1="${x(45)}" x2="${x(45)}" y1="${top}" y2="${bot}"/>`;
+    body += `<path class="ln-h" d="${path(0)}"/><path class="ln-a" d="${path(1)}"/>`;
+    body += P.events.filter((e) => e.event_type === "goal").map((e) => `<circle class="goal" cx="${x(e.minute)}" cy="${bot}" r="6"><title>${e.minute}' goal, ${esc(e.player_name)}</title></circle>`).join("");
+    body += `<g transform="translate(0,${Hh - 2})">${axis.join("")}</g>`;
+  } else {
+    Hh = 210;
+    const mid = 96, half = 72;
+    const per = perMinute(view === "shots" ? "sot" : "da");
+    const buckets = [];
+    for (let b = 0; b * 5 < last; b++) {
+      let h = 0, a = 0;
+      for (let m = b * 5 + 1; m <= b * 5 + 5; m++) if (per[m]) { h += per[m][0]; a += per[m][1]; }
+      buckets.push([b * 5, h, a]);
+    }
+    const max = Math.max(view === "shots" ? 2 : 6, ...buckets.map((b) => Math.max(b[1], b[2])));
+    const bw = (x(5) - x(0)) * 0.72;
+    body += `<line class="ht" x1="${x(45)}" x2="${x(45)}" y1="${mid - half - 4}" y2="${mid + half + 4}"/>`;
+    body += `<text class="team" x="${L}" y="${mid - half - 8}">${esc(H.name)} ↑</text><text class="team" x="${L}" y="${mid + half + 18}">${esc(A.name)} ↓</text>`;
+    const what = view === "shots" ? "shots on target" : "dangerous attacks";
+    body += buckets.map(([m, h, a]) => {
+      const cx = x(m + 2.5) - bw / 2;
+      const hh = (h / max) * half, ha = (a / max) * half;
+      return `<g class="b"><title>${m + 1}–${m + 5}': ${H.name} ${h}, ${A.name} ${a} ${what}</title>` +
+        `<rect x="${cx}" y="${mid - half}" width="${bw}" height="${half * 2}" fill="transparent"/>` +
+        (h ? `<rect class="bh" x="${cx}" y="${mid - hh}" width="${bw}" height="${hh}" rx="2"/>` : "") +
+        (a ? `<rect class="ba" x="${cx}" y="${mid}" width="${bw}" height="${ha}" rx="2"/>` : "") + `</g>`;
+    }).join("");
+    body += `<line class="mid" x1="${L}" x2="${W - Rr}" y1="${mid}" y2="${mid}"/>`;
+    let hs = 0, as = 0;
+    body += P.events.map((e) => {
+      const cx = x(e.minute);
+      if (e.event_type === "goal") {
+        e.side === "home" ? hs++ : as++;
+        const ly = e.side === "home" ? mid - 12 : mid + 22;
+        return `<g><title>${e.minute}' ${esc(e.player_name)} (${esc(e.team)}) ${hs}–${as}</title><circle class="goal" cx="${cx}" cy="${mid}" r="6.5"/><text class="goal-l" x="${cx}" y="${ly}" text-anchor="middle">${hs}–${as}</text></g>`;
+      }
+      if (e.event_type === "card") {
+        const red = /red/i.test(e.detail || "");
+        return `<rect class="${red ? "rc" : "yc"}" x="${cx - 3.5}" y="${mid - 5}" width="7" height="10" rx="1.5"><title>${e.minute}' ${esc(e.detail)}: ${esc(e.player_name)} (${esc(e.team)})</title></rect>`;
+      }
+      return "";
+    }).join("");
+    body += `<g transform="translate(0,${Hh - 2})">${axis.join("")}</g>`;
+  }
+  return `<svg viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Match timeline">${body}</svg>`;
+}
+function eventsList() {
+  let hs = 0, as = 0;
+  const scored = P.events.map((e) => {
+    if (e.event_type === "goal") e.side === "home" ? hs++ : as++;
+    return { ...e, score: e.event_type === "goal" ? `${hs}–${as}` : "" };
+  });
+  const rows = scored.map((e) => ({ m: e.minute, kind: e.event_type, html: e }))
+    .concat(showSubs ? P.subs.map((s) => ({ m: s.minute, kind: "sub", html: s })) : [])
+    .sort((a, b) => b.m - a.m);
+  const line = (r) => {
+    const e = r.html;
+    if (r.kind === "goal") return `<div class="mk-ev"><span>${e.minute}'</span><i class="mk-ball"></i><span><b>${esc(e.player_name)}</b><small>${esc(e.team)}</small></span><b class="sc">${e.score}</b></div>`;
+    if (r.kind === "card") return `<div class="mk-ev"><span>${e.minute}'</span><i class="mk-ic" style="background:${/red/i.test(e.detail) ? "#e0685f" : "#e6c34a"}"></i><span>${esc(e.player_name)}<small>${esc(e.team)} · ${/red/i.test(e.detail) ? "red card" : "yellow card"}</small></span><span></span></div>`;
+    return `<div class="mk-ev is-sub"><span>${e.minute}'</span><span>⇄</span><span>${esc(e.player_in)} for ${esc(e.player_out)}<small>${e.side === "home" ? H.name : A.name}</small></span><span></span></div>`;
+  };
+  return rows.map(line).join("") +
+    `<button class="mk-subs-toggle" type="button" id="subs">${showSubs ? "Hide substitutions" : `Show substitutions (${P.subs.length})`}</button>`;
+}
+function timelineTab() {
+  const blurb = {
+    pressure: `Dangerous attacks in each 5 minutes: ${H.name} above the line, ${A.name} below. Goals and cards sit on the line.`,
+    shots: `Shots on target in each 5 minutes: ${H.name} above the line, ${A.name} below.`,
+    lines: `Shots against the scoreboard, minute by minute. Above 1, a goal is overdue; below 0, they've scored more than their chances.`,
+  }[view];
+  return `<div class="wl-mbody"><div class="wl-col mk-full">
+    <section class="wl-sec mk-tl">
+      <div class="mk-tl-head"><div><h3>Timeline</h3><p class="wl-sub">${blurb}</p></div>
+        <div class="mk-seg" id="seg">${[["pressure", "Pressure"], ["shots", "Shots on target"], ["lines", "Unrealised goals"]]
+          .map(([k, l]) => `<button type="button" data-v="${k}" class="${view === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
+      ${timelineSvg()}
+    </section>
+    <section class="wl-sec"><h3>What's happened</h3><p class="wl-sub">Newest first.</p>${eventsList()}</section>
+  </div></div>`;
+}
+
+function before() {
+  const pts = R.points.map((p, i) => `<li data-n="${i + 1}"><div><b>${esc(p.title)}</b> <span>${esc(p.detail)}</span></div></li>`).join("");
+  const cnt = (v) => v && v.n ? `<td class="wl-num">${v.count}/${v.n}<span class="wl-mini" aria-hidden="true"><i style="width:${Math.round((v.count / v.n) * 100)}%"></i></span></td>` : `<td class="wl-num">–</td>`;
+  const table = R.pattern_table.map((r) => `<tr class="${r.flagged ? "is-flagged" : ""}"><th scope="row">${r.label}</th>${cnt(r.home)}${cnt(r.away)}<td class="wl-num">${r.league_pct}%</td><td class="wl-num">${r.h2h ? `${r.h2h.count}/${r.h2h.n}` : "–"}</td></tr>`).join("");
+  const pills = (f) => `<div class="wl-pills">${f.results.map((g) => `<span class="wl-pill is-${g.result.toLowerCase()}" title="${g.venue === "H" ? "v" : "at"} ${esc(g.opponent)}">${g.result}<small>${g.goals_for}–${g.goals_against}</small></span>`).join("")}</div>`;
+  const tm = R.timing;
+  const max = Math.max(1, ...tm.labels.map((_, i) => Math.max(tm.home.scored[i] + tm.home.conceded[i], tm.away.scored[i] + tm.away.conceded[i])));
+  const bars = (s, c, side) => `<div class="wl-bars is-${side}">${side === "l" ? `<em>${s + c || ""}</em>` : ""}<span style="width:${(c / max) * 100}%" class="ag"></span><span style="width:${(s / max) * 100}%" class="for"></span>${side === "r" ? `<em>${s + c || ""}</em>` : ""}</div>`;
+  const timing = tm.labels.map((l, i) => `<div class="wl-tm">${bars(tm.home.scored[i], tm.home.conceded[i], "l")}<div class="wl-tm-lab${i === 5 ? " is-late" : ""}">${l}</div>${bars(tm.away.scored[i], tm.away.conceded[i], "r")}</div>`).join("");
+  const h = R.h2h;
+  const meets = h.meetings.map((m) => `<div class="wl-meet"><span class="d">${date(m.match_date)}</span><span class="h">${esc(m.home_team)}</span><span class="s">${m.home_score}–${m.away_score}</span><span>${esc(m.away_team)}</span></div>`).join("");
+  const lt = R.table.map((r) => `<tr class="${r.team_id === H.id || r.team_id === A.id ? "is-me" : ""}"><td>${r.position}</td><td>${r.team}</td><td class="wl-num">${r.played}</td><td class="wl-num">${r.goal_difference}</td><td class="wl-num">${r.points}</td></tr>`).join("");
+  const sum = (t, f) => `<div><b>${t.name}</b> score ${f.scored_per_game} and concede ${f.conceded_per_game} a game. ${f.wins} wins, ${f.draws} draws, ${f.losses} defeats in their last ${f.games}.</div>`;
+  return `<div class="wl-mbody">
+    <div class="wl-col">
+      <section class="wl-sec"><div class="wl-sec-head"><h3>What to watch</h3><span class="wl-watch is-quiet"><i></i>Quiet</span></div>
+        <p class="wl-sub">Written before kick-off. Not on the watchlist today, so these are the leanings only.</p>
+        <ol class="wl-points">${pts}</ol></section>
+      <section class="wl-sec"><h3>Every pattern, side by side</h3>
+        <p class="wl-sub">How often each happened in the teams' last games, against the league average and their past meetings.</p>
+        <div class="wl-table-wrap"><table class="wl-ptable"><thead><tr><th></th><th class="wl-num">${H.name}</th><th class="wl-num">${A.name}</th><th class="wl-num">League</th><th class="wl-num">Meetings</th></tr></thead><tbody>${table}</tbody></table></div></section>
+      <section class="wl-sec"><h3>Recent form</h3><p class="wl-sub">Last 6 games, newest on the left. Hover a result for the opponent.</p>
+        <div class="wl-form-row"><div class="wl-who">${H.name}</div>${pills(R.form.home)}</div>
+        <div class="wl-form-row"><div class="wl-who">${A.name}</div>${pills(R.form.away)}</div>
+        <div class="wl-form-sum">${sum(H, R.form.home)}${sum(A, R.form.away)}</div></section>
+      <section class="wl-sec"><h3>When the goals come</h3><p class="wl-sub">Goals for and against in each team's recent games, by part of the match.</p>
+        <div class="wl-legend"><span><i class="k-for"></i>Scored</span><span><i class="k-ag"></i>Conceded</span></div>
+        <div class="wl-tm-head"><span>${H.name}</span><span></span><span>${A.name}</span></div>${timing}
+        <p class="wl-callout">${esc(tm.note)}</p></section>
+    </div>
+    <div class="wl-col">
+      <section class="wl-sec"><h3>Head-to-head</h3>
+        <p class="wl-sub">Last ${h.sample} meetings, ${h.avg_goals} goals a game.</p>
+        <div class="wl-split" aria-hidden="true"><i class="h" style="flex:${h.home_wins}"></i><i class="d" style="flex:${h.draws}"></i><i class="a" style="flex:${h.away_wins}"></i></div>
+        <div class="wl-split-keys"><span><b>${h.home_wins}</b> ${H.name}</span><span><b>${h.draws}</b> draw</span><span><b>${h.away_wins}</b> ${A.name}</span></div>
+        ${meets}</section>
+      <section class="wl-sec"><h3>Table</h3><table class="wl-ltable"><thead><tr><th>#</th><th>Team</th><th class="wl-num">P</th><th class="wl-num">GD</th><th class="wl-num">Pts</th></tr></thead><tbody>${lt}</tbody></table></section>
+      <section class="wl-sec"><p class="wl-sub">Written before kick-off from results only.</p>
+        <a class="mk-more" href="#">Open the full match page →</a></section>
+    </div>
+  </div>`;
+}
+
+
+
+const TABS = [["Signals", signalsTab], ["Stats", statsTab], ["Timeline", timelineTab], ["Before kick-off", before], ["Line-ups", lineupsTab]];
+let tab = 0;
+function render() {
+  document.getElementById("tabs").innerHTML = TABS.map(([t], i) => `<button type="button" class="${i === tab ? "on" : ""}" data-tab="${i}">${t}</button>`).join("");
+  document.getElementById("body").innerHTML = TABS[tab][1]();
+}
+document.getElementById("tabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { tab = +b.dataset.tab; if (TABS[tab][0] === "Timeline") view = "pressure"; render(); } });
+document.getElementById("body").addEventListener("click", (e) => {
+  const v = e.target.closest("#seg button");
+  if (v) { view = v.dataset.v; render(); return; }
+  if (e.target.closest("#subs")) { showSubs = !showSubs; render(); }
+});
+render();
+</script>
+</body>
+</html>

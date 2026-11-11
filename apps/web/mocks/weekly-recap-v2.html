@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Weekly recap v2</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,650;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --paper: #efe8db;
+        --paper-2: #e6dece;
+        --ink: #17150f;
+        --ink-2: #4a453b;
+        --muted: #8a8172;
+        --rule: rgba(23, 21, 15, 0.22);
+        --accent: #0e6b63;
+        --serif: "Fraunces", Georgia, serif;
+        --mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #1b1a17; color: #e9e3d6; font-family: var(--serif); }
+      .page { max-width: 1180px; margin: 0 auto; padding: 44px 20px 90px; }
+      .page > h1 { font-weight: 500; font-size: 2.1rem; margin: 0 0 6px; letter-spacing: -0.01em; }
+      .page > p { color: #b9b2a3; max-width: 72ch; margin: 0 0 6px; font-size: 1.02rem; line-height: 1.5; }
+      .tag { font-family: var(--mono); font-size: 0.74rem; color: #9ad1c9; }
+      .page > h2 { font-weight: 500; font-style: italic; font-size: 1.5rem; margin: 60px 0 6px; padding-top: 22px; border-top: 1px solid #34322c; }
+      .stack { display: grid; gap: 28px; margin-top: 22px; }
+      .cap { font-family: var(--mono); font-size: 0.74rem; color: #8f887a; margin: 0 0 8px; letter-spacing: 0.04em; }
+
+      /* ---------- card shell, drawn at 1200x675 then scaled ---------- */
+      .frame { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; box-shadow: 0 18px 50px rgba(0,0,0,.5); }
+      .frame > .card { position: absolute; inset: 0 auto auto 0; transform-origin: 0 0; transform: scale(var(--s, 0.5)); }
+      .card {
+        width: 1200px; height: 675px; padding: 38px 56px 0; display: flex; flex-direction: column;
+        color: var(--ink); font-family: var(--serif);
+        background-color: var(--paper);
+        background-image:
+          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .09 0 0 0 0 .08 0 0 0 0 .06 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E"),
+          radial-gradient(1100px 600px at 30% 0%, #f4eee3, transparent 70%);
+      }
+      .mast { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 10px; border-bottom: 3px double var(--ink); }
+      .mast .name { font-weight: 650; font-size: 22px; letter-spacing: 0.34em; }
+      .mast .issue { font-family: var(--mono); font-size: 14px; color: var(--ink-2); letter-spacing: 0.04em; }
+      .foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center; padding: 14px 0 18px; border-top: 1px solid var(--rule); font-size: 17px; color: var(--ink-2); }
+      .foot b { font-weight: 500; color: var(--ink); font-family: var(--mono); font-size: 15px; letter-spacing: 0.04em; }
+      .kicker { font-family: var(--mono); font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); }
+
+      /* ---------- cover ---------- */
+      .cover { flex: 1; display: grid; grid-template-columns: 430px 1fr; gap: 0; padding-top: 26px; }
+      .cover .left { padding-right: 40px; border-right: 1px solid var(--rule); display: flex; flex-direction: column; }
+      .headline { font-size: 50px; line-height: 1.04; font-weight: 500; letter-spacing: -0.02em; margin: 14px 0 0; }
+      .headline em { font-weight: 400; }
+      .tally { margin-top: auto; margin-bottom: 26px; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--ink); }
+      .tally div { padding: 12px 0 0; }
+      .tally div + div { padding-left: 16px; border-left: 1px solid var(--rule); }
+      .tally b { display: block; font-size: 46px; font-weight: 500; line-height: 1; letter-spacing: -0.02em; }
+      .tally span { font-size: 15px; color: var(--ink-2); font-style: italic; }
+      .cover .right { padding-left: 40px; display: flex; flex-direction: column; }
+      .chart-h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+      .chart-h i { font-size: 15px; color: var(--ink-2); }
+      .rows { position: relative; display: flex; flex-direction: column; }
+      .row { display: grid; grid-template-columns: 238px 1fr 36px; align-items: center; height: 26px; }
+      .row .m { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
+      .row.hl .m { color: var(--ink); font-weight: 500; font-style: italic; }
+      .row .r { font-family: var(--mono); font-size: 13px; text-align: right; color: var(--muted); }
+      .row.hit .r { color: var(--accent); }
+      .track { position: relative; height: 100%; }
+      .track::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px dotted rgba(23,21,15,.18); }
+      .fire { position: absolute; top: 6px; width: 2px; height: 14px; background: var(--ink); }
+      .run { position: absolute; top: 12px; height: 2px; }
+      .run.g { background: var(--accent); height: 3px; top: 11.5px; }
+      .run.blank { border-top: 1.5px dashed var(--muted); height: 0; top: 12.5px; }
+      .ball { position: absolute; top: 7px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--paper); }
+      .half { position: absolute; top: 0; bottom: 18px; border-left: 1px solid var(--rule); }
+      .axis { display: grid; grid-template-columns: 238px 1fr 36px; font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 4px; }
+      .axis div { position: relative; height: 14px; }
+      .axis span { position: absolute; transform: translateX(-50%); }
+
+      /* ---------- calls ---------- */
+      .title-row { display: flex; justify-content: space-between; align-items: baseline; padding: 22px 0 18px; }
+      .title-row h3 { margin: 0; font-size: 44px; font-weight: 500; font-style: italic; letter-spacing: -0.02em; }
+      .title-row p { margin: 0; font-size: 16px; color: var(--ink-2); max-width: 380px; text-align: right; font-style: italic; }
+      .cols { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--ink); }
+      .col { padding: 18px 28px 0 0; }
+      .col + .col { padding-left: 28px; border-left: 1px solid var(--rule); }
+      .mins { font-family: var(--mono); font-size: 15px; color: var(--ink-2); display: flex; gap: 10px; align-items: baseline; }
+      .mins b { font-family: var(--serif); font-size: 54px; font-weight: 500; color: var(--ink); letter-spacing: -0.02em; line-height: 1; }
+      .mins b.g { color: var(--accent); }
+      .col h4 { margin: 14px 0 2px; font-size: 25px; font-weight: 650; letter-spacing: -0.01em; }
+      .comp { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+      .col p { font-size: 21px; line-height: 1.42; margin: 14px 0 0; color: var(--ink); }
+
+      /* ---------- miss ---------- */
+      .miss { flex: 1; display: grid; grid-template-columns: 1fr 390px; padding-top: 24px; }
+      .miss .left { padding-right: 44px; border-right: 1px solid var(--rule); }
+      .miss h3 { margin: 14px 0 8px; font-size: 62px; font-weight: 500; letter-spacing: -0.02em; line-height: 1; }
+      .miss .meta { font-family: var(--mono); font-size: 14px; color: var(--ink-2); }
+      .miss p { font-size: 24px; line-height: 1.45; margin: 26px 0 0; }
+      .lesson { margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--ink); font-size: 27px; font-style: italic; line-height: 1.25; letter-spacing: -0.01em; }
+      .miss .right { padding-left: 40px; display: flex; flex-direction: column; }
+      .owed { display: flex; align-items: baseline; gap: 12px; margin: 8px 0 4px; }
+      .owed b { font-size: 92px; font-weight: 500; line-height: 1; letter-spacing: -0.03em; }
+      .owed span { font-size: 17px; font-style: italic; color: var(--ink-2); line-height: 1.25; }
+      .pairs { margin-top: 20px; display: grid; gap: 22px; }
+      .pair { display: grid; grid-template-columns: 1fr; gap: 5px; }
+      .pair .lbl { display: flex; justify-content: space-between; font-size: 17px; }
+      .pair .lbl span { font-family: var(--mono); font-size: 14px; color: var(--ink-2); }
+      .pair .bar { display: flex; height: 9px; gap: 2px; }
+      .pair .bar i { display: block; height: 100%; }
+      .pair .bar i:first-child { background: var(--ink); }
+      .pair .bar i:last-child { background: rgba(23,21,15,.18); }
+      .teams { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin-top: 14px; }
+
+      /* ---------- platforms ---------- */
+      .platforms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; align-items: start; }
+      @media (max-width: 1000px) { .platforms { grid-template-columns: 1fr; max-width: 500px; } }
+      .album { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+      .album .frame { box-shadow: none; }
+      .album .frame:first-child { grid-column: 1 / -1; }
+      .x { background: #000; border: 1px solid #2f3336; border-radius: 14px; padding: 14px; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #e7e9ea; }
+      .who { display: flex; gap: 10px; align-items: center; font-size: 15px; }
+      .who img { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; background: #333; }
+      .who span { color: #71767b; font-size: 14px; }
+      .x .txt { white-space: pre-wrap; font-size: 15px; line-height: 1.38; margin: 6px 0 10px 48px; }
+      .x .album { margin-left: 48px; border-radius: 16px; overflow: hidden; border: 1px solid #2f3336; }
+      .x .reply { border-top: 1px solid #2f3336; margin-top: 12px; padding-top: 10px; }
+      .x a, .tgc a { color: #1d9bf0; }
+      .tg { background: #0e1621; border-radius: 14px; padding: 14px 10px; font-family: "Roboto", "Segoe UI", system-ui, sans-serif; }
+      .tgm { background: #182533; border-radius: 14px 14px 14px 4px; overflow: hidden; color: #e8eef4; }
+      .tgc { padding: 8px 11px 4px; font-size: 14px; line-height: 1.42; white-space: pre-wrap; }
+      .tgc a { color: #6ab3f3; }
+      .tgt { text-align: right; font-size: 11px; color: #7f8b99; padding: 0 11px 6px; }
+      .dc { background: #313338; border-radius: 12px; padding: 14px; font-family: "Noto Sans", "Segoe UI", sans-serif; color: #dbdee1; }
+      .dc .who b { color: #f2f3f5; }
+      .dc .app { background: #5865f2; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; }
+      .embed { margin: 6px 0 0 48px; background: #2b2d31; border-left: 4px solid #0e6b63; border-radius: 4px; padding: 10px 12px 12px; }
+      .embed .t { color: #f2f3f5; font-weight: 700; font-size: 15px; }
+      .embed .d { font-size: 14px; line-height: 1.42; margin: 6px 0 10px; white-space: pre-wrap; }
+      .embed .frame { box-shadow: none; border-radius: 4px; }
+      .embed .album { border-radius: 4px; overflow: hidden; }
+
+      /* ---------- notes ---------- */
+      .notes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 18px; }
+      @media (max-width: 860px) { .notes { grid-template-columns: 1fr; } }
+      .note { border-top: 1px solid #4a473f; padding-top: 12px; }
+      .note h4 { margin: 0 0 6px; font-weight: 500; font-size: 1.1rem; }
+      .note p { margin: 0; color: #b9b2a3; font-size: 0.95rem; line-height: 1.5; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>The week in signals, v2</h1>
+      <p>
+        Three cards, posted together: the week at a glance, the calls worth telling, and the
+        miss that hurt. Paper and ink instead of a dark dashboard, so it looks nothing like the
+        neon betting graphics in everyone else's feed.
+      </p>
+      <span class="tag">REAL DATA · every free-channel signal from Wed 28 – Thu 29 Oct, with its outcome</span>
+
+      <h2>The cards</h2>
+      <div class="stack">
+        <div>
+          <p class="cap">1 / 3 · COVER</p>
+          <div class="frame"><div class="card" id="cover">
+            <div class="mast"><span class="name">KALCHAS</span><span class="issue">THE WEEK IN SIGNALS · 28–29 OCT 2026</span></div>
+            <div class="cover">
+              <div class="left">
+                <div class="kicker">Free channel</div>
+                <div class="headline">Seven goals from fifteen calls, <em>and a long night in the Dutch Cup.</em></div>
+                <div class="tally">
+                  <div><b>15</b><span>signals</span></div>
+                  <div><b>7</b><span>found a goal</span></div>
+                  <div><b>8</b><span>came to nothing</span></div>
+                </div>
+              </div>
+              <div class="right">
+                <div class="chart-h"><span class="kicker">Every signal, minute by minute</span><i>tick = our signal · dot = the goal</i></div>
+                <div class="rows" id="rows"></div>
+                <div class="axis"><div></div><div><span style="left:0">0′</span><span style="left:50%">45′</span><span style="left:100%">90′</span></div><div></div></div>
+              </div>
+            </div>
+            <div class="foot"><span>Every signal goes out live, before the goal. Never after.</span><b>KALCHAS.LIVE</b></div>
+          </div></div>
+        </div>
+
+        <div>
+          <p class="cap">2 / 3 · THE CALLS</p>
+          <div class="frame"><div class="card" id="calls">
+            <div class="mast"><span class="name">KALCHAS</span><span class="issue">THE WEEK IN SIGNALS · 28–29 OCT 2026</span></div>
+            <div class="title-row"><h3>Three we got right</h3><p>Picked because the side we flagged scored, and fast.</p></div>
+            <div class="cols">
+              <div class="col">
+                <div class="mins"><b>12′</b>→<b class="g">13′</b></div>
+                <h4>Olimpia v Cartaginés</h4>
+                <div class="comp">Central American Cup · semi-final</div>
+                <p>Twelve minutes in and Cartaginés could barely get out of their own half: eleven dangerous attacks to two in five minutes. We posted at 12′. Olimpia scored sixty seconds later.</p>
+              </div>
+              <div class="col">
+                <div class="mins"><b>79′</b>→<b class="g">80′</b></div>
+                <h4>Noah v Syunik</h4>
+                <div class="comp">Armenian Cup · last 16</div>
+                <p>Two goals down, but playing like the side in front: 51 dangerous attacks to 21 and ten corners. We flagged Noah at 79′. They pulled one back a minute later.</p>
+              </div>
+              <div class="col">
+                <div class="mins"><b>76′</b>→<b class="g">81′</b></div>
+                <h4>FAR Rabat v IR Tanger</h4>
+                <div class="comp">Botola Pro</div>
+                <p>Seven shots on target, eight more wide, seven corners to one, and still 0–0. On their form FAR should have scored already. It took five more minutes.</p>
+              </div>
+            </div>
+            <div class="foot"><span>Honourable mention: Atlanta, flagged at 80′ while 1–0 down, equalised at 88′.</span><b>KALCHAS.LIVE</b></div>
+          </div></div>
+        </div>
+
+        <div>
+          <p class="cap">3 / 3 · THE MISS</p>
+          <div class="frame"><div class="card" id="miss">
+            <div class="mast"><span class="name">KALCHAS</span><span class="issue">THE WEEK IN SIGNALS · 28–29 OCT 2026</span></div>
+            <div class="miss">
+              <div class="left">
+                <div class="kicker">The one that got away</div>
+                <h3>Kozakken Boys v Utrecht</h3>
+                <div class="meta">KNVB Cup, first round · signal at 75′ · no goal</div>
+                <p>Our most confident call of the week. Kozakken Boys' recent form said they were two goals short, so we flagged them. But that form was built in the third tier, and this was a cup tie against an Eredivisie side. They had 23% of the ball, and eleven of their fourteen shots missed the target.</p>
+                <div class="lesson">Lower-league form doesn't travel. Four Dutch Cup signals this week, no goals.</div>
+              </div>
+              <div class="right">
+                <div class="kicker">What we saw at 75′</div>
+                <div class="owed"><b>+1.9</b><span>goals owed on form.<br />Our highest this week.</span></div>
+                <div class="teams"><span>Kozakken Boys</span><span>Utrecht</span></div>
+                <div class="pairs" id="pairs"></div>
+              </div>
+            </div>
+            <div class="foot"><span>We post the misses too. That's the deal.</span><b>KALCHAS.LIVE</b></div>
+          </div></div>
+        </div>
+      </div>
+
+      <h2>Why these picks</h2>
+      <div class="notes">
+        <div class="note"><h4>The calls</h4><p>Hits where the flagged side scored, ranked by how soon the goal came after the signal. Three of the seven goals were scored by the other team. Those still count as hits, but they don't make a good story.</p></div>
+        <div class="note"><h4>The miss</h4><p>The miss with the biggest Form Bar number, so the call we were surest about that didn't land. Kozakken (+1.9) beat Venlo (+1.7) and Seattle (+1.6).</p></div>
+        <div class="note"><h4>The words</h4><p>The stats in each story come straight from the signal. The lesson line needs a person: a draft gets written each Monday, you edit it, then it posts.</p></div>
+      </div>
+
+      <h2>How it lands</h2>
+      <div class="platforms" style="margin-top:18px">
+        <div>
+          <p class="cap">X · 3-IMAGE POST + REPLY</p>
+          <div class="x">
+            <div class="who"><img src="../src/assets/kalchas-mark.png" alt="" /><div><b>Kalchas</b> <span>@kalchas · 1m</span></div></div>
+            <div class="txt">15 signals this week, 7 goals. Not our best.
+
+Olimpia scored sixty seconds after we flagged them. Kozakken Boys were our surest call of the week and it went nowhere.
+
+Both are in here 👇</div>
+            <div class="album">
+              <div class="frame"><div class="card" data-clone="cover"></div></div>
+              <div class="frame"><div class="card" data-clone="calls"></div></div>
+              <div class="frame"><div class="card" data-clone="miss"></div></div>
+            </div>
+            <div class="reply">
+              <div class="who"><img src="../src/assets/kalchas-mark.png" alt="" /><div><b>Kalchas</b> <span>@kalchas · 1m</span></div></div>
+              <div class="txt">Signals go out free on Telegram, live, before the goal 👉 <a>t.me/Kalchas_Tips_Free</a></div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <p class="cap">TELEGRAM · ALBUM + CAPTION</p>
+          <div class="tg"><div class="tgm">
+            <div class="album">
+              <div class="frame"><div class="card" data-clone="cover"></div></div>
+              <div class="frame"><div class="card" data-clone="calls"></div></div>
+              <div class="frame"><div class="card" data-clone="miss"></div></div>
+            </div>
+            <div class="tgc"><b>The week in signals</b> · 28–29 Oct
+
+15 signals, 7 goals. Not a great week, and the cards show why.
+
+<b>Best call:</b> Olimpia v Cartaginés. Five minutes of one-way traffic, signal at 12′, goal at 13′.
+
+<b>The miss:</b> Kozakken Boys v Utrecht. Our surest call of the week. Their form came from the third tier, and it didn't survive an Eredivisie side.
+
+Every signal goes out live, before the goal. <a>kalchas.live</a></div>
+            <div class="tgt">Mon 09:00</div>
+          </div></div>
+        </div>
+
+        <div>
+          <p class="cap">DISCORD · #weekly-results</p>
+          <div class="dc">
+            <div class="who"><img src="../src/assets/kalchas-mark.png" alt="" /><b>Kalchas</b><span class="app">APP</span><span>Today at 09:00</span></div>
+            <div class="embed">
+              <div class="t">The week in signals · 28–29 Oct</div>
+              <div class="d">15 signals, 7 goals. Olimpia scored a minute after the call. Kozakken Boys were our surest bet and went nowhere. Full story in the cards.</div>
+              <div class="album">
+                <div class="frame"><div class="card" data-clone="cover"></div></div>
+                <div class="frame"><div class="card" data-clone="calls"></div></div>
+                <div class="frame"><div class="card" data-clone="miss"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Free channel, 28–29 Oct: [match, signal minute, goal minute or null, story row]
+      const signals = [
+        ["Venlo v Vitesse", 69, null],
+        ["FAR Rabat v IR Tanger", 76, 81, true],
+        ["Bragantino v Chapecoense", 76, 90],
+        ["New York City v Atlanta", 80, 88],
+        ["Olimpia v Cartaginés", 12, 13, true],
+        ["Seattle v Houston", 85, null],
+        ["RANS v Tornado Pekanbaru", 45, null],
+        ["Tampines v Svay Rieng", 62, 69],
+        ["Phnom Penh v Kitchee", 55, 89],
+        ["CS Sfaxien v Espérance", 74, null],
+        ["Noah v Syunik", 79, 80, true],
+        ["Chrobry v Polonia Bytom", 84, null],
+        ["Kozakken Boys v Utrecht", 75, null, true],
+        ["Purmersteijn v Gemert", 68, null],
+        ["Groningen v FC Emmen", 69, null],
+      ];
+      const pct = (m) => `${(m / 90) * 100}%`;
+      const rows = document.getElementById("rows");
+      for (const [m, f, g, hl] of signals) {
+        const marks = g
+          ? `<i class="run g" style="left:${pct(f)};width:calc(${pct(g)} - ${pct(f)})"></i><i class="fire" style="left:${pct(f)}"></i><i class="ball" style="left:${pct(g)}"></i>`
+          : `<i class="run blank" style="left:${pct(f)};right:0"></i><i class="fire" style="left:${pct(f)}"></i>`;
+        rows.insertAdjacentHTML(
+          "beforeend",
+          `<div class="row ${g ? "hit" : ""} ${hl ? "hl" : ""}"><div class="m">${m}</div><div class="track">${marks}</div><div class="r">${g ? g + "′" : "–"}</div></div>`,
+        );
+      }
+      rows.insertAdjacentHTML("afterbegin", '<i class="half" style="left:calc(238px + (100% - 274px) / 2)"></i>');
+
+      // Kozakken Boys v Utrecht at 75′
+      const pairs = [
+        ["Possession", 23, 77, "%"],
+        ["Shots on target", 3, 2],
+        ["Shots off target", 11, 3],
+        ["Dangerous attacks", 30, 28],
+        ["Corners", 5, 3],
+      ];
+      document.getElementById("pairs").innerHTML = pairs
+        .map(([l, a, b, u = ""]) => `<div class="pair"><div class="lbl">${l}<span>${a}${u} – ${b}${u}</span></div><div class="bar"><i style="flex:${a}"></i><i style="flex:${b}"></i></div></div>`)
+        .join("");
+
+      for (const el of document.querySelectorAll("[data-clone]")) {
+        el.innerHTML = document.getElementById(el.dataset.clone).innerHTML;
+      }
+      const fit = () => {
+        for (const f of document.querySelectorAll(".frame")) f.style.setProperty("--s", f.clientWidth / 1200);
+      };
+      new ResizeObserver(fit).observe(document.body);
+      fit();
+    </script>
+  </body>
+</html>

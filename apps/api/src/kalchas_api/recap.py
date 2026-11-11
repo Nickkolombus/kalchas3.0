@@ -13,7 +13,7 @@ import os
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from kalchas_core.recap import (
     build_daily,
     build_recap,
@@ -172,12 +172,10 @@ def get_recap(request: Request, week: str | None = None, kind: Kind = "week") ->
 
 
 def _strategy_choices() -> list[dict[str, str]]:
-    from kalchas_core.weights.registry import STRATEGY_INFO
+    from kalchas_core.weights import display_name_for
+    from kalchas_db.settings import KEY_BY_SLOT
 
-    return [
-        {"key": key, "name": info.name, "short": info.short}
-        for key, info in sorted(STRATEGY_INFO.items(), key=lambda item: item[1].slot)
-    ]
+    return [{"key": key, "name": display_name_for(key)} for _, key in sorted(KEY_BY_SLOT.items())]
 
 
 @router.post("/draft")
@@ -185,15 +183,20 @@ def draft_now(
     request: Request,
     week: str | None = None,
     kind: Kind = "week",
-    strategies: str = "",
+    strategy: list[str] | None = Query(default=None),
 ) -> dict[str, Any]:
     """Build (or rebuild, while still a draft) a recap now: last week, or a chosen day.
 
-    A daily draft can be limited to some strategies (comma-separated keys); empty means all.
+    `strategy` (repeatable) narrows it to those strategies' signals; none means all.
     """
     require_admin(request)
     from kalchas_db.recaps import fetch_week_signals_sync, get_recap_sync, save_draft_sync
 
+    known = {choice["key"] for choice in _strategy_choices()}
+    picked = sorted({key for key in strategy or [] if key})
+    unknown = [key for key in picked if key not in known]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"unknown strategy: {', '.join(unknown)}")
     dsn = _dsn()
     today = datetime.now(UTC).date()
     default = week_bounds(today)[0] if kind == "week" else today - timedelta(days=1)
@@ -201,13 +204,10 @@ def draft_now(
     start = datetime.combine(start_day, time.min, tzinfo=UTC)
     rows = fetch_week_signals_sync(dsn, start, start + timedelta(days=7 if kind == "week" else 1))
     if kind == "week":
-        data = build_recap(rows, week_start=start_day, thresholds=_thresholds(dsn))
+        data = build_recap(
+            rows, week_start=start_day, thresholds=_thresholds(dsn), strategies=picked
+        )
     else:
-        known = {choice["key"] for choice in _strategy_choices()}
-        picked = [key.strip() for key in strategies.split(",") if key.strip()]
-        unknown = [key for key in picked if key not in known]
-        if unknown:
-            raise HTTPException(status_code=400, detail=f"unknown strategy: {', '.join(unknown)}")
         data = build_daily(rows, day=start_day, thresholds=_thresholds(dsn), strategies=picked)
     texts = data.pop("texts")
     if not save_draft_sync(dsn, start_day, data, texts, kind=kind):

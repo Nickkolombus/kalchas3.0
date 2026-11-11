@@ -6,6 +6,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 
 from kalchas_core.alert_factors import compact_board, sweet_spot_flag
 from kalchas_core.alert_outcomes import AlertOutcomeEvaluator, evaluator_from_rule_rows
@@ -35,6 +36,7 @@ from kalchas_core.h2h import (
     build_h2h_payload,
     orient_h2h_payload,
 )
+from kalchas_core.odds import fresh_live_line
 from kalchas_core.runner import (
     DEFAULT_THRESHOLDS,
     board_snapshot,
@@ -171,12 +173,18 @@ class Scanner:
     persist: MatchPersist = field(default_factory=default_persist)
     thresholds: dict[int, float] = field(default_factory=lambda: dict(DEFAULT_THRESHOLDS))
     conditions: dict[int, list] = field(default_factory=dict)
+    # Per-slot fingerprint of the stored admin config; stamped on alert payloads.
+    config_versions: dict[int, str] = field(default_factory=dict)
     sweet_spot: SweetSpotWindows = field(default_factory=SweetSpotWindows)
     _cycles: int = 0
     _tuning_at: float = 0.0
     _odds_by_match: dict[str, dict[str, float]] = field(default_factory=dict)
     _odds_fetched_at: float = 0.0
-    _live_odds_by_match: dict[str, dict[str, float]] = field(default_factory=dict)
+    _live_odds_by_match: dict[str, dict] = field(default_factory=dict)
+    """match id -> live 1X2 from the latest feed snapshot only, each line
+    stamped ``fetched_at`` (UTC ISO) and, when the feed has a clock, ``minute``.
+    Replaced on every fetch, so a match that drops out of the feed (market
+    closed or suspended) loses its line instead of keeping an old price."""
     _live_odds_fetched_at: float = 0.0
     _comment_elapsed_by_match: dict[str, int] = field(default_factory=dict)
     _full_time_match_ids: set[str] = field(default_factory=set)
@@ -248,10 +256,23 @@ class Scanner:
                 else:
                     fresh = fetch() or {}
                     ended = set()
-                if fresh:
-                    for match_id, odds in fresh.items():
-                        self._live_odds_by_match[str(match_id)] = dict(odds)
-                    logger.info("live odds cache: %s matches", len(self._live_odds_by_match))
+                fetched_at = datetime.now(UTC).isoformat(timespec="seconds")
+                stamped: dict[str, dict] = {}
+                for match_id, odds in (fresh or {}).items():
+                    key = str(match_id)
+                    line = dict(odds)
+                    line["fetched_at"] = fetched_at
+                    clock = (clocks or {}).get(match_id, (clocks or {}).get(key))
+                    if clock is not None:
+                        line["minute"] = int(clock)
+                    stamped[key] = line
+                dropped = len(self._live_odds_by_match.keys() - stamped.keys())
+                self._live_odds_by_match = stamped
+                logger.info(
+                    "live odds cache: %s matches (%s dropped from feed)",
+                    len(stamped),
+                    dropped,
+                )
                 if clocks:
                     self._comment_elapsed_by_match = {
                         str(match_id): int(elapsed) for match_id, elapsed in clocks.items()
@@ -326,10 +347,16 @@ class Scanner:
         )
 
     def _odds_payload(self, match_id: str) -> dict | None:
-        return compose_odds_record(
-            kickoff=self._odds_by_match.get(match_id),
-            live=self._live_odds_by_match.get(match_id),
-        )
+        """Kickoff 1X2 plus the live line only while it is fresh.
+
+        A failed or skipped live fetch leaves the last snapshot in place; the
+        age check keeps it off alerts, match rows and conditions once it is
+        a few minutes old.
+        """
+        live = self._live_odds_by_match.get(match_id)
+        if live is not None and fresh_live_line({"live": live}) is None:
+            live = None
+        return compose_odds_record(kickoff=self._odds_by_match.get(match_id), live=live)
 
     def _h2h_for_alert(self, match: LiveMatch) -> dict | None:
         """Goals-per-meeting and W/D/L for the Telegram banner. Cache first.
@@ -767,6 +794,9 @@ class Scanner:
             payload["home_logo"] = https_asset_url(match.home_team_logo) or None
             payload["away_logo"] = https_asset_url(match.away_team_logo) or None
             payload["status_short"] = match.status_short
+            config_version = self.config_versions.get(cand.strategy_slot)
+            if config_version:
+                payload["config_version"] = config_version
             self.sink.emit(payload)
             self.cooldown.confirm(decision.cooldown_key)
             emitted.append(payload)
@@ -811,9 +841,15 @@ class Scanner:
             self._tuning_at = now
             return
         try:
-            from kalchas_db.settings import KEY_BY_SLOT, get_board_settings, load_runtime_bundle
+            from kalchas_db.settings import (
+                KEY_BY_SLOT,
+                config_fingerprints,
+                get_board_settings,
+                load_runtime_bundle,
+            )
 
             bundle = load_runtime_bundle(dsn)
+            self.config_versions = config_fingerprints(bundle)
             try:
                 self.sweet_spot = SweetSpotWindows.from_mapping(get_board_settings(dsn))
             except Exception:

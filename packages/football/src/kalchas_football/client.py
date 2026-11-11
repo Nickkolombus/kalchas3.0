@@ -14,6 +14,7 @@ import re
 import time
 import unicodedata
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -512,14 +513,36 @@ def _kickoff_from_record(record: Any) -> dict[str, float] | None:
     return _triple_1x2(record)
 
 
+LIVE_STAMP_KEYS: tuple[str, ...] = ("fetched_at", "minute", "updated_at")
+"""Freshness stamps carried on a live 1X2 line next to home/draw/away.
+
+``fetched_at`` is the UTC ISO time the scanner pulled the line (readers drop
+lines without it or older than a few minutes), ``minute`` the feed's match
+clock at that fetch, ``updated_at`` the provider's own ``upd`` for the market.
+"""
+
+
+def _live_line(block: Any) -> dict[str, Any] | None:
+    """Live 1X2 triple plus whatever freshness stamps the block carries."""
+    triple = _triple_1x2(block)
+    if triple is None:
+        return None
+    out: dict[str, Any] = dict(triple)
+    for key in LIVE_STAMP_KEYS:
+        value = block.get(key)
+        if value is not None and value != "":
+            out[key] = value
+    return out
+
+
 def compose_odds_record(
     *,
     kickoff: dict[str, float] | None = None,
-    live: dict[str, float] | None = None,
+    live: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Persist shape: frozen kickoff 1X2 at top level, plus ``kickoff`` / ``live``."""
     kick = _triple_1x2(kickoff)
-    inplay = _triple_1x2(live)
+    inplay = _live_line(live)
     if not kick and not inplay:
         return None
     out: dict[str, Any] = {}
@@ -527,16 +550,20 @@ def compose_odds_record(
         out.update(kick)
         out["kickoff"] = dict(kick)
     if inplay:
-        out["live"] = dict(inplay)
+        out["live"] = inplay
     return out
 
 
 def merge_odds_records(previous: Any, incoming: Any) -> dict[str, Any]:
-    """Keep the first kickoff 1X2; replace live 1X2 when a new complete line arrives."""
+    """Keep the first kickoff 1X2; replace live 1X2 when a new complete line arrives.
+
+    A previous live line is kept when the incoming record has none, stamps
+    included, so readers can still tell how old it is and drop it.
+    """
     prev = dict(previous) if isinstance(previous, dict) else {}
     inc = dict(incoming) if isinstance(incoming, dict) else {}
     kickoff = _kickoff_from_record(prev) or _kickoff_from_record(inc)
-    live = _triple_1x2(inc.get("live")) or _triple_1x2(prev.get("live"))
+    live = _live_line(inc.get("live")) or _live_line(prev.get("live"))
     return compose_odds_record(kickoff=kickoff, live=live) or {}
 
 
@@ -567,26 +594,73 @@ def odds_1x2_from_provider_rows(rows: Any) -> dict[str, dict[str, float]]:
     return out
 
 
+def _market_text(name: str) -> str:
+    return " ".join(name.lower().replace("/", " ").replace("-", " ").split())
+
+
+_FT_1X2_EXACT = frozenset(_market_text(name).replace(" ", "") for name in _FT_1X2_MARKETS)
+"""Known full-time names, compared with spaces, dashes and slashes removed."""
+_NOT_FT_1X2_TOKENS = (
+    "half",
+    "next goal",
+    "which team",
+    "correct score",
+    "double chance",
+    "draw no bet",
+    "to qualify",
+    "how many",
+    # Time-window markets ("1x2 - 10 minutes", "1X2 (0-15 min)", "rest of the
+    # match") settle on a stretch of the game, not the final result. Near the
+    # end of their window they price the draw at ~1.05, which once read as a
+    # full-time line at 20' and stayed on alerts until 90'.
+    "minute",
+    "min",
+    "interval",
+    "period",
+    "rest of",
+    "goal",
+    "corner",
+    "card",
+    "booking",
+    "handicap",
+    "both teams",
+)
+_SPELLED_1X2 = re.compile(r"1\s*x\s*2|3\s*way")
+
+
 def _is_ft_1x2_market(name: str) -> bool:
-    n = " ".join(name.lower().replace("/", " ").replace("-", " ").split())
-    compact = n.replace(" ", "")
-    if any(
-        token in n
-        for token in (
-            "half",
-            "next goal",
-            "which team",
-            "correct score",
-            "double chance",
-            "draw no bet",
-            "to qualify",
-            "how many",
-        )
-    ):
+    """Full-time 1X2 market name. Anything time-boxed or derived is rejected."""
+    n = _market_text(name)
+    if not n:
         return False
-    if n in _FT_1X2_MARKETS or compact in {"1x2", "matchwinner"}:
-        return True
-    return "1x2" in compact
+    if any(token in n for token in _NOT_FT_1X2_TOKENS):
+        return False
+    # Digits other than the "1x2" / "3-way" spelling mean a window or a line
+    # ("1x2 15", "1x2 0 10", "3 way 75").
+    if any(ch.isdigit() for ch in _SPELLED_1X2.sub("", n)):
+        return False
+    compact = n.replace(" ", "")
+    return compact in _FT_1X2_EXACT or "1x2" in compact
+
+
+def _ft_1x2_preference(name: str) -> int:
+    """0 for a known full-time market name, 1 for a looser "...1x2..." name."""
+    return 0 if _market_text(name).replace(" ", "") in _FT_1X2_EXACT else 1
+
+
+LIVE_MARKET_MAX_LAG_SEC = 600
+"""A 1X2 market whose provider ``upd`` trails the match's freshest market by
+more than this is a closed or frozen line, not a live price."""
+
+
+def _provider_upd(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _1x2_slot(label: str, home_name: str, away_name: str) -> str | None:
@@ -609,27 +683,65 @@ def _1x2_from_live_odds_list(
     *,
     home_name: str,
     away_name: str,
-) -> dict[str, float] | None:
+) -> dict[str, Any] | None:
+    """One full-time 1X2 market's complete home/draw/away, never mixed markets.
+
+    Each market is read on its own. A market with any suspended leg is
+    skipped (its prices are pre-event), as is one whose provider ``upd`` lags
+    the match's freshest market by more than ``LIVE_MARKET_MAX_LAG_SEC``.
+    Known full-time names win over looser "...1x2..." names.
+    """
     if not isinstance(live_odds, list):
         return None
-    collected: dict[str, float] = {}
+    markets: dict[str, dict[str, Any]] = {}
+    newest: datetime | None = None
     for item in live_odds:
         if not isinstance(item, dict):
             continue
-        if str(item.get("suspended") or "").strip().lower() in {"yes", "true", "1"}:
+        upd = _provider_upd(item.get("upd"))
+        if upd is not None and (newest is None or upd > newest):
+            newest = upd
+        name = str(item.get("odd_name") or "")
+        if not _is_ft_1x2_market(name):
             continue
-        if not _is_ft_1x2_market(str(item.get("odd_name") or "")):
+        market = markets.setdefault(
+            _market_text(name),
+            {"order": len(markets), "rank": _ft_1x2_preference(name), "legs": {}, "upd": None},
+        )
+        if str(item.get("suspended") or "").strip().lower() in {"yes", "true", "1"}:
+            market["suspended"] = True
             continue
         slot = _1x2_slot(str(item.get("type") or ""), home_name, away_name)
         value = _odd_float(item.get("value"))
-        if slot is None or value is None or slot in collected:
+        if slot is None or value is None or slot in market["legs"]:
             continue
-        collected[slot] = value
-    return _triple_1x2(collected)
+        market["legs"][slot] = value
+        if upd is not None and (market["upd"] is None or upd > market["upd"]):
+            market["upd"] = upd
+            market["upd_raw"] = str(item.get("upd")).strip()
+    for market in sorted(markets.values(), key=lambda m: (m["rank"], m["order"])):
+        if market.get("suspended"):
+            continue
+        legs = market["legs"]
+        if not {"home", "draw", "away"} <= legs.keys():
+            continue
+        upd = market["upd"]
+        if upd is not None and newest is not None:
+            if (newest - upd).total_seconds() > LIVE_MARKET_MAX_LAG_SEC:
+                continue
+        line: dict[str, Any] = {"home": legs["home"], "draw": legs["draw"], "away": legs["away"]}
+        if market.get("upd_raw"):
+            line["updated_at"] = market["upd_raw"]
+        return line
+    return None
 
 
-def odds_1x2_from_live_comments(payload: Any) -> dict[str, dict[str, float]]:
-    """Index ``match_id`` → live 1X2 from ``action=get_live_odds_commnets``."""
+def odds_1x2_from_live_comments(payload: Any) -> dict[str, dict[str, Any]]:
+    """Index ``match_id`` → live full-time 1X2 from ``action=get_live_odds_commnets``.
+
+    Lines carry ``updated_at`` (provider ``upd``) when the feed has it; the
+    scanner adds ``fetched_at`` / ``minute``.
+    """
     rows: list[Any]
     if isinstance(payload, dict):
         rows = list(payload.values())
@@ -637,7 +749,7 @@ def odds_1x2_from_live_comments(payload: Any) -> dict[str, dict[str, float]]:
         rows = payload
     else:
         return {}
-    out: dict[str, dict[str, float]] = {}
+    out: dict[str, dict[str, Any]] = {}
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -651,7 +763,7 @@ def odds_1x2_from_live_comments(payload: Any) -> dict[str, dict[str, float]]:
                 "away": row.get("odd_2"),
             }
         )
-        if direct is not None:
+        if direct is not None and "draw" in direct:
             out[match_id] = direct
             continue
         parsed = _1x2_from_live_odds_list(

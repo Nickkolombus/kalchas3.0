@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Free Telegram join mockups</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Sora:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #071018;
+        --surface: #0c1520;
+        --border: rgba(232, 220, 196, 0.1);
+        --text: #f2ebe0;
+        --text-2: #b7b0a3;
+        --muted: #7d776c;
+        --accent: #3dd6c6;
+        --cream: #f2ebe0;
+        --font-display: "Fraunces", Georgia, serif;
+        --font-body: "Sora", sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: var(--font-body);
+        background:
+          radial-gradient(900px 480px at 12% -8%, rgba(61, 214, 198, 0.12), transparent 55%),
+          var(--bg);
+      }
+      .page { max-width: 1180px; margin: 0 auto; padding: 1.4rem 1.1rem 3rem; }
+      h1 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.25rem; }
+      .intro { color: var(--text-2); font-size: 0.85rem; margin: 0 0 1.2rem; }
+      .panel {
+        margin: 0 0 1.35rem;
+        border: 1px solid var(--border);
+        border-radius: 0.7rem;
+        overflow: hidden;
+        background: #0a131c;
+      }
+      .panel-head { padding: 0.75rem 1rem 0.65rem; border-bottom: 1px solid var(--border); }
+      .kicker { font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+      .panel-head h2 { margin: 0.12rem 0 0.15rem; font-size: 1rem; }
+      .panel-head p { margin: 0; color: var(--muted); font-size: 0.76rem; }
+      .scene { padding: 1.1rem 1rem 1.2rem; }
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(16rem, 20rem);
+        gap: 1rem 1.5rem;
+        padding-bottom: 0.9rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .identity { display: flex; align-items: center; gap: 0.9rem; }
+      .mark {
+        width: 72px; height: 72px; border-radius: 50%;
+        border: 1px solid rgba(61, 214, 198, 0.28);
+      }
+      .brand {
+        font-size: 0.68rem; letter-spacing: 0.24em; text-transform: uppercase;
+        color: var(--accent); margin: 0 0 0.25rem;
+      }
+      .brand-row { display: flex; align-items: center; gap: 0.7rem; margin: 0 0 0.25rem; }
+      .brand-row .brand { margin: 0; }
+      h3 {
+        font-family: var(--font-display);
+        font-size: 1.45rem; font-weight: 650; margin: 0 0 0.3rem; letter-spacing: -0.02em;
+      }
+      .lede { color: var(--text-2); margin: 0; font-size: 0.8rem; line-height: 1.45; max-width: 32rem; }
+      .filters { display: flex; gap: 0.85rem; margin-top: 0.85rem; color: var(--muted); font-size: 0.75rem; }
+      .signals {
+        border: 1px solid var(--border); border-radius: 0.55rem;
+        padding: 0.65rem 0.7rem; background: rgba(255,255,255,0.025); font-size: 0.72rem;
+      }
+      .signals b { font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+      .sig { margin-top: 0.45rem; color: var(--text-2); }
+      .pill {
+        display: inline-flex; align-items: center;
+        padding: 0.16rem 0.5rem; border: 1px solid rgba(61, 214, 198, 0.45);
+        border-radius: 999px; color: var(--accent); font-size: 0.64rem;
+        letter-spacing: 0.08em; text-transform: uppercase; text-decoration: none;
+      }
+      .btn {
+        display: inline-flex; align-items: center; gap: 0.4rem;
+        margin-top: 0.7rem; padding: 0.45rem 0.85rem;
+        background: var(--cream); color: #071018; border-radius: 0.4rem;
+        font-size: 0.78rem; font-weight: 600; text-decoration: none;
+      }
+      .btn span { font-weight: 400; color: #3d4a52; font-size: 0.68rem; }
+      .rail {
+        display: flex; align-items: center; justify-content: space-between; gap: 0.8rem;
+        margin: 0.75rem 0 0; padding: 0.55rem 0.7rem;
+        border: 1px solid rgba(61, 214, 198, 0.28);
+        border-radius: 0.45rem; background: rgba(61, 214, 198, 0.08);
+        font-size: 0.78rem;
+      }
+      .rail a {
+        flex: 0 0 auto; padding: 0.28rem 0.7rem; border-radius: 999px;
+        background: var(--accent); color: #071018; font-weight: 600;
+        font-size: 0.72rem; text-decoration: none;
+      }
+      .mute { color: var(--muted); font-size: 0.72rem; }
+      .join-card {
+        margin-bottom: 0.55rem; padding: 0.5rem 0.55rem 0.55rem;
+        border: 1px solid rgba(61, 214, 198, 0.3); border-radius: 0.4rem;
+        background: rgba(61, 214, 198, 0.07);
+      }
+      .join-card strong { display: block; font-size: 0.78rem; margin: 0 0 0.15rem; }
+      .join-card p { margin: 0 0 0.4rem; color: var(--text-2); font-size: 0.68rem; line-height: 1.35; }
+      .join-card a {
+        color: var(--accent); font-size: 0.72rem; font-weight: 600; text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Join free Telegram - four placements</h1>
+      <p class="intro">Same board header. Pick one.</p>
+
+      <section class="panel" id="a">
+        <div class="panel-head">
+          <div class="kicker">A</div>
+          <h2>Quiet pill next to Kalchas</h2>
+          <p>What is in the code now. Small. Easy to miss.</p>
+        </div>
+        <div class="scene">
+          <div class="hero">
+            <div>
+              <div class="identity">
+                <img class="mark" src="../src/assets/kalchas-mark.png" alt="" />
+                <div>
+                  <div class="brand-row">
+                    <p class="brand">Kalchas</p>
+                    <a class="pill" href="#">Free Telegram</a>
+                  </div>
+                  <h3>Live Match Intelligence</h3>
+                  <p class="lede">Follow pressure, attacking momentum and goal signals as they build across every live match - before the score changes.</p>
+                </div>
+              </div>
+              <div class="filters">Triggered · Pinned · Hide halftimers</div>
+            </div>
+            <aside class="signals"><b>Recent signals</b><div class="sig">Patro · Δ5′ · 73′</div></aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="b">
+        <div class="panel-head">
+          <div class="kicker">B</div>
+          <h2>Cream button under the intro</h2>
+          <p>Obvious join. Date sits on the button.</p>
+        </div>
+        <div class="scene">
+          <div class="hero">
+            <div>
+              <div class="identity">
+                <img class="mark" src="../src/assets/kalchas-mark.png" alt="" />
+                <div>
+                  <p class="brand">Kalchas</p>
+                  <h3>Live Match Intelligence</h3>
+                  <p class="lede">Follow pressure, attacking momentum and goal signals as they build across every live match - before the score changes.</p>
+                  <a class="btn" href="#">Join free alerts <span>unlimited until 1.1.2027</span></a>
+                </div>
+              </div>
+              <div class="filters">Triggered · Pinned · Hide halftimers</div>
+            </div>
+            <aside class="signals"><b>Recent signals</b><div class="sig">Patro · Δ5′ · 73′</div></aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="c">
+        <div class="panel-head">
+          <div class="kicker">C</div>
+          <h2>Teal rail under the header</h2>
+          <p>Full width. Copy plus a Join control. Stays visible while you scan the board.</p>
+        </div>
+        <div class="scene">
+          <div class="hero">
+            <div>
+              <div class="identity">
+                <img class="mark" src="../src/assets/kalchas-mark.png" alt="" />
+                <div>
+                  <p class="brand">Kalchas</p>
+                  <h3>Live Match Intelligence</h3>
+                  <p class="lede">Follow pressure, attacking momentum and goal signals as they build across every live match - before the score changes.</p>
+                </div>
+              </div>
+              <div class="filters">Triggered · Pinned · Hide halftimers</div>
+            </div>
+            <aside class="signals"><b>Recent signals</b><div class="sig">Patro · Δ5′ · 73′</div></aside>
+          </div>
+          <div class="rail">
+            <div>Free Telegram alerts. Unlimited until 1.1.2027, then weekdays 1 per hour.</div>
+            <a href="#">Join free</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="d">
+        <div class="panel-head">
+          <div class="kicker">D</div>
+          <h2>Card above Recent signals</h2>
+          <p>Does not touch the brand. Lives where people already look for alerts.</p>
+        </div>
+        <div class="scene">
+          <div class="hero">
+            <div>
+              <div class="identity">
+                <img class="mark" src="../src/assets/kalchas-mark.png" alt="" />
+                <div>
+                  <p class="brand">Kalchas</p>
+                  <h3>Live Match Intelligence</h3>
+                  <p class="lede">Follow pressure, attacking momentum and goal signals as they build across every live match - before the score changes.</p>
+                </div>
+              </div>
+              <div class="filters">Triggered · Pinned · Hide halftimers</div>
+            </div>
+            <aside class="signals">
+              <div class="join-card">
+                <strong>Free Telegram</strong>
+                <p>Unlimited alerts until 1.1.2027.</p>
+                <a href="#">Join the free channel</a>
+              </div>
+              <b>Recent signals</b>
+              <div class="sig">Patro · Δ5′ · 73′</div>
+            </aside>
+          </div>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

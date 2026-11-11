@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Weekly recap v3</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Roboto:wght@400;500;700;900&family=Barlow:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root { --f: "Manrope", system-ui, sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #16181c; color: #e8eaee; font-family: var(--f); }
+      .page { max-width: 1180px; margin: 0 auto; padding: 40px 20px 90px; }
+      .page > h1 { font-size: 1.9rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 6px; }
+      .page > p { color: #a9afba; max-width: 72ch; margin: 0 0 6px; line-height: 1.55; }
+      .page > h2 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; margin: 60px 0 4px; padding-top: 22px; border-top: 1px solid #2c2f35; }
+      .page > h2 + p { margin-bottom: 18px; }
+      .fonts { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px 0; margin-top: 14px; background: #16181c; border-bottom: 1px solid #2c2f35; }
+      .fonts span { font-size: 0.85rem; color: #a9afba; margin-right: 4px; }
+      .fonts button { font: inherit; font-size: 0.9rem; color: #e8eaee; background: #22252b; border: 1px solid #343840; border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+      .fonts button[aria-pressed="true"] { background: #e8eaee; color: #16181c; border-color: #e8eaee; }
+      .fonts small { color: #7d8490; font-size: 0.8rem; margin-left: 6px; }
+      .stack { display: grid; gap: 26px; }
+      .cap { font-size: 0.78rem; color: #8a909b; margin: 0 0 8px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+      /* ---------- card shell: drawn at 1200x675, scaled to fit ---------- */
+      .frame { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 10px; box-shadow: 0 16px 44px rgba(0,0,0,.45); }
+      .frame > .card { position: absolute; inset: 0 auto auto 0; transform-origin: 0 0; transform: scale(var(--s, 0.5)); }
+      .card {
+        width: 1200px; height: 675px; padding: 36px 52px 0; display: flex; flex-direction: column;
+        font-family: var(--f); font-variant-numeric: tabular-nums; color: var(--ink); background: var(--bg);
+      }
+      .card.light {
+        --bg: #f7f6f2; --ink: #12151a; --ink2: #4b5260; --mut: #8a909b; --line: #e2e0d8;
+        --track: #e9e7e1; --goal: #0f8a5c; --miss: #a3a8b1; --sig: #12151a;
+      }
+      .card.dark {
+        --bg: #0b1422; --ink: #f3f5f8; --ink2: #b4bccb; --mut: #7c8697; --line: rgba(255,255,255,.1);
+        --track: rgba(255,255,255,.09); --goal: #2fd39a; --miss: #5d6879; --sig: #f3f5f8;
+        background: linear-gradient(180deg, #0f1b2e, #0a1220);
+      }
+      .hd { display: flex; justify-content: space-between; align-items: center; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+      .brand { display: flex; align-items: center; gap: 12px; font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+      .brand img { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; background: var(--track); }
+      .hd .wk { font-size: 16px; color: var(--ink2); font-weight: 500; }
+      .hd .wk b { color: var(--ink); font-weight: 700; }
+      .ft { margin-top: auto; display: flex; justify-content: space-between; align-items: center; padding: 14px 0 18px; border-top: 1px solid var(--line); font-size: 16px; color: var(--ink2); }
+      .ft b { color: var(--ink); font-weight: 700; }
+      .kick { font-size: 14px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--goal); }
+
+      /* ---------- the timeline row ---------- */
+      .tl { display: grid; grid-template-columns: var(--cols, 210px 1fr 140px); align-items: center; column-gap: 18px; height: 24px; }
+      .tl .nm { font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .tl .res { font-size: 14px; font-weight: 600; white-space: nowrap; }
+      .tl .res.g { color: var(--goal); }
+      .tl .res.n { color: var(--mut); font-weight: 500; }
+      .bar { position: relative; height: 10px; border-radius: 5px; background: var(--track); }
+      .bar .ht { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--mut); opacity: .45; }
+      .bar .seg { position: absolute; top: 0; bottom: 0; border-radius: 5px; }
+      .bar .seg.g { background: var(--goal); min-width: 8px; }
+      .bar .seg.n { background: repeating-linear-gradient(135deg, var(--miss) 0 2px, transparent 2px 6px); }
+      .bar .sig { position: absolute; top: -5px; bottom: -5px; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--sig); }
+      .bar .ball { position: absolute; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--goal); box-shadow: 0 0 0 3px var(--bg); }
+      .grp { display: grid; grid-template-columns: var(--cols, 210px 1fr 140px); column-gap: 18px; align-items: end; height: 30px; padding-bottom: 4px; }
+      .grp b { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+      .grp b.g { color: var(--goal); }
+      .grp b.n { color: var(--mut); }
+      .ax { display: grid; grid-template-columns: var(--cols, 210px 1fr 140px); column-gap: 18px; margin-top: 6px; font-size: 12px; color: var(--mut); }
+      .ax div { position: relative; height: 14px; }
+      .ax span { position: absolute; white-space: nowrap; }
+      .lg { display: flex; gap: 22px; font-size: 14px; color: var(--ink2); margin-bottom: 4px; }
+      .lg span { display: inline-flex; align-items: center; gap: 8px; }
+      .lg .k-sig { width: 3px; height: 16px; border-radius: 2px; background: var(--sig); }
+      .lg .k-ball { width: 14px; height: 14px; border-radius: 50%; background: var(--goal); }
+      .lg .k-n { width: 26px; height: 10px; border-radius: 5px; background: repeating-linear-gradient(135deg, var(--miss) 0 2px, transparent 2px 6px); }
+
+      /* ---------- cover charts that scale to any number of signals ---------- */
+      .wt-h { display: flex; justify-content: space-between; align-items: baseline; font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+      .wt-h span { font-size: 14px; font-weight: 500; color: var(--ink2); }
+      .wb { display: grid; grid-template-columns: 120px 1fr 40px; align-items: center; gap: 14px; height: 30px; font-size: 15px; font-weight: 500; }
+      .wb .t { height: 18px; border-radius: 5px; background: var(--track); overflow: hidden; }
+      .wb .t i { display: block; height: 100%; border-radius: 5px; background: var(--goal); }
+      .wb.n .t i { background: repeating-linear-gradient(135deg, var(--miss) 0 2px, transparent 2px 6px); }
+      .wb b { text-align: right; font-weight: 700; }
+      .wb.n { color: var(--mut); }
+      .say { font-size: 15px; color: var(--ink2); margin: 10px 0 0; }
+      .say b { color: var(--ink); }
+      .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; }
+      .dy { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+      .dy .col { width: 100%; max-width: 44px; height: 104px; display: flex; flex-direction: column-reverse; border-radius: 6px; overflow: hidden; background: var(--track); }
+      .dy .col i { display: block; }
+      .dy .col i.g { background: var(--goal); }
+      .dy .col i.n { background: repeating-linear-gradient(135deg, var(--miss) 0 2px, transparent 2px 6px); }
+      .dy b { font-size: 15px; font-weight: 700; }
+      .dy span { font-size: 13px; color: var(--mut); }
+      .a-charts { display: grid; gap: 26px; align-content: start; }
+      .b-charts { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 48px; padding-top: 22px; }
+      .b-charts .wt-h { font-size: 18px; margin-bottom: 14px; }
+      .b-charts .wb { height: 42px; font-size: 16px; }
+      .b-charts .wb .t { height: 24px; }
+      .b-charts .say { font-size: 16px; margin-top: 14px; }
+      .b-charts .dy .col { height: 196px; max-width: 52px; }
+
+      /* ---------- head-to-head stat rows (the FotMob / Sofascore pattern) ---------- */
+      .cmp { display: grid; gap: 15px; }
+      .cmp .teams { display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; }
+      .cmp .teams span:last-child { color: var(--ink2); }
+      .cr .top { display: grid; grid-template-columns: 70px 1fr 70px; font-size: 16px; }
+      .cr .top b { font-weight: 700; }
+      .cr .top b:last-child { text-align: right; }
+      .cr .top span { text-align: center; color: var(--ink2); }
+      .cr .bars { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 5px; }
+      .cr .bars div { height: 7px; border-radius: 4px; background: var(--track); display: flex; overflow: hidden; }
+      .cr .bars div:first-child { justify-content: flex-end; }
+      .cr .bars i { display: block; height: 100%; border-radius: 4px; background: var(--miss); }
+      .cr .bars i.lead { background: var(--ink); }
+
+      /* ---------- direction A: match sheet (light) ---------- */
+      .a-cover { flex: 1; display: grid; grid-template-columns: 360px 1fr; gap: 48px; padding-top: 24px; min-height: 0; }
+      .a-cover h3 { font-size: 50px; line-height: 1.02; font-weight: 800; letter-spacing: -0.035em; margin: 12px 0 14px; }
+      .a-cover h3 em { font-style: normal; color: var(--goal); }
+      .a-cover .sub { font-size: 20px; line-height: 1.45; color: var(--ink2); margin: 0; }
+      .facts { margin-top: 26px; display: grid; gap: 0; }
+      .facts div { display: flex; justify-content: space-between; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 16px; }
+      .facts span { color: var(--ink2); }
+      .facts b { font-weight: 700; text-align: right; }
+
+      .a-calls-h { display: flex; justify-content: space-between; align-items: baseline; padding: 22px 0 18px; }
+      .a-calls-h h3, .a-miss h3 { margin: 0; font-size: 40px; font-weight: 800; letter-spacing: -0.03em; }
+      .a-calls-h p { margin: 0; color: var(--ink2); font-size: 17px; }
+      .a-cols { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); }
+      .a-col { padding: 4px 30px 0 0; }
+      .a-col + .a-col { padding-left: 30px; border-left: 1px solid var(--line); }
+      .wait { display: flex; align-items: baseline; gap: 10px; }
+      .wait b { font-size: 50px; font-weight: 800; color: var(--goal); letter-spacing: -0.03em; line-height: 1; }
+      .wait span { font-size: 16px; color: var(--ink2); }
+      .a-col .bar, .b-strip .bar { margin: 18px 0 8px; }
+      .when { font-size: 15px; color: var(--ink2); }
+      .when b { color: var(--ink); font-weight: 600; }
+      .match { font-size: 24px; font-weight: 700; letter-spacing: -0.015em; margin: 18px 0 2px; }
+      .comp { font-size: 14px; color: var(--mut); }
+      .story { font-size: 19px; line-height: 1.5; margin: 12px 0 0; }
+
+      .a-miss { flex: 1; display: grid; grid-template-columns: 1fr 400px; gap: 48px; padding-top: 24px; }
+      .a-miss .meta { font-size: 16px; color: var(--ink2); margin-top: 8px; }
+      .a-miss .story { font-size: 21px; margin-top: 18px; }
+      .learn { margin-top: 20px; padding: 16px 18px; border-radius: 10px; background: var(--track); }
+      .learn small { display: block; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink2); margin-bottom: 4px; }
+      .learn p { margin: 0; font-size: 21px; font-weight: 600; line-height: 1.35; }
+      .owed { display: flex; align-items: center; gap: 16px; padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
+      .owed b { font-size: 64px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; }
+      .owed span { font-size: 16px; line-height: 1.35; color: var(--ink2); }
+
+      /* ---------- direction B: broadcast (dark) ---------- */
+      .b-top { display: grid; grid-template-columns: 300px 1fr; gap: 36px; align-items: center; padding: 22px 0 18px; border-bottom: 1px solid var(--line); }
+      .bug { display: flex; align-items: center; gap: 0; border-radius: 10px; overflow: hidden; background: rgba(255,255,255,.06); }
+      .bug .n { font-size: 84px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; padding: 14px 20px 12px; background: var(--goal); color: #06231a; }
+      .bug .d { padding: 0 20px; font-size: 18px; line-height: 1.3; color: var(--ink2); }
+      .bug .d b { display: block; font-size: 30px; color: var(--ink); font-weight: 800; }
+      .b-top h3 { margin: 0 0 6px; font-size: 34px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.1; }
+      .b-top p { margin: 0; font-size: 18px; color: var(--ink2); line-height: 1.45; }
+      .b-lists { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 44px; padding-top: 12px; --cols: 180px 1fr 96px; }
+      .b-lists .tl { height: 31px; }
+      .b-lists .tl .nm { font-size: 15.5px; }
+      .b-lists .tl .res { font-size: 14px; }
+      .a-miss .story { font-size: 22px; }
+
+      .b-strips { flex: 1; display: grid; grid-template-rows: auto repeat(3, 1fr); }
+      .b-strips h3 { margin: 0; padding: 20px 0 14px; font-size: 34px; font-weight: 800; letter-spacing: -0.025em; }
+      .b-strip { display: grid; grid-template-columns: 250px 1fr; gap: 36px; align-items: center; border-top: 1px solid var(--line); }
+      .b-strip .wait b { font-size: 46px; }
+      .b-strip .bar { margin: 12px 0 6px; }
+      .b-strip .match { margin: 0 0 2px; font-size: 22px; }
+      .b-strip .story { font-size: 17.5px; margin-top: 6px; line-height: 1.45; }
+
+      .b-band { display: grid; grid-template-columns: auto 1fr auto; align-items: stretch; margin-top: 22px; border-radius: 10px; overflow: hidden; background: rgba(255,255,255,.06); }
+      .b-band div { padding: 14px 20px; display: flex; align-items: center; }
+      .b-band .lbl { background: #c2413a; color: #fff; font-weight: 800; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; }
+      .b-band .mt { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; gap: 14px; }
+      .b-band .mt small { font-size: 15px; font-weight: 500; color: var(--ink2); }
+      .b-band .st { font-size: 16px; color: var(--ink2); gap: 6px; }
+      .b-band .st b { color: var(--ink); }
+      .b-miss { flex: 1; display: grid; grid-template-columns: 1fr 400px; gap: 44px; padding-top: 22px; }
+      .b-miss .story { font-size: 20px; margin: 0; }
+      .b-miss .learn { background: rgba(255,255,255,.06); }
+
+      /* ---------- review screen ---------- */
+      .rv { display: grid; grid-template-columns: 340px 1fr; gap: 0; border: 1px solid #2c2f35; border-radius: 14px; overflow: hidden; background: #0f1218; }
+      @media (max-width: 900px) { .rv { grid-template-columns: 1fr; } }
+      .rv-side { padding: 18px; border-right: 1px solid #2c2f35; display: grid; gap: 12px; align-content: start; background: #12161d; }
+      .rv-side .frame { border-radius: 6px; box-shadow: none; }
+      .rv-main { padding: 20px 24px 24px; display: grid; gap: 16px; align-content: start; }
+      .rv-status { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 0.9rem; color: #a9afba; }
+      .pill { font-size: 0.75rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: rgba(224,164,88,.15); color: #e0a458; }
+      .fld label { display: flex; justify-content: space-between; font-size: 0.8rem; color: #a9afba; margin-bottom: 6px; font-weight: 600; }
+      .fld label i { font-style: normal; font-weight: 500; color: #7d8490; }
+      .fld textarea, .fld input { width: 100%; font: inherit; font-size: 0.95rem; line-height: 1.5; color: #e8eaee; background: #171b22; border: 1px solid #2c313a; border-radius: 8px; padding: 10px 12px; resize: vertical; }
+      .fld.need textarea { border-color: #e0a458; }
+      .fld.need label { color: #e0a458; }
+      .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      @media (max-width: 700px) { .row2 { grid-template-columns: 1fr; } }
+      .chk { display: flex; gap: 18px; font-size: 0.9rem; color: #c9ced6; flex-wrap: wrap; }
+      .acts { display: flex; gap: 10px; flex-wrap: wrap; padding-top: 6px; border-top: 1px solid #2c2f35; }
+      .acts button { font: inherit; font-size: 0.9rem; font-weight: 600; border-radius: 8px; padding: 10px 16px; border: 1px solid #343840; background: #1d2128; color: #e8eaee; }
+      .acts button.go { background: #2fd39a; border-color: #2fd39a; color: #06231a; }
+      .acts button[disabled] { opacity: .45; }
+      .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+      @media (max-width: 800px) { .flow { grid-template-columns: 1fr 1fr; } }
+      .flow div { border-top: 2px solid #2fd39a; padding-top: 10px; font-size: 0.9rem; color: #a9afba; line-height: 1.45; }
+      .flow b { display: block; color: #e8eaee; font-size: 0.95rem; margin-bottom: 2px; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>The week in signals, v3</h1>
+      <p>
+        Clearer chart, familiar fonts, two layout directions to choose from, and the Monday
+        review screen where nothing posts until you approve it. The recap counts every signal
+        we sent. Cover numbers are samples until it reads the real week; the stories are real signals.
+      </p>
+
+      <div class="fonts" id="fonts">
+        <span>Font</span>
+        <button data-f="Inter">Inter</button>
+        <button data-f="Roboto">Roboto</button>
+        <button data-f="Barlow">Barlow</button>
+        <button data-f="Manrope" aria-pressed="true">Manrope</button>
+        <small id="fontNote">Rounder and friendlier, still clean</small>
+      </div>
+
+      <h2>The chart, made readable</h2>
+      <p>
+        The cover counts every signal we sent, often 50+ a week, so a row per match won't fit.
+        Instead it answers two plain questions: how long did the goal take after the signal,
+        and how did each day go. Green is a goal, stripes are no goal, the same on every card.
+      </p>
+
+      <h2>Direction A · Match sheet</h2>
+      <p>Light and calm, like a club programme or The Athletic. Reads well on a phone and stands out against dark betting feeds.</p>
+      <div class="stack">
+        <div><p class="cap">1 / 3 · Cover</p>
+          <div class="frame"><div class="card light" id="aCover">
+            <div class="hd"><div class="brand"><img src="../src/assets/kalchas-mark.png" alt="" />Kalchas</div><div class="wk"><b>The week in signals</b> · Mon 26 Oct – Sun 1 Nov</div></div>
+            <div class="a-cover">
+              <div>
+                <div class="kick">Every signal we sent</div>
+                <h3><em>33 of 58</em> signals found a goal</h3>
+                <p class="sub">Quick goals in Central America and Armenia, then a bad night in the Dutch Cup.</p>
+                <div class="facts">
+                  <div><span>Fastest goal</span><b>1 min after the signal</b></div>
+                  <div><span>Average wait for a goal</span><b>9 min</b></div>
+                  <div><span>Worst night</span><b>Dutch Cup, 0 of 4</b></div>
+                </div>
+              </div>
+              <div class="a-charts" data-chart="a"></div>
+            </div>
+            <div class="ft"><span>Every signal is posted live, before the goal.</span><b>kalchas.live</b></div>
+          </div></div>
+        </div>
+
+        <div><p class="cap">2 / 3 · Three we got right</p>
+          <div class="frame"><div class="card light" id="aCalls">
+            <div class="hd"><div class="brand"><img src="../src/assets/kalchas-mark.png" alt="" />Kalchas</div><div class="wk"><b>The week in signals</b> · Mon 26 Oct – Sun 1 Nov</div></div>
+            <div class="a-calls-h"><h3>Three we got right</h3><p>The side we flagged scored, soon after the signal.</p></div>
+            <div class="a-cols" data-calls="a"></div>
+            <div class="ft"><span>Honourable mention: Atlanta, flagged at 80′ while 1–0 down, equalised at 88′.</span><b>kalchas.live</b></div>
+          </div></div>
+        </div>
+
+        <div><p class="cap">3 / 3 · The one that got away</p>
+          <div class="frame"><div class="card light" id="aMiss">
+            <div class="hd"><div class="brand"><img src="../src/assets/kalchas-mark.png" alt="" />Kalchas</div><div class="wk"><b>The week in signals</b> · Mon 26 Oct – Sun 1 Nov</div></div>
+            <div class="a-miss">
+              <div>
+                <div class="kick" style="color:#c2413a">The one that got away</div>
+                <h3 style="margin-top:10px">Kozakken Boys v Utrecht</h3>
+                <div class="meta">Dutch Cup, first round · Signal at 75′ · No goal</div>
+                <div class="bar" style="margin:16px 0 0"><i class="ht"></i><i class="seg n" style="left:83.3%;right:0"></i><i class="sig" style="left:83.3%"></i></div>
+                <p class="story">Our most confident call of the week. Kozakken Boys' recent form said two goals were coming. But that form was built in the third tier, and this was a cup tie against an Eredivisie side. They had 23% of the ball, and 11 of their 14 shots missed the target.</p>
+                <div class="learn"><small>What we learned</small><p>Lower-league form doesn't travel. Four Dutch Cup signals this week, no goals.</p></div>
+              </div>
+              <div>
+                <div class="owed"><b>+1.9</b><span>goals owed on form at 75′.<br />Our most confident signal this week.</span></div>
+                <div class="cmp" data-cmp></div>
+              </div>
+            </div>
+            <div class="ft"><span>We post the misses too.</span><b>kalchas.live</b></div>
+          </div></div>
+        </div>
+      </div>
+
+      <h2>Direction B · Broadcast</h2>
+      <p>Dark, like the score graphics on a TV match. Bolder and more "sports", closer to what bettors already look at all day.</p>
+      <div class="stack">
+        <div><p class="cap">1 / 3 · Cover</p>
+          <div class="frame"><div class="card dark" id="bCover">
+            <div class="hd"><div class="brand"><img src="../src/assets/kalchas-mark.png" alt="" />Kalchas</div><div class="wk"><b>The week in signals</b> · Mon 26 Oct – Sun 1 Nov</div></div>
+            <div class="b-top">
+              <div class="bug"><div class="n">33</div><div class="d"><b>of 58</b>signals found a goal</div></div>
+              <div><h3>Quick goals in Central America and Armenia. A bad night in the Dutch Cup.</h3><p>Fastest goal came 1 minute after the signal. Average wait: 9 minutes.</p></div>
+            </div>
+            <div class="b-charts" data-chart="b"></div>
+            <div class="ft"><span>Every signal is posted live, before the goal.</span><b>kalchas.live</b></div>
+          </div></div>
+        </div>
+
+        <div><p class="cap">2 / 3 · Three we got right</p>
+          <div class="frame"><div class="card dark" id="bCalls">
+            <div class="hd"><div class="brand"><img src="../src/assets/kalchas-mark.png" alt="" />Kalchas</div><div class="wk"><b>The week in signals</b> · Mon 26 Oct – Sun 1 Nov</div></div>
+            <div class="b-strips"><h3>Three we got right</h3></div>
+            <div class="ft"><span>Honourable mention: Atlanta, flagged at 80′ while 1–0 down, equalised at 88′.</span><b>kalchas.live</b></div>
+          </div></div>
+        </div>
+
+        <div><p class="cap">3 / 3 · The one that got away</p>
+          <div class="frame"><div class="card dark" id="bMiss">
+            <div class="hd"><div class="brand"><img src="../src/assets/kalchas-mark.png" alt="" />Kalchas</div><div class="wk"><b>The week in signals</b> · Mon 26 Oct – Sun 1 Nov</div></div>
+            <div class="b-band"><div class="lbl">The one that got away</div><div class="mt">Kozakken Boys v Utrecht <small>Dutch Cup</small></div><div class="st">Signal <b>75′</b> · <b>No goal</b></div></div>
+            <div class="b-miss">
+              <div>
+                <p class="story">Our most confident call of the week: +1.9 goals owed on form. But Kozakken Boys' form was built in the third tier, and this was a cup tie against an Eredivisie side. They had 23% of the ball, and 11 of their 14 shots missed the target.</p>
+                <div class="learn"><small>What we learned</small><p>Lower-league form doesn't travel. Four Dutch Cup signals this week, no goals.</p></div>
+              </div>
+              <div class="cmp" data-cmp></div>
+            </div>
+            <div class="ft"><span>We post the misses too.</span><b>kalchas.live</b></div>
+          </div></div>
+        </div>
+      </div>
+
+      <h2>Monday review: nothing posts without you</h2>
+      <p>A new tab in admin. The draft is ready Monday morning and the bot messages you on Telegram. You edit, approve, and it posts. If you don't approve, it doesn't go out.</p>
+      <div class="flow">
+        <div><b>Mon 08:00 · Draft</b>Stats, picks and first-draft stories built from last week's signals.</div>
+        <div><b>Bot pings you</b>"Weekly recap ready to review" with a link to admin.</div>
+        <div><b>You edit</b>Rewrite any line. The lesson line is always yours.</div>
+        <div><b>Approve · Post</b>Goes to X, Telegram and Discord together. Not approved by Tue noon = skipped.</div>
+      </div>
+      <div class="rv">
+        <div class="rv-side">
+          <div class="cap" style="margin:0">Preview · updates as you type</div>
+          <div class="frame"><div class="card light" data-clone="aCover"></div></div>
+          <div class="frame"><div class="card light" data-clone="aCalls"></div></div>
+          <div class="frame"><div class="card light" data-clone="aMiss"></div></div>
+        </div>
+        <div class="rv-main">
+          <div class="rv-status"><span class="pill">Waiting for you</span>Week of Mon 26 Oct · drafted Mon 2 Nov 08:00 · 58 signals</div>
+          <div class="fld"><label>Cover line <i>draft</i></label><input value="Quick goals in Central America and Armenia, then a bad night in the Dutch Cup." /></div>
+          <div class="row2">
+            <div class="fld"><label>Call 1 · Olimpia v Cartaginés <i>picked: 1 min to goal</i></label><textarea rows="4">Twelve minutes in, Cartaginés could barely get out of their own half: 11 dangerous attacks to 2 in five minutes. We posted at 12′. Olimpia scored a minute later.</textarea></div>
+            <div class="fld"><label>Call 2 · Noah v Syunik <i>picked: 1 min to goal</i></label><textarea rows="4">Two goals down, but playing like the side in front: 51 dangerous attacks to 21 and ten corners. We flagged Noah at 79′. They pulled one back a minute later.</textarea></div>
+          </div>
+          <div class="row2">
+            <div class="fld"><label>Call 3 · FAR Rabat v IR Tanger <i>picked: 5 min to goal</i></label><textarea rows="4">Seven shots on target, eight more wide, seven corners to one, and still 0–0. On their form FAR should have scored already. It took five more minutes.</textarea></div>
+            <div class="fld"><label>The miss · Kozakken Boys v Utrecht <i>picked: highest Form Bar miss (+1.9)</i></label><textarea rows="4">Our most confident call of the week. Their recent form said two goals were coming. But that form was built in the third tier, and this was a cup tie against an Eredivisie side.</textarea></div>
+          </div>
+          <div class="fld need"><label>What we learned <i>yours to write · required</i></label><textarea rows="2" placeholder="One honest sentence about what this week taught you."></textarea></div>
+          <div class="fld"><label>X post <i>187 / 280</i></label><textarea rows="3">15 signals this week, 7 goals. Olimpia scored a minute after we flagged them. Kozakken Boys were our surest call and it went nowhere. Both are in here 👇</textarea></div>
+          <div class="chk"><label><input type="checkbox" checked /> X</label><label><input type="checkbox" checked /> Telegram free</label><label><input type="checkbox" checked /> Telegram paid</label><label><input type="checkbox" checked /> Discord</label></div>
+          <div class="acts"><button class="go" disabled>Approve and post</button><button>Save draft</button><button>Re-pick calls</button><button>Skip this week</button></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // SAMPLE week, every signal: minutes from signal to goal, and [day, goals, total]
+      const waits = [["Within 5 min", 11], ["5–10 min", 9], ["10–20 min", 8], ["20+ min", 5]];
+      const noGoal = 25;
+      const week = [["Mon", 4, 7], ["Tue", 6, 9], ["Wed", 7, 11], ["Thu", 3, 9], ["Fri", 4, 6], ["Sat", 6, 10], ["Sun", 3, 6]];
+      const calls = [
+        ["Olimpia v Cartaginés", "Central American Cup · semi-final", 12, 13,
+          "Twelve minutes in, Cartaginés could barely get out of their own half: 11 dangerous attacks to 2 in five minutes. We posted at 12′. Olimpia scored a minute later."],
+        ["Noah v Syunik", "Armenian Cup · last 16", 79, 80,
+          "Two goals down, but playing like the side in front: 51 dangerous attacks to 21 and ten corners. We flagged Noah at 79′. They pulled one back a minute later."],
+        ["FAR Rabat v IR Tanger", "Botola Pro, Morocco", 76, 81,
+          "Seven shots on target, eight more wide, seven corners to one, and still 0–0. On their form FAR should have scored already. It took five more minutes."],
+      ];
+      // Kozakken Boys v Utrecht at 75′
+      const pairs = [["Possession", 23, 77, "%"], ["Shots on target", 3, 2], ["Shots off target", 11, 3], ["Dangerous attacks", 30, 28], ["Corners", 5, 3]];
+
+      const pct = (m) => `${((m / 90) * 100).toFixed(1)}%`;
+      const bar = (f, g) =>
+        `<div class="bar"><i class="ht"></i>${
+          g ? `<i class="seg g" style="left:${pct(f)};width:calc(${pct(g)} - ${pct(f)})"></i>` : `<i class="seg n" style="left:${pct(f)};right:0"></i>`
+        }<i class="sig" style="left:${pct(f)}"></i>${g ? `<i class="ball" style="left:${pct(g)}"></i>` : ""}</div>`;
+      const goals = waits.reduce((n, [, c]) => n + c, 0);
+      const most = Math.max(noGoal, ...waits.map(([, c]) => c));
+      const wb = (label, c, cls = "") => `<div class="wb ${cls}"><span>${label}</span><div class="t"><i style="width:${(c / most) * 100}%"></i></div><b>${c}</b></div>`;
+      const quick = waits[0][1] + waits[1][1];
+      const waitChart =
+        `<div><div class="wt-h">How long until the goal<span>${goals + noGoal} signals</span></div>` +
+        waits.map(([l, c]) => wb(l, c)).join("") + wb("No goal", noGoal, "n") +
+        `<p class="say"><b>${quick} of the ${goals} goals</b> came within 10 minutes of the signal.</p></div>`;
+      const busiest = Math.max(...week.map(([, , t]) => t));
+      const dayChart =
+        `<div><div class="wt-h">Day by day<span>goals / signals</span></div><div class="days">` +
+        week.map(([d, g, t]) => `<div class="dy"><div class="col"><i class="g" style="height:${(g / busiest) * 100}%"></i><i class="n" style="height:${((t - g) / busiest) * 100}%"></i></div><b>${g}/${t}</b><span>${d}</span></div>`).join("") +
+        `</div></div>`;
+      document.querySelector('[data-chart="a"]').innerHTML = waitChart + dayChart;
+      document.querySelector('[data-chart="b"]').innerHTML = waitChart + dayChart;
+
+      document.querySelector('[data-calls="a"]').innerHTML = calls
+        .map(([m, c, f, g, s]) => `<div class="a-col"><div class="wait"><b>${g - f} min</b><span>from signal to goal</span></div>${bar(f, g)}<div class="when">Signal <b>${f}′</b> → Goal <b>${g}′</b></div><div class="match">${m}</div><div class="comp">${c}</div><p class="story">${s}</p></div>`)
+        .join("");
+      document.querySelector(".b-strips").insertAdjacentHTML("beforeend", calls
+        .map(([m, c, f, g, s]) => `<div class="b-strip"><div><div class="wait"><b>${g - f} min</b><span>signal to goal</span></div>${bar(f, g)}<div class="when">Signal <b>${f}′</b> → Goal <b>${g}′</b></div></div><div><div class="match">${m} <span class="comp">· ${c}</span></div><p class="story">${s}</p></div></div>`)
+        .join(""));
+
+      const cmp = `<div class="teams"><span>Kozakken Boys</span><span>Utrecht</span></div>` + pairs
+        .map(([l, a, b, u = ""]) => {
+          const t = a + b;
+          return `<div class="cr"><div class="top"><b>${a}${u}</b><span>${l}</span><b>${b}${u}</b></div><div class="bars"><div><i class="${a >= b ? "lead" : ""}" style="width:${(a / t) * 100}%"></i></div><div><i class="${b > a ? "lead" : ""}" style="width:${(b / t) * 100}%"></i></div></div></div>`;
+        })
+        .join("");
+      for (const el of document.querySelectorAll("[data-cmp]")) el.innerHTML = cmp;
+
+      for (const el of document.querySelectorAll("[data-clone]")) el.innerHTML = document.getElementById(el.dataset.clone).innerHTML;
+
+      const notes = {
+        Inter: "Apple, Google and most modern apps look like this",
+        Roboto: "Android and Telegram's own font, the most familiar of all",
+        Barlow: "Sports-TV feel, slightly narrow, like score graphics",
+        Manrope: "Rounder and friendlier, still clean",
+      };
+      document.getElementById("fonts").addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b) return;
+        document.documentElement.style.setProperty("--f", `"${b.dataset.f}", system-ui, sans-serif`);
+        for (const x of document.querySelectorAll("#fonts button")) x.setAttribute("aria-pressed", x === b);
+        document.getElementById("fontNote").textContent = notes[b.dataset.f];
+      });
+
+      const fit = () => {
+        for (const f of document.querySelectorAll(".frame")) f.style.setProperty("--s", f.clientWidth / 1200);
+      };
+      new ResizeObserver(fit).observe(document.body);
+      fit();
+    </script>
+  </body>
+</html>

@@ -570,8 +570,143 @@ def test_odds_1x2_from_live_comments_match_winner_and_team_names() -> None:
     }
     out = odds_1x2_from_live_comments(payload)
     assert out["4593"] == {"home": 4.20, "draw": 3.60, "away": 1.70}
-    assert out["9"] == {"home": 2.05, "away": 3.80}
+    # A suspended leg means the whole market is mid-event: no line at all.
+    assert "9" not in out
     assert out["11"] == {"home": 1.90, "draw": 3.40, "away": 4.10}
+
+
+def _leg(name: str, kind: str, value: str, upd: str = "", suspended: str = "No") -> dict:
+    return {"odd_name": name, "type": kind, "value": value, "suspended": suspended, "upd": upd}
+
+
+def test_live_1x2_skips_time_window_markets() -> None:
+    """Alert 11689 (68', 0-0) stored 11 / 1.055 / 17: a "1x2 - N minutes"
+    window close to its end, read as the full-time line."""
+    from kalchas_football import odds_1x2_from_live_comments
+
+    payload = [
+        {
+            "match_id": "1",
+            "live_odds": [
+                _leg("1x2 - 70 minutes", "1", "11"),
+                _leg("1x2 - 70 minutes", "X", "1.055"),
+                _leg("1x2 - 70 minutes", "2", "17"),
+                _leg("Fulltime Result", "1", "3.10"),
+                _leg("Fulltime Result", "X", "2.05"),
+                _leg("Fulltime Result", "2", "4.75"),
+            ],
+        },
+        {
+            "match_id": "2",
+            "live_odds": [
+                _leg("1X2 - 15 Min", "Home", "12"),
+                _leg("1X2 - 15 Min", "Draw", "1.05"),
+                _leg("1X2 - 15 Min", "Away", "17"),
+            ],
+        },
+    ]
+    for name in ("Rest of the Match", "1X2 (0-10)", "1x2 Corners", "Half Time Result"):
+        payload.append(
+            {
+                "match_id": name,
+                "live_odds": [
+                    _leg(name, "1", "9"),
+                    _leg(name, "X", "1.1"),
+                    _leg(name, "2", "15"),
+                ],
+            }
+        )
+    out = odds_1x2_from_live_comments(payload)
+    assert out == {"1": {"home": 3.10, "draw": 2.05, "away": 4.75}}
+
+
+def test_live_1x2_never_mixes_legs_from_different_markets() -> None:
+    from kalchas_football import odds_1x2_from_live_comments
+
+    payload = [
+        {
+            "match_id": "1",
+            "live_odds": [
+                # Loose name listed first but incomplete; must not lend its home leg.
+                _leg("Live 1x2", "1", "9.0"),
+                _leg("Live 1x2", "2", "1.2"),
+                _leg("Match Winner", "1", "2.40"),
+                _leg("Match Winner", "X", "3.10"),
+                _leg("Match Winner", "2", "3.00"),
+            ],
+        },
+        {
+            "match_id": "2",
+            "live_odds": [
+                # Known full-time name wins over a looser one listed earlier.
+                _leg("Live 1x2", "1", "2.0"),
+                _leg("Live 1x2", "X", "3.0"),
+                _leg("Live 1x2", "2", "4.0"),
+                _leg("Fulltime Result", "1", "2.1"),
+                _leg("Fulltime Result", "X", "3.1"),
+                _leg("Fulltime Result", "2", "3.9"),
+            ],
+        },
+    ]
+    out = odds_1x2_from_live_comments(payload)
+    assert out["1"] == {"home": 2.40, "draw": 3.10, "away": 3.00}
+    assert out["2"] == {"home": 2.1, "draw": 3.1, "away": 3.9}
+
+
+def test_live_1x2_drops_a_market_frozen_behind_the_rest_of_the_feed() -> None:
+    """A 1X2 whose provider ``upd`` trails the match's other markets by more
+    than ten minutes is a closed line, not a live price."""
+    from kalchas_football import odds_1x2_from_live_comments
+
+    payload = [
+        {
+            "match_id": "frozen",
+            "live_odds": [
+                _leg("Fulltime Result", "1", "1.70", "2026-11-03 21:02:00"),
+                _leg("Fulltime Result", "X", "3.60", "2026-11-03 21:02:00"),
+                _leg("Fulltime Result", "2", "5.00", "2026-11-03 21:02:00"),
+                _leg("Match Goals", "Over", "1.80", "2026-11-03 21:24:00"),
+            ],
+        },
+        {
+            "match_id": "current",
+            "live_odds": [
+                _leg("Fulltime Result", "1", "3.10", "2026-11-03 21:23:40"),
+                _leg("Fulltime Result", "X", "2.05", "2026-11-03 21:23:40"),
+                _leg("Fulltime Result", "2", "4.75", "2026-11-03 21:23:50"),
+                _leg("Match Goals", "Over", "1.80", "2026-11-03 21:24:00"),
+            ],
+        },
+    ]
+    out = odds_1x2_from_live_comments(payload)
+    assert "frozen" not in out
+    assert out["current"] == {
+        "home": 3.10,
+        "draw": 2.05,
+        "away": 4.75,
+        "updated_at": "2026-11-03 21:23:50",
+    }
+
+
+def test_compose_and_merge_keep_live_freshness_stamps() -> None:
+    from kalchas_football import compose_odds_record, merge_odds_records
+
+    stamped = {
+        "home": 3.1,
+        "draw": 2.0,
+        "away": 4.8,
+        "fetched_at": "2026-11-03T21:24:10+00:00",
+        "minute": 68,
+        "updated_at": "2026-11-03 21:24:00",
+    }
+    record = compose_odds_record(kickoff={"home": 1.7, "draw": 3.9, "away": 4.2}, live=stamped)
+    assert record is not None
+    assert record["live"] == stamped
+    # A later record without a live line keeps the old one *with* its stamp,
+    # so readers can still see its age and drop it.
+    merged = merge_odds_records(record, compose_odds_record(kickoff={"home": 9, "away": 9}))
+    assert merged["live"]["fetched_at"] == "2026-11-03T21:24:10+00:00"
+    assert merged["kickoff"]["home"] == 1.7
 
 
 def test_merge_odds_records_freezes_kickoff_and_updates_live() -> None:

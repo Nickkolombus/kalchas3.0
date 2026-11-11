@@ -2911,31 +2911,27 @@
   color: var(--success, #2e8b57);
 }
 
-.rc-strategies {
-  flex-basis: 100%;
+.rc-strats {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  font-size: 0.8rem;
 }
 
-.rc-strategies label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+.rc-strats button {
   border: 1px solid var(--border-2);
-  border-radius: 999px;
   background: var(--surface-3);
-  font-size: 0.8rem;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 4px 11px;
+  border-radius: 999px;
   cursor: pointer;
 }
 
-.rc-strategies label.is-on {
-  border-color: var(--accent, var(--text));
+.rc-strats button.is-on {
+  border-color: var(--accent);
   color: var(--text);
-}
-
-.rc-strategies input {
-  margin: 0;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }

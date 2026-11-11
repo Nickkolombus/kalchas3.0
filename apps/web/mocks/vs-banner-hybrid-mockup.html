@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VS banner hybrid</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=Sora:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --bg: rgb(11, 28, 51);
+  --cream: rgb(243, 234, 210);
+  --muted: rgb(139, 154, 171);
+  --teal: #3dd6c6;
+  --home: #e3262b;
+  --away: #3f57b5;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: #050b13; color: var(--cream); font-family: "Sora", sans-serif; }
+.page { max-width: 1240px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+h1 { font-weight: 700; font-size: 1.5rem; margin: 0 0 .4rem; }
+.intro { color: var(--muted); max-width: 48rem; font-size: .9rem; line-height: 1.55; margin: 0 0 2rem; }
+.tag { font-family: "IBM Plex Mono", monospace; font-size: .66rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 2.2rem 0 .6rem; }
+.tag.pick { color: var(--teal); }
+.refs { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.refs img { width: 100%; border-radius: 10px; display: block; }
+.refs p { font-size: .8rem; color: var(--muted); margin: .5rem 0 0; line-height: 1.5; }
+.refs b { color: var(--cream); font-weight: 600; }
+
+/* ---------- the 800x450 card ---------- */
+.card {
+  position: relative;
+  width: 800px; height: 450px;
+  overflow: hidden;
+  background:
+    radial-gradient(260px 230px at 150px 150px, color-mix(in srgb, var(--home) 34%, transparent), transparent 72%),
+    radial-gradient(260px 230px at 650px 150px, color-mix(in srgb, var(--away) 38%, transparent), transparent 72%),
+    linear-gradient(180deg, rgb(14, 34, 61), var(--bg) 60%);
+  font-family: "Sora", sans-serif;
+  color: var(--cream);
+}
+/* faint pitch: halfway line and centre circle behind the score */
+.card::before {
+  content: ""; position: absolute; left: 50%; top: 0; bottom: 152px; width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(243,234,210,.08) 30%, rgba(243,234,210,.08) 70%, transparent);
+}
+.card::after {
+  content: ""; position: absolute; left: 330px; top: 50px; width: 140px; height: 140px;
+  border-radius: 50%; border: 1px solid rgba(243,234,210,.07);
+}
+.brand { position: absolute; left: 24px; top: 18px; font-family: "IBM Plex Mono", monospace; font-size: 13px; letter-spacing: .22em; color: rgba(243,234,210,.4); }
+.league { position: absolute; left: 0; right: 0; top: 16px; text-align: center; font-size: 17px; letter-spacing: .14em; color: var(--muted); }
+
+.crest { position: absolute; top: 58px; height: 140px; background: url(vs-banner-new.png) no-repeat; mix-blend-mode: lighten; }
+.crest.home { left: 84px; width: 129px; background-size: 606px 341px; background-position: -42px -95px; }
+.crest.away { left: 576px; width: 140px; background-size: 608px 342px; background-position: -430px -98px; }
+
+.name { position: absolute; top: 210px; width: 300px; text-align: center; font-size: 23px; font-weight: 600; }
+.name.home { left: 0; }
+.name.away { right: 0; }
+
+.side { position: absolute; top: 64px; display: grid; gap: 9px; font-size: 18px; font-weight: 600; }
+.side.home { left: 22px; }
+.side.away { right: 22px; text-align: right; }
+.side div { display: flex; align-items: center; gap: 8px; height: 24px; }
+.side.away div { flex-direction: row-reverse; }
+.side small { font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: .06em; width: 30px; }
+.side .yc, .side .rc { width: 13px; height: 18px; border-radius: 2px; margin: 0 8.5px; }
+.side .yc { background: #f2c230; }
+.side .rc { background: #e2433d; }
+.side .zero { color: rgba(243,234,210,.35); }
+
+.score { position: absolute; left: 0; right: 0; top: 78px; text-align: center; font-size: 76px; font-weight: 600; letter-spacing: .02em; line-height: 1; }
+.score .lead { color: #fff; }
+.score .dash { color: var(--muted); font-weight: 400; margin: 0 4px; }
+.clock { position: absolute; left: 0; right: 0; top: 168px; text-align: center; font-size: 19px; color: var(--muted); }
+.clock b { color: var(--cream); font-weight: 600; }
+.fired { position: absolute; left: 50%; top: 210px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(61,214,198,.55); background: rgba(61,214,198,.12); font-size: 17px; font-weight: 600; white-space: nowrap; }
+.fired i { width: 8px; height: 8px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 10px var(--teal); }
+.fired span { color: var(--teal); }
+
+.bars { position: absolute; left: 22px; right: 22px; bottom: 20px; display: grid; gap: 7px; }
+.bar { position: relative; height: 36px; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; font-size: 21px; font-weight: 700;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--home) 55%, var(--bg)) 0 var(--p),
+    color-mix(in srgb, var(--away) 55%, var(--bg)) var(--p) 100%);
+}
+.bar em { position: absolute; left: 0; right: 0; text-align: center; font-style: normal; font-size: 15px; letter-spacing: .16em; font-weight: 600; color: rgba(243,234,210,.85); }
+.bar b, .bar em { z-index: 1; }
+.bar.hot { height: 42px; background: linear-gradient(90deg, var(--home) 0 var(--p), var(--away) var(--p) 100%); box-shadow: inset 0 0 0 2px rgba(255,255,255,.18); font-size: 24px; }
+.bar.hot em { color: #fff; font-size: 16px; }
+
+/* phone preview: same card scaled to a Telegram photo bubble */
+.pair { display: flex; gap: 2rem; align-items: flex-start; flex-wrap: wrap; }
+.full { width: 800px; max-width: 100%; }
+.full .card { border-radius: 10px; }
+.bubble { width: 340px; background: #17212b; border-radius: 14px; overflow: hidden; }
+.bubble .holder { width: 340px; height: 191.25px; overflow: hidden; }
+.bubble .card { transform: scale(.425); transform-origin: 0 0; }
+.bubble .cap { padding: .55rem .75rem .5rem; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: .78rem; line-height: 1.45; color: #e9edf1; }
+.bubble .cap i { color: #9aa6b2; }
+.bubble .t { text-align: right; font-size: .62rem; color: #6d7f8f; }
+.bubble-label { font-size: .75rem; color: var(--muted); margin: 0 0 .5rem; }
+
+.notes { margin-top: 2.4rem; max-width: 52rem; font-size: .88rem; line-height: 1.6; color: var(--muted); }
+.notes h2 { color: var(--cream); font-size: 1.15rem; margin: 0 0 .5rem; }
+.notes b { color: var(--cream); }
+.notes li { margin-bottom: .4rem; }
+@media (max-width: 860px) { .refs { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Telegram VS banner: old × new</h1>
+  <p class="intro">Old had energy and numbers but read like a betting ad (stock stadium, yellow VS, two fixed colours). New is clean and on-brand but is just two crests and a score floating in navy. The hybrid keeps the new card's calm base and brings back the old card's numbers, with the fired strategy as the loudest thing on it.</p>
+
+  <div class="refs">
+    <div><img src="vs-banner-old.webp" alt="Old banner" /><p><b>Old.</b> Keep: side stats by each crest, full-width split bars. Drop: stock stadium, yellow VS, fixed blue/red.</p></div>
+    <div><img src="vs-banner-new.png" alt="New banner" /><p><b>New.</b> Keep: navy base, cream score, 16:9 so Telegram doesn't crop, crests as the hero. Fix: half the card is empty and it says nothing about why it fired.</p></div>
+  </div>
+
+  <div class="tag pick">Hybrid · 800 × 450, actual size</div>
+  <div class="pair">
+    <div class="full">
+      <div class="card" id="hybrid">
+        <div class="brand">KALCHAS</div>
+        <div class="league">LIGAT HA'AL</div>
+
+        <div class="side home">
+          <div><small>SOT</small>3/7</div>
+          <div><small>COR</small>6</div>
+          <div><span class="yc"></span>2</div>
+          <div class="zero"><span class="rc"></span>0</div>
+        </div>
+        <div class="side away">
+          <div><small>SOT</small>2/4</div>
+          <div><small>COR</small>1</div>
+          <div><span class="yc"></span>3</div>
+          <div class="zero"><span class="rc"></span>0</div>
+        </div>
+
+        <div class="crest home"></div>
+        <div class="crest away"></div>
+
+        <div class="score">0<span class="dash">-</span><span class="lead">1</span></div>
+        <div class="clock"><b>67′</b> · 2nd half</div>
+        <div class="fired"><i></i><span>Δ5′</span> 7.0 Sakhnin</div>
+
+        <div class="name home">Sakhnin</div>
+        <div class="name away">Ironi Tiberias</div>
+
+        <div class="bars">
+          <div class="bar" style="--p:58%"><b>58%</b><em>POSSESSION</em><b>42%</b></div>
+          <div class="bar" style="--p:63%"><b>52</b><em>DANGEROUS ATTACKS</em><b>31</b></div>
+          <div class="bar hot" style="--p:86%"><b>6</b><em>DA · LAST 5′</em><b>1</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tag">Same card in a Telegram bubble (340px phone width)</div>
+  <div class="bubble">
+    <div class="holder" id="mini"></div>
+    <div class="cap">
+      <b>Sakhnin</b> vs Ironi Tiberias · 67′<br /><i>Ligat Ha'al</i><br />
+      <b>Δ5′</b> (5-minute pressure): 7.0 / 12.0 for <b>Sakhnin</b>
+      <div class="t">21:50</div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <h2>What's in it</h2>
+    <ul>
+      <li><b>Base from new:</b> same navy, cream score, 16:9 at 800×450. The leading side's score digit is brighter, the dash is quiet.</li>
+      <li><b>Atmosphere without stock art:</b> each crest gets a soft glow in its own team colour, plus a faint halfway line and centre circle. Pillow can draw all of it, and there's no licensed image to carry around.</li>
+      <li><b>Side stats from old:</b> shots on target / total shots, corners, yellows, reds beside each crest. Zeros are dimmed so the eye skips them.</li>
+      <li><b>Fired chip:</b> a teal pill under the clock says which strategy fired, the value, and for which side. That's the one thing you see in the notification thumbnail before you open it.</li>
+      <li><b>Bars from old, in team colours:</b> possession and dangerous attacks stay muted. The fired strategy's own window (last 5′ for Δ5′, last 10′ for Δ10′) is the bright bottom row.</li>
+      <li><b>Crests</b> shrink from 180 to 140 to make room. In Pillow they'd keep their PNG transparency over the glow instead of being matted onto flat navy.</li>
+      <li><b>Fallbacks:</b> no stats means no bars, and the top block re-centres, which is basically today's card plus the glow and chip. If both teams' colours are close (red v red), the away side switches to cream.</li>
+      <li><b>Font:</b> production renders in DejaVu Sans. Bundling one TTF (Sora, as used here) into the bot image would make the numbers look like the site.</li>
+    </ul>
+  </div>
+</div>
+<script>
+  const mini = document.getElementById("hybrid").cloneNode(true);
+  mini.removeAttribute("id");
+  document.getElementById("mini").appendChild(mini);
+</script>
+</body>
+</html>

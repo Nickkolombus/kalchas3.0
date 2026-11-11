@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pinned row mark</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Sora:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #071018;
+        --surface: #0c1520;
+        --border: rgba(232, 220, 196, 0.1);
+        --text: #f2ebe0;
+        --text-2: #b7b0a3;
+        --muted: #7d776c;
+        --accent: #3dd6c6;
+        --navy: #0b1c33;
+        --cream: #f3ead2;
+        --row-b: rgba(255, 255, 255, 0.075);
+        --stat-tint-a: rgba(242, 235, 224, 0.12);
+        --stat-tint-b: rgba(242, 235, 224, 0.055);
+        --display: "Fraunces", Georgia, serif;
+        --font: "Sora", sans-serif;
+        --mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: var(--font);
+        background:
+          radial-gradient(900px 480px at 12% -8%, rgba(61, 214, 198, 0.12), transparent 55%),
+          radial-gradient(700px 420px at 100% 0%, rgba(242, 235, 224, 0.05), transparent 50%),
+          var(--bg);
+      }
+      main { max-width: 1240px; margin: 0 auto; padding: 2.2rem 16px 3rem; }
+      .kicker {
+        margin: 0 0 0.35rem;
+        font-size: 0.68rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      h1 { margin: 0; font-family: var(--display); font-size: 1.75rem; font-weight: 650; letter-spacing: -0.01em; }
+      .lead {
+        max-width: 46rem;
+        margin: 0.7rem 0 0;
+        color: var(--text-2);
+        font-size: 0.92rem;
+        line-height: 1.55;
+      }
+      .lead code { font-family: var(--mono); font-size: 0.82rem; color: var(--text); }
+
+      section.opt { margin-top: 2.4rem; }
+      .opt-head { display: flex; align-items: baseline; gap: 0.7rem; flex-wrap: wrap; }
+      .opt-head h2 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+      .opt-head .tag {
+        font-family: var(--mono);
+        font-size: 0.62rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 0.18rem 0.45rem;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+      .opt-head .tag.pick { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+      .opt-head .tag.bad { color: #f0a08f; border-color: rgba(240, 160, 143, 0.35); }
+      .opt p.desc { margin: 0.4rem 0 0.8rem; max-width: 52rem; color: var(--text-2); font-size: 0.85rem; line-height: 1.5; }
+
+      .frame {
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: 0.6rem;
+        background: rgba(7, 16, 24, 0.6);
+      }
+
+      /* ---------- board, copied from app.css ---------- */
+      table.board {
+        width: 100%;
+        min-width: 1150px;
+        border-collapse: separate;
+        border-spacing: 0;
+        table-layout: fixed;
+        font-size: 0.78rem;
+      }
+      .board th {
+        text-align: center;
+        font-weight: 500;
+        color: var(--muted);
+        padding: 0.55rem 0.3rem;
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+        font-family: var(--mono);
+        font-size: 0.66rem;
+        letter-spacing: 0.04em;
+      }
+      .board th.l { text-align: left; }
+      .board td {
+        padding: 0.4rem 0.3rem;
+        border-bottom: 1px solid var(--border);
+        vertical-align: middle;
+        text-align: center;
+      }
+      .board tbody tr { cursor: pointer; }
+      .row-b td { background: var(--row-b); }
+      .row-a td.st { background: var(--stat-tint-a); }
+      .row-b td.st { background: var(--stat-tint-b); }
+      .board th.st { color: var(--text-2); }
+
+      .board th.t-k { color: #e6c15a; background: rgba(230, 193, 90, 0.08); border-left: 1px solid rgba(230, 193, 90, 0.25); }
+      .row-a td.t-k { background: rgba(230, 193, 90, 0.04); border-left: 1px solid rgba(230, 193, 90, 0.18); }
+      .row-b td.t-k { background: rgba(230, 193, 90, 0.08); border-left: 1px solid rgba(230, 193, 90, 0.18); }
+      .board th.t-urg { color: #5eead4; background: rgba(45, 212, 191, 0.10); }
+      .row-a td.t-urg { background: rgba(45, 212, 191, 0.07); }
+      .row-b td.t-urg { background: rgba(45, 212, 191, 0.12); }
+      .board th.t-d5 { color: #fdba74; background: rgba(249, 115, 22, 0.10); }
+      .row-a td.t-d5 { background: rgba(249, 115, 22, 0.06); }
+      .row-b td.t-d5 { background: rgba(249, 115, 22, 0.11); }
+      .board th.t-d10 { color: #fde68a; background: rgba(234, 179, 8, 0.10); }
+      .row-a td.t-d10 { background: rgba(234, 179, 8, 0.06); }
+      .row-b td.t-d10 { background: rgba(234, 179, 8, 0.11); }
+      .board th.t-lbar { color: #7dd3fc; background: rgba(14, 165, 233, 0.12); }
+      .row-a td.t-lbar { background: rgba(14, 165, 233, 0.07); }
+      .row-b td.t-lbar { background: rgba(14, 165, 233, 0.12); }
+      .board th.t-phi { color: #93c5fd; background: rgba(59, 130, 246, 0.10); }
+      .row-a td.t-phi { background: rgba(59, 130, 246, 0.06); }
+      .row-b td.t-phi { background: rgba(59, 130, 246, 0.11); }
+      .board th.t-tslg { color: #94a3b8; background: rgba(148, 163, 184, 0.12); }
+      .row-a td.t-tslg { background: rgba(148, 163, 184, 0.06); }
+      .row-b td.t-tslg { background: rgba(148, 163, 184, 0.11); }
+      .board tbody tr:hover td { background-color: rgba(255, 255, 255, 0.06); }
+
+      .band { display: grid; grid-template-rows: 22px 22px; gap: 4px; align-items: center; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+      .flag { width: 18px; height: 12px; border-radius: 2px; margin: 0 auto; }
+      .lg { font-family: var(--mono); font-size: 0.56rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .score { font-weight: 500; font-size: 0.86rem; color: var(--text); }
+      .teams { display: grid; grid-template-rows: 22px 22px; gap: 4px; text-align: left; }
+      .team { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 0.8rem; white-space: nowrap; }
+      .badge { width: 16px; height: 16px; border-radius: 50%; flex: 0 0 16px; }
+      .time b { font-weight: 600; font-size: 0.82rem; color: var(--text); }
+      .time span { font-size: 0.6rem; color: var(--muted); }
+      .odds { grid-template-columns: 2rem repeat(3, 1fr); column-gap: 4px; font-size: 0.62rem; }
+      .odds .k { font-size: 0.5rem; color: var(--muted); text-align: left; }
+      .odds i { font-style: normal; background: rgba(255, 255, 255, 0.06); border-radius: 3px; padding: 2px 0; color: var(--text-2); }
+      .kv { font-family: var(--display); font-size: 1.25rem; font-weight: 500; color: rgba(242, 235, 224, 0.62); }
+      .sv { grid-template-columns: 0.9rem 1fr; padding: 0 0.3rem; }
+      .sv .k { font-size: 0.5rem; color: var(--muted); text-align: left; }
+      .sv .v { text-align: right; color: var(--text); font-size: 0.78rem; }
+      .sv .v.dim { color: var(--muted); }
+      .sv .v.hot { color: #f59e5b; font-weight: 500; }
+      .sv .k.hot { color: #f59e5b; }
+      .stv { font-size: 0.8rem; color: var(--text); }
+
+      .star { background: none; border: 0; color: var(--muted); font-size: 0.95rem; line-height: 1; padding: 0.2rem; cursor: pointer; }
+      .fav .star { color: var(--accent); }
+
+      /* ---------- NOW: the live CSS ---------- */
+      .v-now .fav td { box-shadow: inset 2px 0 0 var(--accent); }
+
+      /* ---------- A: one edge rail ---------- */
+      .v-a .fav td.col-fav { box-shadow: inset 3px 0 0 var(--accent); }
+
+      /* ---------- B: pinned shelf ---------- */
+      .v-b .fav {
+        background: linear-gradient(
+          90deg,
+          rgba(61, 214, 198, 0.14) 0,
+          rgba(61, 214, 198, 0.06) 22%,
+          rgba(61, 214, 198, 0) 46%
+        );
+      }
+      .v-b .fav.last td { border-bottom-color: rgba(61, 214, 198, 0.38); }
+      .v-b .cap td {
+        padding: 0.42rem 0.3rem 0.32rem 0.55rem;
+        text-align: left;
+        border-bottom: 1px solid rgba(61, 214, 198, 0.16);
+        background: linear-gradient(90deg, rgba(61, 214, 198, 0.09), rgba(61, 214, 198, 0) 40%);
+        cursor: default;
+      }
+      .v-b .cap-in {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-family: var(--mono);
+        font-size: 0.6rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+      .v-b .cap-in em { font-style: normal; color: var(--muted); letter-spacing: 0.06em; }
+
+      /* ---------- C: bookmark chip ---------- */
+      .v-c .fav td { background-color: rgba(11, 28, 51, 0.55); }
+      .v-c .fav.row-b td { background-color: rgba(11, 28, 51, 0.72); }
+      .v-c .fav td.col-fav { padding: 0.32rem 0.2rem; }
+      .v-c .fav .star {
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 42px;
+        margin: 0 auto;
+        padding: 0;
+        border-radius: 5px 5px 2px 2px;
+        background: var(--cream);
+        color: var(--navy);
+        font-size: 0.78rem;
+        clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 86%, 0 100%);
+      }
+      .v-c .fav .team { color: var(--cream); }
+
+      .notes {
+        margin-top: 2.6rem;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 0.7rem;
+      }
+      .note {
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        padding: 0.75rem 0.85rem;
+        background: rgba(12, 21, 32, 0.86);
+        font-size: 0.8rem;
+        line-height: 1.5;
+        color: var(--text-2);
+      }
+      .note b { display: block; color: var(--text); font-weight: 600; margin-bottom: 0.2rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="kicker">Live board · pinned matches</p>
+      <h1>Pinned rows without the column bars</h1>
+      <p class="lead">
+        Today a pinned row draws a 2px teal line on the left of <em>every</em> cell
+        (<code>.row-fav td</code> in app.css), so it reads as a fence of bars across the
+        whole board. Each option below keeps one clear "this is mine" mark and drops the fence.
+        The rows are hoverable.
+      </p>
+
+      <section class="opt">
+        <div class="opt-head"><h2>Now</h2><span class="tag bad">what you circled</span></div>
+        <p class="desc">A teal line at the start of every column on pinned rows.</p>
+        <div class="frame"><table class="board v-now"></table></div>
+      </section>
+
+      <section class="opt">
+        <div class="opt-head"><h2>A · Edge rail</h2><span class="tag">smallest change</span></div>
+        <p class="desc">
+          One 3px teal rail at the far left of the row, nothing else. Keeps today's idea and
+          applies it once. Quiet, but with three or four pinned rows it is easy to miss where
+          the pinned group ends.
+        </p>
+        <div class="frame"><table class="board v-a"></table></div>
+      </section>
+
+      <section class="opt">
+        <div class="opt-head"><h2>B · Pinned shelf</h2><span class="tag pick">recommended</span></div>
+        <p class="desc">
+          Pinned matches already float to the top, so make that a shelf: a slim
+          <span style="font-family:var(--mono);color:var(--accent);font-size:0.78rem">PINNED · 3</span>
+          caption, a teal wash that fades out by the odds column, and a single teal hairline
+          where the shelf ends. No bars, and you can see at a glance where your pinned matches stop.
+        </p>
+        <div class="frame"><table class="board v-b"></table></div>
+      </section>
+
+      <section class="opt">
+        <div class="opt-head"><h2>C · Bookmark chip</h2><span class="tag">brand colours</span></div>
+        <p class="desc">
+          The star becomes a small cream bookmark with a navy star, the row sits on a navy
+          #0B1C33 wash, and team names turn cream. It matches the Telegram banner palette and is
+          the boldest of the three. Cream is also the goal-flash colour, so a goal on a pinned
+          match is a little less striking.
+        </p>
+        <div class="frame"><table class="board v-c"></table></div>
+      </section>
+
+      <div class="notes">
+        <div class="note">
+          <b>Why B</b>
+          It names the group that is already there (pinned sorts first), so the mark explains
+          itself. The wash lives on the left where the star is and is gone before the
+          signal columns, so it never fights their tints.
+        </div>
+        <div class="note">
+          <b>Goal flash still wins</b>
+          The 5-second cream rail and tint on a goal stay as they are in every option. A and B
+          use teal and C uses navy, so the cream flash stays the loudest thing on the row.
+        </div>
+        <div class="note">
+          <b>Selected and triggered</b>
+          The selected and triggered tints stack on top of each option unchanged. Only the
+          per-cell teal line goes away.
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const rows = [
+        { fav: true, flag: ["#012169", "#c8102e"], lg: "League One", sc: [0, 0], h: ["Plymouth", "#1f7a4d"], a: ["Reading", "#1d4f9c"], t: ["79′", "2H"], ko: ["2.30", "3.50", "2.70"], lv: ["15.00", "1.05", "15.00"], k: 48, s: [["0.9", "0.9"], ["1.5", "3.5"], ["8", "63"], ["1.5", "1.1", 1], ["15", "72"]], tslg: "—", st: [[4, 3], [8, 8], [98, 67], [28, 23]] },
+        { fav: true, flag: ["#f5f5f5", "#d57800"], lg: "2. Division", sc: [0, 0], h: ["Kitiou", "#b8312f"], a: ["Ayia Napa", "#e08a1e"], t: ["81′", "2H"], ko: ["1.30", "4.75", "7.50"], lv: ["2.88", "1.67", "7.00"], k: 30, s: [["1.7", "0.5", 0], ["5.5", "1.5"], ["34", "18"], ["1.1", "1.1", 0], ["39", "19"]], hotH: true, tslg: "—", st: [[8, 2], [5, 3], [85, 77], [73, 39]] },
+        { fav: true, flag: ["#c8102e", "#f5f5f5"], lg: "Regionalliga East", sc: [0, 0], h: ["Leobendorf", "#c0392b"], a: ["SV Donau", "#2c5aa0"], t: ["7′", "1H"], ko: ["1.85", "3.60", "3.30"], lv: ["1.80", "4.33", "3.40"], k: 26, s: [["0.3", "0.0"], ["7.0", "0.5"], ["36", "4"], ["0.1", "0.1"], ["77", "9"]], tslg: "—", st: [[2, 0], [2, 0], [8, 8], [10, 2]] },
+        { fav: false, flag: ["#e70013", "#e70013"], lg: "Ligue 2", sc: [0, 1], h: ["US Tataouine", "#b3261e"], a: ["AS Agareb", "#9c2a2a"], t: ["38′", "1H"], ko: ["1.40", "3.60", "8.00"], lv: ["2.75", "3.20", "2.40"], k: 26, s: [["0.8", "-0.6"], ["2.5", "0.0"], ["40", "4"], ["0.6", "Done"], ["45", "0"]], tslg: "32′", st: [[4, 1], [6, 0], [44, 25], [26, 6]] },
+        { fav: false, flag: ["#e30a17", "#e30a17"], lg: "3. Lig Group 1", sc: [0, 0], h: ["Beykoz Anadolu", "#3b5bb5"], a: ["Amasyaspor", "#2f8f4e"], t: ["79′", "2H"], ko: ["", "", ""], lv: ["4.00", "1.53", "5.50"], k: 25, s: [["0.8", "1.5"], ["2.5", "1.0"], ["48", "36"], ["0.7", "0.9"], ["35", "14"]], tslg: "28′", st: [[3, 7], [6, 5], [75, 75], [42, 50]] },
+      ];
+      const strat = [["UrG", "t-urg"], ["Δ5′", "t-d5"], ["Δ10′", "t-d10"], ["F Bar", "t-lbar"], ["ΦI", "t-phi"]];
+      const stats = ["SOT", "SOFF", "ATT", "DA"];
+
+      const colgroup =
+        '<colgroup><col style="width:2rem"><col style="width:6.6rem"><col style="width:2.4rem"><col style="width:10rem"><col style="width:3.4rem"><col style="width:9.8rem"><col style="width:3.8rem">' +
+        strat.map(() => '<col style="width:4.4rem">').join("") +
+        '<col style="width:3rem">' + stats.map(() => '<col style="width:2.9rem">').join("") + "</colgroup>";
+
+      const head =
+        "<thead><tr><th></th><th>League</th><th>Score</th><th class='l'>Match</th><th>Time</th><th>Odds</th><th class='t-k'>K·idx ↓</th>" +
+        strat.map(([l, c]) => `<th class="${c}">${l}</th>`).join("") +
+        "<th class='t-tslg'>TSLG</th>" + stats.map((s) => `<th class="st">${s}</th>`).join("") + "</tr></thead>";
+
+      const dim = (v) => v === "0.0" || v === "0" || v === "Done" || v.startsWith("-");
+      function stratCell(v, c, hotSide) {
+        const hv = hotSide === 0 ? " hot" : "", av = hotSide === 1 ? " hot" : "";
+        return `<td class="${c}"><div class="band sv"><span class="k${hv}">${hotSide === 0 ? "H" : "H"}</span><span class="v${hv}${!hv && dim(v[0]) ? " dim" : ""}">${v[0]}</span><span class="k${av}">A</span><span class="v${av}${!av && dim(v[1]) ? " dim" : ""}">${v[1]}</span></div></td>`;
+      }
+
+      function row(r, i, list, variant) {
+        const zebra = i % 2 === 0 ? "row-a" : "row-b";
+        const last = r.fav && !(list[i + 1] && list[i + 1].fav);
+        const cls = [zebra, r.fav ? "fav" : "", last ? "last" : ""].filter(Boolean).join(" ");
+        return (
+          `<tr class="${cls}">` +
+          `<td class="col-fav"><button class="star" type="button">${r.fav ? "★" : "☆"}</button></td>` +
+          `<td><div class="band"><div class="flag" style="background:linear-gradient(180deg,${r.flag[0]} 50%,${r.flag[1]} 50%)"></div><div class="lg">${r.lg}</div></div></td>` +
+          `<td><div class="band score"><span>${r.sc[0]}</span><span>${r.sc[1]}</span></div></td>` +
+          `<td><div class="teams"><div class="team"><i class="badge" style="background:${r.h[1]}"></i>${r.h[0]}</div><div class="team"><i class="badge" style="background:${r.a[1]}"></i>${r.a[0]}</div></div></td>` +
+          `<td><div class="band time"><b>${r.t[0]}</b><span>${r.t[1]}</span></div></td>` +
+          `<td><div class="band odds">${r.ko[0] ? `<span class="k">KO</span>${r.ko.map((o) => `<i>${o}</i>`).join("")}` : '<span></span><span></span><span></span><span></span>'}<span class="k">LIVE</span>${r.lv.map((o) => `<i>${o}</i>`).join("")}</div></td>` +
+          `<td class="t-k"><span class="kv">${r.k}</span></td>` +
+          r.s.map((v, j) => stratCell(v, strat[j][1], j === 0 && r.hotH ? 0 : v[2] !== undefined ? v[2] : -1)).join("") +
+          `<td class="t-tslg"><span class="stv" style="color:var(--text-2)">${r.tslg}</span></td>` +
+          r.st.map((v) => `<td class="st"><div class="band stv"><span>${v[0]}</span><span>${v[1]}</span></div></td>`).join("") +
+          "</tr>"
+        );
+      }
+
+      const ncols = 7 + strat.length + 1 + stats.length;
+      document.querySelectorAll("table.board").forEach((t) => {
+        const variant = [...t.classList].find((c) => c.startsWith("v-"));
+        let body = rows.map((r, i) => row(r, i, rows, variant)).join("");
+        if (variant === "v-b") {
+          const n = rows.filter((r) => r.fav).length;
+          body =
+            `<tr class="cap"><td colspan="${ncols}"><span class="cap-in">★ Pinned · ${n} <em>stay on top while live</em></span></td></tr>` +
+            body;
+        }
+        t.innerHTML = colgroup + head + `<tbody>${body}</tbody>`;
+      });
+    </script>
+  </body>
+</html>

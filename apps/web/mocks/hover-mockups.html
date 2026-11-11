@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kalchas hover mockups</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Sora:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #071018;
+        --surface: #0c1520;
+        --card: #0b1520;
+        --border: rgba(232, 220, 196, 0.12);
+        --text: #f2ebe0;
+        --text-2: #b7b0a3;
+        --muted: #7d776c;
+        --accent: #3dd6c6;
+        --phi: #93c5fd;
+        --phi-dim: rgba(147, 197, 253, 0.22);
+        --gold: #e8d9b0;
+        --font-display: "Fraunces", Georgia, serif;
+        --font-body: "Sora", sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: var(--font-body);
+        background:
+          radial-gradient(900px 480px at 12% -8%, rgba(61, 214, 198, 0.12), transparent 55%),
+          radial-gradient(700px 420px at 100% 0%, rgba(242, 235, 224, 0.05), transparent 50%),
+          var(--bg);
+      }
+      .page {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 2.2rem 1.4rem 3rem;
+      }
+      h1 {
+        font-family: var(--font-display);
+        font-size: 1.7rem;
+        font-weight: 500;
+        margin: 0 0 0.35rem;
+      }
+      .lede {
+        color: var(--text-2);
+        font-size: 0.92rem;
+        line-height: 1.5;
+        max-width: 46rem;
+        margin: 0 0 1.8rem;
+      }
+      .grid {
+        display: grid;
+        gap: 1.4rem;
+      }
+      .slot {
+        border: 1px solid var(--border);
+        background: rgba(12, 21, 32, 0.55);
+        border-radius: 0.7rem;
+        padding: 1.1rem 1.15rem 1.25rem;
+      }
+      .slot-kicker {
+        font-size: 0.68rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 0.2rem;
+      }
+      .slot h2 {
+        font-size: 1.02rem;
+        font-weight: 600;
+        margin: 0 0 0.2rem;
+      }
+      .slot .why {
+        color: var(--muted);
+        font-size: 0.78rem;
+        margin: 0 0 1rem;
+        line-height: 1.4;
+      }
+      .stage {
+        min-height: 280px;
+        display: grid;
+        place-items: center;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.02), transparent 40%),
+          var(--bg);
+        border: 1px dashed rgba(232, 220, 196, 0.12);
+        border-radius: 0.5rem;
+        padding: 1.4rem;
+      }
+
+      /* Shared card chrome */
+      .tip {
+        width: min(100%, 22.5rem);
+        background: var(--card);
+        border: 1px solid var(--border);
+        color: var(--text);
+        text-align: left;
+      }
+      .vs {
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .blurb {
+        margin: 0;
+        color: var(--text-2);
+        line-height: 1.45;
+      }
+
+      /* A: instrument */
+      .tip-a {
+        border-radius: 0.55rem;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+        overflow: hidden;
+      }
+      .tip-a .rail {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        padding: 0.55rem 0.85rem 0.5rem;
+        background: rgba(59, 130, 246, 0.08);
+        border-bottom: 1px solid rgba(147, 197, 253, 0.16);
+      }
+      .glyph {
+        font-family: var(--font-display);
+        color: var(--phi);
+        font-size: 0.95rem;
+        font-weight: 650;
+        min-width: 1.5rem;
+      }
+      .rail-name {
+        font-size: 0.78rem;
+        font-weight: 600;
+      }
+      .rail-scale {
+        margin-left: auto;
+        font-family: var(--font-mono);
+        font-size: 0.62rem;
+        color: var(--phi);
+        letter-spacing: 0.04em;
+      }
+      .tip-a .body {
+        padding: 0.75rem 0.85rem 0.85rem;
+      }
+      .match {
+        font-size: 0.72rem;
+        color: var(--text-2);
+        margin: 0 0 0.55rem;
+      }
+      .tip-a .blurb { font-size: 0.78rem; margin-bottom: 0.85rem; }
+      .meter {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.2rem 0.65rem;
+        align-items: center;
+        margin-bottom: 0.55rem;
+      }
+      .meter-name { font-size: 0.72rem; font-weight: 500; }
+      .meter-val {
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        color: var(--text);
+      }
+      .track {
+        grid-column: 1 / -1;
+        height: 7px;
+        border-radius: 99px;
+        background: rgba(242, 235, 224, 0.08);
+        overflow: hidden;
+      }
+      .fill {
+        height: 100%;
+        border-radius: 99px;
+        background: var(--phi);
+      }
+      .fill.is-low { background: rgba(147, 197, 253, 0.45); }
+      .ticks {
+        display: flex;
+        justify-content: space-between;
+        font-family: var(--font-mono);
+        font-size: 0.58rem;
+        color: var(--muted);
+        margin-top: 0.15rem;
+      }
+      .read {
+        margin: 0.7rem 0 0;
+        font-size: 0.72rem;
+        color: var(--gold);
+      }
+
+      /* B: split */
+      .tip-b {
+        border-radius: 0.65rem;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+        padding: 0.85rem 0.9rem 0.8rem;
+      }
+      .tip-b .kicker {
+        font-size: 0.62rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--phi);
+        margin-bottom: 0.2rem;
+      }
+      .tip-b h3 {
+        font-family: var(--font-display);
+        font-size: 1.05rem;
+        font-weight: 500;
+        margin: 0 0 0.15rem;
+      }
+      .tip-b .match { margin-bottom: 0.6rem; }
+      .tip-b .blurb { font-size: 0.78rem; margin-bottom: 0.85rem; }
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.65rem;
+      }
+      .side {
+        border: 1px solid var(--border);
+        border-radius: 0.45rem;
+        padding: 0.55rem 0.6rem 0.6rem;
+        background: rgba(255,255,255,0.02);
+      }
+      .side.is-lead {
+        border-color: rgba(147, 197, 253, 0.45);
+        background: rgba(59, 130, 246, 0.08);
+      }
+      .side-lab {
+        font-size: 0.62rem;
+        color: var(--muted);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .side-name {
+        font-size: 0.72rem;
+        margin: 0.15rem 0 0.35rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .side-num {
+        font-family: var(--font-mono);
+        font-size: 1.45rem;
+        line-height: 1;
+        color: var(--text);
+      }
+      .side-num span {
+        font-size: 0.7rem;
+        color: var(--muted);
+      }
+      .side-note {
+        margin-top: 0.35rem;
+        font-size: 0.62rem;
+        color: var(--text-2);
+      }
+
+      /* C: compact ledger */
+      .tip-c {
+        width: min(100%, 19.5rem);
+        border-radius: 0.4rem;
+        box-shadow: 0 14px 32px rgba(0, 0, 0, 0.48);
+        border-top: 2px solid var(--phi);
+        padding: 0.7rem 0.8rem 0.75rem;
+      }
+      .tip-c .title {
+        font-size: 0.78rem;
+        font-weight: 600;
+        margin: 0 0 0.4rem;
+      }
+      .tip-c .blurb {
+        font-size: 0.74rem;
+        margin-bottom: 0.7rem;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 0.7rem 1fr auto;
+        gap: 0.45rem;
+        align-items: center;
+        margin: 0.28rem 0;
+      }
+      .dot {
+        width: 0.42rem;
+        height: 0.42rem;
+        border-radius: 99px;
+        background: var(--muted);
+      }
+      .dot.is-lead { background: var(--phi); }
+      .row-name { font-size: 0.74rem; }
+      .row-val {
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        min-width: 2.4rem;
+        text-align: right;
+      }
+      .mini {
+        grid-column: 2 / 3;
+        height: 4px;
+        border-radius: 99px;
+        background: rgba(242, 235, 224, 0.08);
+      }
+      .mini > i {
+        display: block;
+        height: 100%;
+        border-radius: 99px;
+        background: var(--phi);
+      }
+      .legend {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 0.55rem;
+        font-size: 0.6rem;
+        color: var(--muted);
+        font-family: var(--font-mono);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Hover popups</h1>
+      <p class="lede">
+        Same copy as now. Three layouts for Efficiency on Khor Fakkan vs Al Wasl
+        (9 vs 23, out of 100). Pick one and we apply it to every strategy hover.
+      </p>
+
+      <div class="grid">
+        <section class="slot">
+          <div class="slot-kicker">Mockup A</div>
+          <h2>Instrument</h2>
+          <p class="why">Closest to 2.2: glyph, named meters, 0-100 scale, one-line reading.</p>
+          <div class="stage">
+            <article class="tip tip-a">
+              <div class="rail">
+                <span class="glyph">ΦI</span>
+                <span class="rail-name">Efficiency</span>
+                <span class="rail-scale">/100</span>
+              </div>
+              <div class="body">
+                <p class="match">Khor Fakkan <span class="vs">vs</span> Al Wasl</p>
+                <p class="blurb">How well attacks become shots, out of 100. A higher number means more shots from the same attacks.</p>
+                <div class="meter">
+                  <span class="meter-name">Khor Fakkan</span>
+                  <span class="meter-val">9</span>
+                  <div class="track"><div class="fill is-low" style="width:9%"></div></div>
+                </div>
+                <div class="meter">
+                  <span class="meter-name">Al Wasl</span>
+                  <span class="meter-val">23</span>
+                  <div class="track"><div class="fill" style="width:23%"></div></div>
+                </div>
+                <div class="ticks"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+                <p class="read">Al Wasl is getting more shots from the same attacks.</p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="slot">
+          <div class="slot-kicker">Mockup B</div>
+          <h2>Split sides</h2>
+          <p class="why">The two numbers are the story. Lead side is framed. Copy stays on top.</p>
+          <div class="stage">
+            <article class="tip tip-b">
+              <div class="kicker">ΦI · Efficiency</div>
+              <h3>Efficiency</h3>
+              <p class="match">Khor Fakkan <span class="vs">vs</span> Al Wasl</p>
+              <p class="blurb">How well attacks become shots, out of 100. A higher number means more shots from the same attacks.</p>
+              <div class="split">
+                <div class="side">
+                  <div class="side-lab">Home</div>
+                  <div class="side-name">Khor Fakkan</div>
+                  <div class="side-num">9 <span>/100</span></div>
+                </div>
+                <div class="side is-lead">
+                  <div class="side-lab">Away</div>
+                  <div class="side-name">Al Wasl</div>
+                  <div class="side-num">23 <span>/100</span></div>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="slot">
+          <div class="slot-kicker">Mockup C</div>
+          <h2>Compact ledger</h2>
+          <p class="why">Keeps the current small footprint. Adds a ΦI hairline, named rows, and a quiet scale.</p>
+          <div class="stage">
+            <article class="tip tip-c">
+              <p class="title">Efficiency - Khor Fakkan vs Al Wasl</p>
+              <p class="blurb">How well attacks become shots, out of 100. A higher number means more shots from the same attacks.</p>
+              <div class="row">
+                <span class="dot"></span>
+                <span class="row-name">Khor Fakkan</span>
+                <span class="row-val">9</span>
+                <div class="mini"><i style="width:9%"></i></div>
+              </div>
+              <div class="row">
+                <span class="dot is-lead"></span>
+                <span class="row-name">Al Wasl</span>
+                <span class="row-val">23</span>
+                <div class="mini"><i style="width:23%"></i></div>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </div>
+  </body>
+</html>

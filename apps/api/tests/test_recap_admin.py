@@ -209,43 +209,24 @@ def test_daily_needs_no_lesson_and_any_date(client: TestClient, monkeypatch) -> 
     assert state["status_calls"] == [("approved", ["draft", "failed"])]
 
 
-def test_daily_draft_can_keep_only_some_strategies(client: TestClient, monkeypatch) -> None:
+def test_draft_can_be_narrowed_to_strategies(client: TestClient, monkeypatch) -> None:
     import kalchas_db.settings
 
     saved = {}
     _store(monkeypatch, _row())
-    alert = {
-        "match_id": "m",
-        "minute": 70,
-        "strategy_key": "delta_goal",
-        "team": "home",
-        "value": 1.4,
-        "home_team": "Home",
-        "away_team": "Away",
-        "created_at": datetime(2026, 11, 3, 20, tzinfo=UTC),
-        "payload": {"league": "L"},
-        "state": "Confirmed",
-        "detail": {"fire_score": "0-0", "settle_score": "1-0", "goal_minute": 75},
-    }
-    other = {**alert, "match_id": "n", "strategy_key": "kscore"}
-    monkeypatch.setattr(
-        kalchas_db.recaps, "fetch_week_signals_sync", lambda dsn, a, b: [alert, other]
-    )
+    monkeypatch.setattr(kalchas_db.recaps, "fetch_week_signals_sync", lambda dsn, a, b: [])
     monkeypatch.setattr(kalchas_db.settings, "list_thresholds", lambda dsn: {})
 
     def save(dsn, week, data, texts, kind="week"):
-        saved.update(data=data, kind=kind)
+        saved.update(data=data, texts=texts)
         return True
 
     monkeypatch.setattr(kalchas_db.recaps, "save_draft_sync", save)
-    res = client.post("/api/admin/recap/draft?kind=day&week=2026-11-03&strategies=kscore")
+    res = client.post("/api/admin/recap/draft?kind=day&week=2026-11-03&strategy=delta_goal")
     assert res.status_code == 200
-    assert saved["kind"] == "day"
-    assert saved["data"]["strategy_filter"] == ["kscore"]
-    assert saved["data"]["goals"] == 1
-
-    bad = client.post("/api/admin/recap/draft?kind=day&week=2026-11-03&strategies=omega")
+    assert saved["data"]["strategies"] == ["delta_goal"]
+    assert saved["texts"]["kicker"] == "A good day for Form Bar"
+    bad = client.post("/api/admin/recap/draft?kind=day&strategy=nonsense")
     assert bad.status_code == 400
-
-    keys = {s["key"] for s in client.get("/api/admin/recap?kind=day").json()["strategies"]}
-    assert {"delta_goal", "kscore", "rule_of_three"} <= keys
+    choices = client.get("/api/admin/recap").json()["strategies"]
+    assert {"key": "delta_goal", "name": "Form Bar"} in choices

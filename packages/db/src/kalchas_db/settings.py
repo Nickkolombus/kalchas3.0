@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import Connection, text
 
 from kalchas_db.sync import sync_engine
 
@@ -17,6 +18,97 @@ KEY_BY_SLOT: dict[int, str] = {
     7: "kscore",
 }
 SLOT_BY_KEY: dict[str, int] = {key: slot for slot, key in KEY_BY_SLOT.items()}
+
+INSERT_CONFIG_HISTORY = text(
+    """
+    INSERT INTO strategy_config_history (strategy_slot, strategy_key, kind, before, after)
+    VALUES (:slot, :strategy_key, :kind, CAST(:before AS jsonb), CAST(:after AS jsonb))
+    """
+)
+
+LIST_CONFIG_HISTORY = text(
+    """
+    SELECT id, changed_at, strategy_slot, strategy_key, kind, before, after
+    FROM strategy_config_history
+    WHERE (CAST(:slot AS SMALLINT) IS NULL OR strategy_slot = CAST(:slot AS SMALLINT))
+    ORDER BY changed_at DESC, id DESC
+    LIMIT :limit
+    """
+)
+
+
+def _canonical(value: Any) -> Any:
+    """JSON round-trip so before/after compare the way they will be stored."""
+    return json.loads(json.dumps(value, sort_keys=True, default=str))
+
+
+def record_config_change(
+    conn: Connection,
+    *,
+    kind: str,
+    before: Any,
+    after: Any,
+    slot: int | None = None,
+    strategy_key: str | None = None,
+) -> bool:
+    """Append a strategy_config_history row inside the caller's transaction.
+
+    No-op saves (before == after) are skipped so the history only shows real
+    changes; admin saves rewrite every slot even when one value moved.
+    """
+    before_c = _canonical(before)
+    after_c = _canonical(after)
+    if before_c == after_c:
+        return False
+    if slot is None and strategy_key is not None:
+        slot = SLOT_BY_KEY.get(strategy_key)
+    if strategy_key is None and slot is not None:
+        strategy_key = KEY_BY_SLOT.get(slot)
+    conn.execute(
+        INSERT_CONFIG_HISTORY,
+        {
+            "slot": slot,
+            "strategy_key": strategy_key,
+            "kind": kind,
+            "before": None if before_c is None else json.dumps(before_c, sort_keys=True),
+            "after": None if after_c is None else json.dumps(after_c, sort_keys=True),
+        },
+    )
+    return True
+
+
+def list_config_history(
+    dsn: str, *, slot: int | None = None, limit: int = 200
+) -> list[dict[str, Any]]:
+    eng = sync_engine(dsn)
+    with eng.connect() as conn:
+        rows = conn.execute(LIST_CONFIG_HISTORY, {"slot": slot, "limit": limit}).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def config_fingerprints(bundle: dict[str, Any]) -> dict[int, str]:
+    """Short per-slot hash of the stored config a strategy fires under.
+
+    Stamped on alert payloads so results can be grouped by the config that
+    produced them. Per slot, so tuning one strategy does not split another's
+    results.
+    """
+    thresholds = bundle.get("thresholds") or {}
+    weights = bundle.get("weights") or {}
+    conditions = bundle.get("conditions") or {}
+    rules = {int(r["strategy_slot"]): r for r in bundle.get("rules") or []}
+    out: dict[int, str] = {}
+    for slot, key in KEY_BY_SLOT.items():
+        snapshot = {
+            "threshold": thresholds.get(slot),
+            "rule": rules.get(slot),
+            "conditions": conditions.get(slot) or [],
+            "weights": weights.get(key) or {},
+        }
+        raw = json.dumps(snapshot, sort_keys=True, default=str)
+        out[slot] = hashlib.sha1(raw.encode(), usedforsecurity=False).hexdigest()[:10]
+    return out
+
 
 LIST_THRESHOLDS = text(
     """
@@ -62,6 +154,15 @@ DELETE_WEIGHT = text(
     """
 )
 
+LIST_STRATEGY_WEIGHTS = text(
+    """
+    SELECT coeff_key, value
+    FROM strategy_weights
+    WHERE strategy_key = :strategy_key
+    ORDER BY coeff_key
+    """
+)
+
 LIST_RULES = text(
     """
     SELECT strategy_slot, strategy_name, success_window_minutes,
@@ -70,6 +171,18 @@ LIST_RULES = text(
            max_fire_minute, max_fire_minute_1h
     FROM strategy_rules
     ORDER BY strategy_slot
+    """
+)
+
+GET_RULE_FOR_UPDATE = text(
+    """
+    SELECT strategy_slot, strategy_name, success_window_minutes,
+           expiration_buffer_minutes, infinite_ttl, team_specific, enabled,
+           cooldown_minutes, cooldown_bypass_delta, expire_at_half_end,
+           max_fire_minute, max_fire_minute_1h
+    FROM strategy_rules
+    WHERE strategy_slot = :slot
+    FOR UPDATE
     """
 )
 
@@ -106,8 +219,21 @@ def list_thresholds(dsn: str) -> dict[int, float]:
 def upsert_thresholds(dsn: str, values: dict[int, float]) -> None:
     eng = sync_engine(dsn)
     with eng.begin() as conn:
-        for slot, threshold in values.items():
-            conn.execute(UPSERT_THRESHOLD, {"slot": int(slot), "threshold": float(threshold)})
+        current = {
+            int(r["strategy_slot"]): float(r["threshold"])
+            for r in conn.execute(LIST_THRESHOLDS).mappings().all()
+        }
+        for raw_slot, raw_threshold in values.items():
+            slot, threshold = int(raw_slot), float(raw_threshold)
+            conn.execute(UPSERT_THRESHOLD, {"slot": slot, "threshold": threshold})
+            old = current.get(slot)
+            record_config_change(
+                conn,
+                kind="threshold",
+                slot=slot,
+                before=None if old is None else {"threshold": old},
+                after={"threshold": threshold},
+            )
 
 
 def list_weight_overrides(dsn: str) -> dict[str, dict[str, float]]:
@@ -120,9 +246,15 @@ def list_weight_overrides(dsn: str) -> dict[str, dict[str, float]]:
     return out
 
 
+def _strategy_weights(conn: Connection, strategy_key: str) -> dict[str, float]:
+    rows = conn.execute(LIST_STRATEGY_WEIGHTS, {"strategy_key": strategy_key}).mappings().all()
+    return {str(r["coeff_key"]): float(r["value"]) for r in rows}
+
+
 def upsert_weight(dsn: str, strategy_key: str, coeff_key: str, value: float) -> None:
     eng = sync_engine(dsn)
     with eng.begin() as conn:
+        before = _strategy_weights(conn, strategy_key)
         conn.execute(
             UPSERT_WEIGHT,
             {
@@ -131,16 +263,51 @@ def upsert_weight(dsn: str, strategy_key: str, coeff_key: str, value: float) -> 
                 "value": float(value),
             },
         )
+        record_config_change(
+            conn,
+            kind="weights",
+            strategy_key=strategy_key,
+            before=before,
+            after=_strategy_weights(conn, strategy_key),
+        )
 
 
 def reset_weights(dsn: str, strategy_key: str, coeff_key: str | None = None) -> int:
     eng = sync_engine(dsn)
     with eng.begin() as conn:
+        before = _strategy_weights(conn, strategy_key)
         result = conn.execute(
             DELETE_WEIGHT,
             {"strategy_key": strategy_key, "coeff_key": coeff_key or ""},
         )
+        record_config_change(
+            conn,
+            kind="weights",
+            strategy_key=strategy_key,
+            before=before,
+            after=_strategy_weights(conn, strategy_key),
+        )
     return int(result.rowcount or 0)
+
+
+def replace_weights(dsn: str, strategy_key: str, values: dict[str, float]) -> None:
+    """Swap a strategy's overrides for ``values`` in one transaction (one history row)."""
+    eng = sync_engine(dsn)
+    with eng.begin() as conn:
+        before = _strategy_weights(conn, strategy_key)
+        conn.execute(DELETE_WEIGHT, {"strategy_key": strategy_key, "coeff_key": ""})
+        for coeff_key, value in values.items():
+            conn.execute(
+                UPSERT_WEIGHT,
+                {"strategy_key": strategy_key, "coeff_key": coeff_key, "value": float(value)},
+            )
+        record_config_change(
+            conn,
+            kind="weights",
+            strategy_key=strategy_key,
+            before=before,
+            after=_strategy_weights(conn, strategy_key),
+        )
 
 
 def list_admin_rules(dsn: str) -> list[dict[str, Any]]:
@@ -174,7 +341,16 @@ def update_admin_rule(dsn: str, slot: int, fields: dict[str, Any]) -> dict[str, 
     }
     eng = sync_engine(dsn)
     with eng.begin() as conn:
+        before = conn.execute(GET_RULE_FOR_UPDATE, {"slot": payload["slot"]}).mappings().first()
         row = conn.execute(UPDATE_RULE, payload).mappings().first()
+        if row is not None:
+            record_config_change(
+                conn,
+                kind="rule",
+                slot=int(slot),
+                before=dict(before) if before else None,
+                after=dict(row),
+            )
     return dict(row) if row else None
 
 
@@ -423,6 +599,36 @@ INSERT_CONDITION = text(
 )
 
 
+LIST_SLOT_CONDITIONS = text(
+    """
+    SELECT id, strategy_slot, enabled, left_scope, left_metric, operator,
+           right_kind, right_scope, right_metric, right_value, multiplier, sort_order
+    FROM strategy_conditions
+    WHERE strategy_slot = :slot
+    ORDER BY sort_order, id
+    """
+)
+
+
+def _condition_out(row: Any) -> dict[str, Any]:
+    return {
+        "left_scope": str(row["left_scope"]),
+        "left_metric": str(row["left_metric"]),
+        "operator": str(row["operator"]),
+        "right_kind": str(row["right_kind"] or "value"),
+        "right_scope": str(row["right_scope"] or "opponent"),
+        "right_metric": str(row["right_metric"] or ""),
+        "right_value": float(row["right_value"] or 0),
+        "multiplier": float(row["multiplier"] or 1),
+        "enabled": bool(row["enabled"]),
+    }
+
+
+def _slot_conditions(conn: Connection, slot: int) -> list[dict[str, Any]]:
+    rows = conn.execute(LIST_SLOT_CONDITIONS, {"slot": slot}).mappings().all()
+    return [_condition_out(r) for r in rows]
+
+
 def list_strategy_conditions(dsn: str) -> dict[int, list[dict[str, Any]]]:
     eng = sync_engine(dsn)
     try:
@@ -435,19 +641,7 @@ def list_strategy_conditions(dsn: str) -> dict[int, list[dict[str, Any]]]:
         slot = int(row["strategy_slot"])
         if slot not in KEY_BY_SLOT:
             continue
-        out.setdefault(slot, []).append(
-            {
-                "left_scope": str(row["left_scope"]),
-                "left_metric": str(row["left_metric"]),
-                "operator": str(row["operator"]),
-                "right_kind": str(row["right_kind"] or "value"),
-                "right_scope": str(row["right_scope"] or "opponent"),
-                "right_metric": str(row["right_metric"] or ""),
-                "right_value": float(row["right_value"] or 0),
-                "multiplier": float(row["multiplier"] or 1),
-                "enabled": bool(row["enabled"]),
-            }
-        )
+        out.setdefault(slot, []).append(_condition_out(row))
     return out
 
 
@@ -456,6 +650,7 @@ def replace_strategy_conditions(
 ) -> list[dict[str, Any]]:
     eng = sync_engine(dsn)
     with eng.begin() as conn:
+        before = _slot_conditions(conn, slot)
         conn.execute(DELETE_SLOT_CONDITIONS, {"slot": slot})
         for index, row in enumerate(rows):
             conn.execute(
@@ -474,4 +669,6 @@ def replace_strategy_conditions(
                     "sort_order": index,
                 },
             )
-    return list_strategy_conditions(dsn).get(slot, [])
+        after = _slot_conditions(conn, slot)
+        record_config_change(conn, kind="conditions", slot=slot, before=before, after=after)
+    return after if slot in KEY_BY_SLOT else []

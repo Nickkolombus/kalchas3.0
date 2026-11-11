@@ -79,8 +79,9 @@ export function AdminConditions({
       <p className="admin-hint">
         AND with this strategy&apos;s own Fire gate. Homemade trailing: triggering
         Goals &gt; opponent Goals, or triggering CRN &gt; opponent CRN × 3.
-        Favourite and underdog use kickoff odds. Live odds use the cached 1X2
-        already on the match - no extra API call.
+        Favourite and underdog use kickoff odds. Live odds use the full-time 1X2
+        fetched in the last 3 minutes - no extra API call. With no fresh line
+        the row fails.
       </p>
       {rows.length === 0 ? (
         <p className="admin-hint">No extra filter. Native Fire still applies.</p>

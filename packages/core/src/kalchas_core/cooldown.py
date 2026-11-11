@@ -7,7 +7,7 @@ admin-settings lookups stay in the app layer. Core owns the decision tree:
 2. Red-card mute for the trigger team
 3. Per-strategy cut-offs: none past ``max_fire_minute_1h`` in the first half
    (or at half-time), none past ``max_fire_minute`` at all
-4. Team stack: one speaking turn per side
+4. Team stack: one speaking turn per side (K-Score is exempt both ways)
 5. Per-strategy window with optional value-delta bypass
 6. Same-minute and reservation blocks
 """
@@ -25,6 +25,11 @@ Clock = Callable[[], datetime]
 DEFAULT_BASE_COOLDOWN = 10
 DEFAULT_REARM_DROP_RATIO = 0.5
 DEFAULT_TEAM_STACK_MINUTES = 10
+TEAM_STACK_EXEMPT_SLOTS: frozenset[int] = frozenset({7})
+"""K-Score is built from Rule of 3, Pressure Index and Delta 5min, so it peaks
+on the team those strategies have just alerted. Under the team stack it lost
+every such turn and went silent; it now fires alongside them and does not
+take a turn away from them either."""
 DEFAULT_BYPASS_DELTA: Mapping[int, float] = {
     1: 0.5,
     2: 10.0,
@@ -168,6 +173,7 @@ class CooldownBook:
 
     goal_cooldown_minutes: int = 10
     team_stack_minutes: int = DEFAULT_TEAM_STACK_MINUTES
+    team_stack_exempt: frozenset[int] = TEAM_STACK_EXEMPT_SLOTS
     reservation_seconds: int = 10
     rules: dict[int, CooldownRules] = field(default_factory=dict)
     _state: dict[str, CooldownState] = field(default_factory=dict)
@@ -185,8 +191,10 @@ class CooldownBook:
         current_minute: int,
         team: str | None,
     ) -> CooldownDecision | None:
-        """One speaking turn per team."""
+        """One speaking turn per team; exempt slots neither wait nor hold one."""
         if not team or self.team_stack_minutes <= 0:
+            return None
+        if strategy_slot in self.team_stack_exempt:
             return None
         for state in self._state.values():
             if state.match_id != match_id:
@@ -194,6 +202,8 @@ class CooldownBook:
             if (state.team or "") != team:
                 continue
             if state.strategy_slot == strategy_slot:
+                continue
+            if state.strategy_slot in self.team_stack_exempt:
                 continue
             waited = current_minute - state.last_alert_minute
             if 0 <= waited < self.team_stack_minutes:

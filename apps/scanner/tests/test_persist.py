@@ -617,7 +617,88 @@ def test_process_match_refreshes_odds_and_persists_live_1x2() -> None:
     stored = persist.matches["12"]["odds"]
     assert stored["home"] == 2.2
     assert stored["kickoff"]["away"] == 3.4
-    assert stored["live"] == {"home": 1.7, "draw": 3.6, "away": 5.0}
+    live = dict(stored["live"])
+    assert live.pop("fetched_at")
+    assert live == {"home": 1.7, "draw": 3.6, "away": 5.0}
+
+
+class _LiveOddsFeed:
+    """Bundle client whose snapshot the test swaps between refreshes."""
+
+    def __init__(self, odds: dict, clocks: dict | None = None) -> None:
+        self.odds = odds
+        self.clocks = clocks or {}
+        self.fail = False
+
+    def get_odds_1x2_today(self):
+        return {}
+
+    def get_live_odds_comments_bundle(self):
+        if self.fail:
+            raise RuntimeError("provider down")
+        return self.odds, self.clocks, set()
+
+
+def _scanner_on(feed: _LiveOddsFeed):
+    from kalchas_scanner.loop import Scanner, ScannerConfig
+    from kalchas_scanner.outbox import MemoryAlertSink
+
+    return Scanner(
+        client=feed,  # type: ignore[arg-type]
+        sink=MemoryAlertSink(),
+        persist=MemoryMatchPersist(),
+        config=ScannerConfig(live_odds_refresh_sec=0),
+    )
+
+
+def test_live_odds_are_stamped_with_fetch_time_and_feed_minute() -> None:
+    from datetime import UTC, datetime
+
+    from kalchas_core.runner import live_home_away_odds
+
+    feed = _LiveOddsFeed({"7": {"home": 3.1, "draw": 2.05, "away": 4.75}}, clocks={"7": 68})
+    scanner = _scanner_on(feed)
+    before = datetime.now(UTC).replace(microsecond=0)
+    scanner._refresh_live_odds_cache()
+    payload = scanner._odds_payload("7")
+    assert payload is not None
+    live = payload["live"]
+    assert live["minute"] == 68
+    assert datetime.fromisoformat(live["fetched_at"]) >= before
+    assert live_home_away_odds(payload) == (3.1, 4.75)
+
+
+def test_match_missing_from_the_next_feed_snapshot_loses_its_live_line() -> None:
+    """The cache used to only add, so a match whose 1X2 left the feed kept
+    its last price for the rest of the game (Bodo/Glimt v Lille, alert 11689)."""
+    feed = _LiveOddsFeed(
+        {
+            "7": {"home": 11.0, "draw": 1.055, "away": 17.0},
+            "8": {"home": 2.0, "draw": 3.2, "away": 3.9},
+        }
+    )
+    scanner = _scanner_on(feed)
+    scanner._refresh_live_odds_cache()
+    assert scanner._odds_payload("7")["live"]["draw"] == 1.055
+    feed.odds = {"8": {"home": 1.9, "draw": 3.3, "away": 4.1}}
+    scanner._refresh_live_odds_cache()
+    assert scanner._odds_payload("7") is None
+    assert scanner._odds_payload("8")["live"]["home"] == 1.9
+
+
+def test_live_line_ages_out_when_refreshes_keep_failing() -> None:
+    feed = _LiveOddsFeed({"7": {"home": 3.1, "draw": 2.05, "away": 4.75}})
+    scanner = _scanner_on(feed)
+    scanner._refresh_live_odds_cache()
+    assert scanner._odds_payload("7") is not None
+    feed.fail = True
+    scanner._refresh_live_odds_cache()
+    # Still young: the last snapshot is usable.
+    assert scanner._odds_payload("7") is not None
+    # Make it older than the limit; the payload (and so alerts, match rows
+    # and the live_odds condition) must stop carrying it.
+    scanner._live_odds_by_match["7"]["fetched_at"] = "2026-11-03T20:00:00+00:00"
+    assert scanner._odds_payload("7") is None
 
 
 def test_process_match_fills_stoppage_from_comment_clock() -> None:

@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Weekly recap and channel copy</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Sora:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #071018;
+        --surface: #0c1520;
+        --surface-2: #101c29;
+        --border: rgba(232, 220, 196, 0.1);
+        --text: #f2ebe0;
+        --text-2: #b7b0a3;
+        --muted: #7d776c;
+        --accent: #3dd6c6;
+        --miss: #3a4656;
+        --warn: #e0a458;
+        --font-display: "Fraunces", Georgia, serif;
+        --font-body: "Sora", sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-body);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+      .page { max-width: 1180px; margin: 0 auto; padding: 40px 20px 80px; }
+      h1 { font-family: var(--font-display); font-weight: 650; font-size: 2.2rem; margin: 0 0 8px; }
+      h2 {
+        font-family: var(--font-display); font-weight: 650; font-size: 1.5rem;
+        margin: 64px 0 6px; padding-top: 24px; border-top: 1px solid var(--border);
+      }
+      h3 { font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin: 32px 0 10px; }
+      p.lede { color: var(--text-2); max-width: 70ch; margin: 0 0 8px; }
+      .sample {
+        display: inline-block; font-family: var(--font-mono); font-size: 0.72rem;
+        color: var(--warn); border: 1px solid rgba(224, 164, 88, 0.4);
+        border-radius: 4px; padding: 2px 8px; margin-top: 8px;
+      }
+      .note { color: var(--muted); font-size: 0.82rem; max-width: 72ch; }
+
+      /* ---------- recap card (rendered at 1200x675, scaled to fit) ---------- */
+      .frame { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 14px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.45); }
+      .frame > .card { position: absolute; top: 0; left: 0; transform-origin: 0 0; transform: scale(var(--s, 0.5)); }
+      .card {
+        width: 1200px; height: 675px; padding: 48px 56px 0;
+        background:
+          radial-gradient(900px 500px at -10% -20%, rgba(61,214,198,.16), transparent 60%),
+          radial-gradient(700px 500px at 110% 120%, rgba(232,220,196,.06), transparent 60%),
+          linear-gradient(160deg, #0c1824, #071018 70%);
+        color: var(--text); font-family: var(--font-body);
+        display: flex; flex-direction: column;
+      }
+      .c-top { display: flex; justify-content: space-between; align-items: center; }
+      .brand { display: flex; align-items: center; gap: 14px; }
+      .brand img { width: 46px; height: 46px; border-radius: 50%; border: 2px solid rgba(61,214,198,.5); object-fit: cover; }
+      .brand span { font-size: 17px; letter-spacing: .32em; font-weight: 600; color: var(--accent); }
+      .week { font-family: var(--font-mono); font-size: 18px; color: var(--text-2); letter-spacing: .06em; }
+      .week b { color: var(--text); font-weight: 500; }
+      .c-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 56px; padding-top: 30px; }
+      .label { font-size: 15px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+      .big { font-family: var(--font-display); font-weight: 650; font-size: 190px; line-height: .9; letter-spacing: -.03em; margin: 8px 0 10px; }
+      .big em { font-style: normal; color: var(--accent); font-size: 120px; }
+      .sub { font-size: 24px; color: var(--text); }
+      .sub span { color: var(--text-2); }
+      .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-top: 30px; }
+      .day { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+      .dots { display: flex; flex-direction: column-reverse; gap: 5px; height: 112px; justify-content: flex-start; }
+      .dot { width: 16px; height: 9px; border-radius: 3px; background: var(--accent); }
+      .dot.m { background: transparent; box-shadow: inset 0 0 0 1.5px var(--miss); }
+      .day small { font-family: var(--font-mono); font-size: 14px; color: var(--muted); }
+      .calls { display: flex; flex-direction: column; gap: 10px; }
+      .call {
+        display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 16px;
+        padding: 12px 20px; border-radius: 12px; background: rgba(12,21,32,.75);
+        border: 1px solid var(--border);
+      }
+      .call .m { font-size: 21px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .emoji { font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif; font-size: .9em; }
+      .call .l { font-size: 14px; color: var(--muted); grid-column: 1; }
+      .call .t { grid-row: 1 / span 2; grid-column: 2; font-family: var(--font-mono); font-size: 22px; color: var(--accent); white-space: nowrap; }
+      .call .t i { font-style: normal; color: var(--text-2); }
+      .call.miss { border-style: dashed; }
+      .call.miss .t { color: var(--text-2); }
+      .c-foot {
+        margin: 0 -56px; padding: 18px 56px; display: flex; justify-content: space-between; align-items: center;
+        border-top: 1px solid var(--border); background: rgba(7,16,24,.6); font-size: 18px; color: var(--text-2);
+      }
+      .c-foot b { color: var(--accent); font-weight: 600; font-size: 20px; letter-spacing: .02em; }
+
+      /* variant B: ledger grid */
+      .b-body { flex: 1; display: grid; grid-template-columns: 380px 1fr; gap: 56px; padding-top: 30px; }
+      .b-body .big { font-size: 150px; }
+      .b-body .big em { font-size: 96px; }
+      .grid-days { display: flex; flex-direction: column; gap: 11px; }
+      .gd { display: grid; grid-template-columns: 54px 1fr 70px; align-items: center; gap: 14px; }
+      .gd small { font-family: var(--font-mono); font-size: 15px; color: var(--muted); }
+      .gd .r { font-family: var(--font-mono); font-size: 15px; color: var(--text-2); text-align: right; }
+      .tiles { display: flex; gap: 6px; }
+      .tile { width: 38px; height: 38px; border-radius: 7px; background: var(--accent); }
+      .tile.m { background: #142130; box-shadow: inset 0 0 0 1px var(--miss); }
+      .tile.v { background: transparent; border: 1.5px dashed var(--muted); }
+      .strat { margin-top: 26px; display: flex; flex-direction: column; gap: 14px; }
+      .bar { display: grid; grid-template-columns: 1fr auto; gap: 6px; font-size: 17px; }
+      .bar .track { grid-column: 1 / -1; height: 8px; border-radius: 4px; background: #142130; overflow: hidden; }
+      .bar .track i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+      .bar span { font-family: var(--font-mono); color: var(--text-2); }
+      .legend { display: flex; gap: 22px; font-size: 14px; color: var(--muted); margin-top: 14px; }
+      .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; }
+
+      /* ---------- variant chooser ---------- */
+      .variants { display: grid; gap: 32px; }
+      .variant-h { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+      .variant-h strong { font-family: var(--font-display); font-size: 1.2rem; }
+      .variant-h span { color: var(--text-2); font-size: .9rem; }
+
+      /* ---------- platform previews ---------- */
+      .platforms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: start; }
+      @media (max-width: 1000px) { .platforms { grid-template-columns: 1fr; max-width: 480px; } }
+      .pf-label { font-size: .78rem; color: var(--muted); margin-bottom: 8px; letter-spacing: .08em; text-transform: uppercase; }
+
+      .tg { background: #0e1621; border-radius: 14px; padding: 16px 12px; font-family: "Roboto", "Segoe UI", system-ui, sans-serif; }
+      .tg-msg { background: #182533; border-radius: 14px 14px 14px 4px; overflow: hidden; color: #e8eef4; }
+      .tg-msg .frame { border-radius: 0; box-shadow: none; }
+      .tg-cap { padding: 8px 11px 4px; font-size: 14px; line-height: 1.4; white-space: pre-wrap; }
+      .tg-cap b { font-weight: 700; }
+      .tg-cap a { color: #6ab3f3; text-decoration: none; }
+      .tg-meta { text-align: right; font-size: 11px; color: #7f8b99; padding: 0 11px 6px; }
+      .tg-cap blockquote { margin: 4px 0; padding: 2px 0 2px 9px; border-left: 3px solid #6ab3f3; background: rgba(106,179,243,.08); border-radius: 3px; }
+
+      .x { background: #000; border: 1px solid #2f3336; border-radius: 14px; padding: 14px 14px 10px; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #e7e9ea; }
+      .x-head { display: flex; gap: 10px; align-items: center; }
+      .x-head img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
+      .x-head b { font-size: 15px; }
+      .x-head span { color: #71767b; font-size: 14px; }
+      .x-text { white-space: pre-wrap; font-size: 15px; line-height: 1.35; margin: 8px 0 10px 50px; }
+      .x .frame { margin-left: 50px; width: calc(100% - 50px); border-radius: 16px; border: 1px solid #2f3336; box-shadow: none; }
+      .x-reply { border-top: 1px solid #2f3336; margin-top: 12px; padding-top: 10px; }
+      .x-reply .x-text { margin-bottom: 0; }
+      .x-text a { color: #1d9bf0; }
+
+      .dc { background: #313338; border-radius: 12px; padding: 14px 14px 16px; font-family: "gg sans", "Noto Sans", "Segoe UI", sans-serif; color: #dbdee1; }
+      .dc-head { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
+      .dc-head img { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; }
+      .dc-head b { color: #f2f3f5; font-size: 15px; }
+      .dc-head .tag { background: #5865f2; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; }
+      .dc-head span { color: #949ba4; font-size: 12px; }
+      .embed { margin-left: 48px; background: #2b2d31; border-left: 4px solid var(--accent); border-radius: 4px; padding: 10px 14px 12px; }
+      .embed .t { color: #f2f3f5; font-weight: 700; font-size: 15px; }
+      .embed .d { font-size: 14px; margin: 6px 0 8px; white-space: pre-wrap; }
+      .fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+      .fields div { font-size: 13px; }
+      .fields b { display: block; color: #f2f3f5; font-size: 12px; }
+      .embed .frame { border-radius: 4px; box-shadow: none; }
+      .embed .f { font-size: 11px; color: #949ba4; margin-top: 8px; }
+
+      /* ---------- copy section ---------- */
+      .copy { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+      @media (max-width: 860px) { .copy { grid-template-columns: 1fr; } }
+      .box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+      .box.before { opacity: .9; }
+      .box .k { font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; display: flex; justify-content: space-between; }
+      .box.after .k { color: var(--accent); }
+      .box pre { margin: 0; white-space: pre-wrap; font-family: var(--font-body); font-size: .92rem; line-height: 1.55; color: var(--text); }
+      .issues { margin: 10px 0 0; padding-left: 18px; color: var(--text-2); font-size: .85rem; }
+      .issues li { margin: 3px 0; }
+      .chars { font-family: var(--font-mono); font-size: .7rem; color: var(--muted); }
+      .topics { display: grid; gap: 10px; }
+      .topic { display: grid; grid-template-columns: 150px 1fr; gap: 12px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; font-size: .9rem; }
+      .topic code { font-family: var(--font-mono); color: var(--accent); }
+      @media (max-width: 600px) { .topic { grid-template-columns: 1fr; gap: 4px; } }
+      .dc-md { background: #313338; color: #dbdee1; border-radius: 12px; padding: 18px 20px; font-family: "gg sans", "Noto Sans", "Segoe UI", sans-serif; font-size: .92rem; }
+      .dc-md h4 { font-size: 1.35rem; color: #f2f3f5; margin: 0 0 6px; }
+      .dc-md h5 { font-size: 1.05rem; color: #f2f3f5; margin: 16px 0 4px; }
+      .dc-md p, .dc-md ul { margin: 4px 0; }
+      .dc-md ul { padding-left: 20px; }
+      .dc-md .ch { background: rgba(88,101,242,.3); color: #c9cdfb; padding: 0 3px; border-radius: 3px; }
+      .dc-md small { color: #949ba4; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Weekly recap and channel copy</h1>
+      <p class="lede">
+        One recap image, posted every Monday to X, Telegram and Discord, plus rewritten
+        descriptions and pinned posts for each channel. Pick a card (A or B) and the copy you like.
+      </p>
+      <span class="sample">SAMPLE NUMBERS · real ones come from alert_outcomes</span>
+
+      <!-- ================= RECAP CARD ================= -->
+      <h2>1 · The recap card</h2>
+      <p class="note">1200 × 675 (16:9), so X, Telegram and Discord all show it uncropped. Misses are on the card on purpose: they're what makes the hits believable.</p>
+
+      <div class="variants">
+        <div>
+          <div class="variant-h"><strong>A · Scoreboard</strong><span>One big number, a day strip, three best calls and the worst miss. Easiest to read on a phone.</span></div>
+          <div class="frame"><div class="card" id="cardA">
+            <div class="c-top">
+              <div class="brand"><img src="../src/assets/kalchas-mark.png" alt="" /><span>KALCHAS</span></div>
+              <div class="week"><b>WEEK 44</b> · 26 OCT – 1 NOV</div>
+            </div>
+            <div class="c-body">
+              <div>
+                <div class="label">Signals that found a goal</div>
+                <div class="big">61<em>%</em></div>
+                <div class="sub">34 of 56 <span>· 22 missed · 2 void</span></div>
+                <div class="days" id="dayStrip"></div>
+              </div>
+              <div class="calls">
+                <div class="label">Best calls</div>
+                <div class="call"><div class="m">FAR Rabat v IR Tanger</div><div class="t">76′ <i>→</i> 81′ <span class="emoji">⚽</span></div><div class="l">Botola Pro · Form Bar</div></div>
+                <div class="call"><div class="m">Groningen v FC Emmen</div><div class="t">69′ <i>→</i> 72′ <span class="emoji">⚽</span></div><div class="l">KNVB Beker · Form Bar</div></div>
+                <div class="call"><div class="m">Omonia 29th May v Nea Salamis</div><div class="t">74′ <i>→</i> 78′ <span class="emoji">⚽</span></div><div class="l">1. Division · Form Bar</div></div>
+                <div class="label" style="margin-top:6px">Toughest miss</div>
+                <div class="call miss"><div class="m">Kozakken Boys v Utrecht</div><div class="t">75′ ✗</div><div class="l">KNVB Beker · no goal by full time</div></div>
+              </div>
+            </div>
+            <div class="c-foot"><span>Every signal posted live, with its result</span><b>kalchas.live</b></div>
+          </div></div>
+        </div>
+
+        <div>
+          <div class="variant-h"><strong>B · Ledger</strong><span>Every signal of the week as a tile, plus hit rate by strategy. Looks more like hard data, and suits bettors who like stats.</span></div>
+          <div class="frame"><div class="card" id="cardB">
+            <div class="c-top">
+              <div class="brand"><img src="../src/assets/kalchas-mark.png" alt="" /><span>KALCHAS</span></div>
+              <div class="week"><b>WEEK 44</b> · 26 OCT – 1 NOV</div>
+            </div>
+            <div class="b-body">
+              <div>
+                <div class="label">Hit rate</div>
+                <div class="big">61<em>%</em></div>
+                <div class="sub">34 of 56 <span>signals</span></div>
+                <div class="strat">
+                  <div class="bar">Form Bar<span>22 / 35 · 63%</span><div class="track"><i style="width:63%"></i></div></div>
+                  <div class="bar">InPlay Pressure<span>12 / 21 · 57%</span><div class="track"><i style="width:57%"></i></div></div>
+                </div>
+              </div>
+              <div>
+                <div class="label" style="margin-bottom:14px">Every signal this week</div>
+                <div class="grid-days" id="ledger"></div>
+                <div class="legend"><span><i style="background:var(--accent)"></i>Goal</span><span><i style="background:#142130;box-shadow:inset 0 0 0 1px var(--miss)"></i>No goal</span><span><i style="border:1.5px dashed var(--muted)"></i>Void</span></div>
+              </div>
+            </div>
+            <div class="c-foot"><span>Free signals on Telegram · Live board</span><b>kalchas.live</b></div>
+          </div></div>
+        </div>
+      </div>
+
+      <!-- ================= PLATFORMS ================= -->
+      <h2>2 · How it lands on each platform</h2>
+      <p class="note">Same image everywhere. The text around it is shaped to each platform: X is short with the link in a reply (X shows posts with links to fewer people), Telegram gets a full caption, Discord gets an embed with fields.</p>
+
+      <div class="platforms">
+        <div>
+          <div class="pf-label">X · post + first reply</div>
+          <div class="x">
+            <div class="x-head"><img src="../src/assets/kalchas-mark.png" alt="" /><div><b>Kalchas</b> <span>@kalchas · 1m</span></div></div>
+            <div class="x-text">Week 44 results
+
+56 live goal signals
+34 found a goal · 61%
+22 missed · 2 void
+
+Best call: FAR Rabat v IR Tanger
+Fired 76′, goal 81′ ⚽
+
+Every signal, hit or miss, posted live.</div>
+            <div class="frame mini"><div class="card" data-clone="cardA"></div></div>
+            <div class="x-reply">
+              <div class="x-head"><img src="../src/assets/kalchas-mark.png" alt="" /><div><b>Kalchas</b> <span>@kalchas · 1m</span></div></div>
+              <div class="x-text">Free signals on Telegram 👉 <a>t.me/Kalchas_Tips_Free</a>
+Live board 👉 <a>kalchas.live</a></div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="pf-label">Telegram · photo + caption</div>
+          <div class="tg">
+            <div class="tg-msg">
+              <div class="frame mini"><div class="card" data-clone="cardA"></div></div>
+              <div class="tg-cap"><b>📊 Week 44 results</b> · 26 Oct – 1 Nov
+
+<b>34 of 56</b> signals found a goal · <b>61%</b>
+22 missed · 2 void (the other side scored)
+
+<b>Best calls</b>
+⚽ FAR Rabat v IR Tanger · 76′ → 81′
+⚽ Groningen v FC Emmen · 69′ → 72′
+⚽ Omonia 29th May v Nea Salamis · 74′ → 78′
+
+<b>Toughest miss</b>
+✗ Kozakken Boys v Utrecht · 75′, no goal
+
+<blockquote>Free channel this week: 13 of 21 · 62%</blockquote>📈 Live board: <a>kalchas.live</a>
+⚡ Every signal, every day: <a>im.page/kalchas</a></div>
+              <div class="tg-meta">09:00</div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="pf-label">Discord · embed in #weekly-results</div>
+          <div class="dc">
+            <div class="dc-head"><img src="../src/assets/kalchas-mark.png" alt="" /><b>Kalchas</b><span class="tag">APP</span><span>Today at 09:00</span></div>
+            <div class="embed">
+              <div class="t">📊 Week 44 results · 26 Oct – 1 Nov</div>
+              <div class="d">34 of 56 signals found a goal. 22 missed, 2 void.
+Best call: **FAR Rabat v IR Tanger**, 76′ → 81′ ⚽</div>
+              <div class="fields">
+                <div><b>Hit rate</b>61%</div>
+                <div><b>Signals</b>56</div>
+                <div><b>Free channel</b>13 / 21</div>
+                <div><b>Form Bar</b>22 / 35</div>
+                <div><b>InPlay Pressure</b>12 / 21</div>
+                <div><b>Void</b>2</div>
+              </div>
+              <div class="frame mini"><div class="card" data-clone="cardA"></div></div>
+              <div class="f">kalchas.live · every signal posted live with its result</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= COPY ================= -->
+      <h2>3 · Telegram channel</h2>
+
+      <h3>Name</h3>
+      <div class="copy">
+        <div class="box before"><div class="k">Now</div><pre>Kalchas Football Signals (free)</pre></div>
+        <div class="box after"><div class="k">Suggested</div><pre>Kalchas · Live Goal Signals (Free)</pre>
+          <ul class="issues"><li>"Goal signals" says what you get. "Football signals" could mean anything.</li></ul></div>
+      </div>
+
+      <h3>Description <span class="chars">(255-character limit)</span></h3>
+      <div class="copy">
+        <div class="box before"><div class="k">Now</div><pre>Free football analytics. Unlimited alerts until 1.1.2027(Then weekdays 1 per hour.Upgrade for every alert.)</pre>
+          <ul class="issues">
+            <li>Missing spaces after "2027" and "hour."; the bracket runs into the sentence.</li>
+            <li>"Free football analytics" doesn't say what a signal is or why to trust it.</li>
+            <li>"1.1.2027" reads like a version number.</li>
+            <li>"Weekdays" is wrong: the free limit applies Mon–Thu, and Friday is excluded.</li>
+            <li>No link to the site, no 18+ notice.</li>
+          </ul></div>
+        <div class="box after"><div class="k">Suggested <span class="chars">≈ 225 chars</span></div><pre>Live in-play goal signals from match-pressure data ⚽
+Every signal is posted with its result: goals and misses.
+All signals free until 1 Jan 2027, then 1 an hour, Mon–Thu.
+Live board: kalchas.live
+18+ · Stats, not guarantees.</pre></div>
+      </div>
+
+      <h3>Pinned welcome post <span class="chars">(there isn't one yet: new visitors land on a raw signal full of SOT / SOFFT / DA)</span></h3>
+      <div class="copy">
+        <div class="tg"><div class="tg-msg"><div class="tg-cap">👋 <b>Welcome to Kalchas</b>
+Kalchas watches live matches and posts a signal when one team's pressure says a goal is due.
+
+<b>How to read a signal</b>
+• <b>Form Bar</b>: goals this team's recent form expects, that haven't come yet
+• <b>SOT / SOFFT</b>: shots on / off target
+• <b>DA</b>: dangerous attacks
+• <b>Bold</b> number = the side ahead on that stat
+
+<b>What happens next</b>
+A goal gets a reply under the signal: ⚽ <b>GOAL at 81′</b>. A miss gets a 😢.
+Every Monday: last week's results, misses included.
+
+<b>Free vs full feed</b>
+🆓 Here: every signal until 1 Jan 2027, then 1 an hour, Mon–Thu
+⚡ Full feed: every signal, every day · €2.99/week → <a>im.page/kalchas</a>
+
+📈 Live board: <a>kalchas.live</a>
+💬 Questions? Discord: <a>discord.gg/…</a>
+
+<i>18+. Only stake what you can afford to lose. Signals are statistics, not betting advice.</i></div><div class="tg-meta">📌 pinned</div></div></div>
+        <div class="box"><div class="k">Why this order</div>
+          <ul class="issues">
+            <li><b>What it is</b> in one line, before anything else.</li>
+            <li><b>A glossary</b>, because every signal uses abbreviations a casual bettor won't know.</li>
+            <li><b>The outcome reply</b> is your trust hook. Only promise "nothing gets deleted" once the channel's one-month auto-delete is off.</li>
+            <li><b>Free vs paid</b> stated once, calmly, with the price. Then you never need to hard-sell in the signals themselves.</li>
+            <li>Ends with the responsible-gambling line, as most countries expect.</li>
+          </ul></div>
+      </div>
+
+      <h2>4 · Discord server</h2>
+      <p class="note">I can't see your current Discord text from outside the server. Paste it in and I'll mark it up like the Telegram "Now" boxes. This is a fresh version.</p>
+
+      <h3>Server description <span class="chars">(shown on invites)</span></h3>
+      <div class="copy">
+        <div class="box before"><div class="k">Now</div><pre style="color:var(--muted)">Paste yours here</pre></div>
+        <div class="box after"><div class="k">Suggested</div><pre>Live in-play football goal signals, every result posted, hit or miss. Free alerts and a live board at kalchas.live.</pre></div>
+      </div>
+
+      <h3>#start-here (pinned, read-only)</h3>
+      <div class="dc-md">
+        <h4>Welcome to Kalchas ⚽</h4>
+        <p>Kalchas watches live matches and posts a signal when one team's pressure says a goal is due. Goals get a reply under the signal, misses get a 😢.</p>
+        <h5>Where things are</h5>
+        <ul>
+          <li><span class="ch"># free-signals</span>: live signals as they fire</li>
+          <li><span class="ch"># weekly-results</span>: Monday recap, misses included</li>
+          <li><span class="ch"># chat</span>: talk matches, ask how a signal works</li>
+          <li><span class="ch"># full-feed</span>: every signal, every day (members)</li>
+        </ul>
+        <h5>Reading a signal</h5>
+        <p><b>Form Bar</b>: goals a team's recent form expects that haven't come yet · <b>SOT / SOFFT</b>: shots on / off target · <b>DA</b>: dangerous attacks</p>
+        <h5>Full feed</h5>
+        <p>€2.99/week → im.page/kalchas. Your role is added automatically.</p>
+        <p><small>18+. Only stake what you can afford to lose. Signals are statistics, not betting advice.</small></p>
+      </div>
+
+      <h3>Channel topics</h3>
+      <div class="topics">
+        <div class="topic"><code>#free-signals</code><span>Live goal signals as they fire. Goals get a ⚽ reply, misses a 😢. Free: every signal until 1 Jan 2027, then 1 an hour, Mon–Thu.</span></div>
+        <div class="topic"><code>#weekly-results</code><span>Every Monday: last week's hit rate, best calls and misses.</span></div>
+        <div class="topic"><code>#full-feed</code><span>Every signal, every day. Unlock for €2.99/week → im.page/kalchas</span></div>
+        <div class="topic"><code>#chat</code><span>Talk matches, ask how a signal works. No bookmaker links, no tipster promo.</span></div>
+      </div>
+
+      <h2>5 · X profile</h2>
+      <div class="copy">
+        <div class="box before"><div class="k">Now</div><pre style="color:var(--muted)">Paste yours here</pre></div>
+        <div class="box after"><div class="k">Suggested bio <span class="chars">≈ 125 / 160</span></div><pre>Live football goal signals from in-play pressure data. Every call posted with its result, hit or miss. Free alerts 👇 · 18+</pre>
+          <ul class="issues"><li>Link field: kalchas.live (the board links to Telegram)</li><li>Pin the latest weekly recap post to your profile.</li></ul></div>
+      </div>
+    </div>
+
+    <script>
+      // sample week: [goals, misses, voids] per day, Mon..Sun (sums: 34 / 22 / 2)
+      const week = [["Mon", 7, 4, 0], ["Tue", 5, 4, 0], ["Wed", 6, 2, 1], ["Thu", 4, 3, 0], ["Fri", 3, 3, 0], ["Sat", 5, 4, 1], ["Sun", 4, 2, 0]];
+
+      const strip = document.getElementById("dayStrip");
+      for (const [d, g, m] of week) {
+        const dots = Array.from({ length: g }, () => '<i class="dot"></i>').join("") +
+          Array.from({ length: m }, () => '<i class="dot m"></i>').join("");
+        strip.insertAdjacentHTML("beforeend", `<div class="day"><div class="dots">${dots}</div><small>${d}</small></div>`);
+      }
+
+      const ledger = document.getElementById("ledger");
+      for (const [d, g, m, v] of week) {
+        const order = [...Array(g).fill(""), ...Array(m).fill("m"), ...Array(v).fill("v")];
+        // seeded shuffle so a day reads like a timeline, not a sorted bar
+        let seed = d.charCodeAt(0) * 31 + d.charCodeAt(1);
+        for (let i = order.length - 1; i > 0; i--) {
+          seed = (seed * 1103515245 + 12345) % 2147483648;
+          const j = seed % (i + 1);
+          [order[i], order[j]] = [order[j], order[i]];
+        }
+        const tiles = order.map((c) => `<i class="tile ${c}"></i>`).join("");
+        ledger.insertAdjacentHTML("beforeend", `<div class="gd"><small>${d}</small><div class="tiles">${tiles}</div><div class="r">${g}/${g + m}</div></div>`);
+      }
+
+      for (const el of document.querySelectorAll("[data-clone]")) {
+        el.innerHTML = document.getElementById(el.dataset.clone).innerHTML;
+      }
+
+      const fit = () => {
+        for (const f of document.querySelectorAll(".frame")) f.style.setProperty("--s", f.clientWidth / 1200);
+      };
+      new ResizeObserver(fit).observe(document.body);
+      fit();
+    </script>
+  </body>
+</html>

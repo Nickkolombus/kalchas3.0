@@ -239,8 +239,60 @@ def test_admin_fire_thresholds_silence_alerts_below_the_bar() -> None:
 
 
 def test_live_home_away_odds_reads_nested_live() -> None:
-    assert live_home_away_odds({"live": {"home": 2.1, "away": 3.4}}) == (2.1, 3.4)
-    assert live_home_away_odds({"kickoff": {"home": 1.5, "away": 6.0}}) == (None, None)
+    from datetime import UTC, datetime
+
+    now = datetime(2026, 11, 3, 21, 24, 10, tzinfo=UTC)
+    fresh = {"home": 2.1, "away": 3.4, "fetched_at": "2026-11-03T21:23:20+00:00"}
+    assert live_home_away_odds({"live": fresh}, now=now) == (2.1, 3.4)
+    assert live_home_away_odds({"kickoff": {"home": 1.5, "away": 6.0}}, now=now) == (None, None)
+
+
+def test_live_home_away_odds_ignores_unstamped_and_stale_lines() -> None:
+    """Alert 11689 (68', 0-0) carried 11 / 1.055 / 17 from minutes earlier.
+
+    A line with no fetch stamp, or one fetched more than a few minutes ago,
+    must not reach the ``live_odds`` condition metric.
+    """
+    from datetime import UTC, datetime
+
+    now = datetime(2026, 11, 3, 21, 24, 10, tzinfo=UTC)
+    unstamped = {"live": {"home": 11.0, "draw": 1.055, "away": 17.0}}
+    stale = {
+        "live": {"home": 11.0, "draw": 1.055, "away": 17.0, "fetched_at": "2026-11-03T21:10:00Z"}
+    }
+    garbled = {"live": {"home": 11.0, "draw": 1.055, "away": 17.0, "fetched_at": "68'"}}
+    assert live_home_away_odds(unstamped, now=now) == (None, None)
+    assert live_home_away_odds(stale, now=now) == (None, None)
+    assert live_home_away_odds(garbled, now=now) == (None, None)
+
+
+def test_stale_live_odds_fail_a_live_odds_condition_instead_of_passing_it() -> None:
+    """A ``live_odds`` gate sees no value (and so blocks) once the line is old."""
+    from datetime import UTC, datetime
+
+    from kalchas_core.conditions import ConditionMatch, passes_extra_conditions
+    from kalchas_core.match import Side
+
+    now = datetime(2026, 11, 3, 21, 24, 10, tzinfo=UTC)
+    rows = [
+        {
+            "left_scope": "triggering",
+            "left_metric": "live_odds",
+            "operator": ">=",
+            "right_kind": "value",
+            "right_value": 5,
+        }
+    ]
+    stale = {
+        "live": {"home": 11.0, "draw": 1.055, "away": 17.0, "fetched_at": "2026-11-03T21:00:00Z"}
+    }
+    fresh = {
+        "live": {"home": 11.0, "draw": 1.055, "away": 17.0, "fetched_at": "2026-11-03T21:24:00Z"}
+    }
+    for record, expected in ((stale, False), (fresh, True)):
+        live_home, _live_away = live_home_away_odds(record, now=now)
+        match = ConditionMatch(home={"live_odds": live_home}, away={}, favourite=None)
+        assert passes_extra_conditions(rows, match, Side.HOME) is expected
 
 
 def test_extra_phi_condition_blocks_delta5_alert_and_board_fire() -> None:

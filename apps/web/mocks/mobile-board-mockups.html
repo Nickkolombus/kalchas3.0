@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mobile board</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Sora:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #071018;
+        --surface: #0c1520;
+        --border: rgba(232, 220, 196, 0.1);
+        --text: #f2ebe0;
+        --text-2: #b7b0a3;
+        --muted: #7d776c;
+        --accent: #3dd6c6;
+        --pin-rgb: 203, 184, 146;
+        --trig: #f97316;
+        --k: #e4c56a;
+        --cream: #f3ead2;
+        --display: "Fraunces", Georgia, serif;
+        --font: "Sora", sans-serif;
+        --mono: "IBM Plex Mono", ui-monospace, monospace;
+        /* signal tones, from app.css */
+        --t-urg: #5eead4;   --t-urg-bg: 45, 212, 191;
+        --t-d5: #fdba74;    --t-d5-bg: 249, 115, 22;
+        --t-d10: #fde68a;   --t-d10-bg: 234, 179, 8;
+        --t-lbar: #7dd3fc;  --t-lbar-bg: 14, 165, 233;
+        --t-phi: #93c5fd;   --t-phi-bg: 59, 130, 246;
+        --t-tslg: #94a3b8;  --t-tslg-bg: 148, 163, 184;
+        --t-k-bg: 228, 197, 106;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: var(--font);
+        background:
+          radial-gradient(900px 480px at 12% -8%, rgba(61, 214, 198, 0.12), transparent 55%),
+          radial-gradient(700px 420px at 100% 0%, rgba(242, 235, 224, 0.05), transparent 50%),
+          var(--bg);
+      }
+      main { max-width: 1320px; margin: 0 auto; padding: 2.2rem 16px 4rem; }
+      .kicker {
+        margin: 0 0 0.35rem;
+        font-size: 0.68rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      h1 { margin: 0; font-family: var(--display); font-size: 1.75rem; font-weight: 650; letter-spacing: -0.01em; }
+      .lead { max-width: 52rem; margin: 0.7rem 0 0; color: var(--text-2); font-size: 0.92rem; line-height: 1.55; }
+
+      .brief { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin-top: 1.6rem; }
+      .brief > div { border: 1px solid var(--border); border-radius: 0.6rem; padding: 0.9rem 1rem; background: rgba(12, 21, 32, 0.6); }
+      .brief h3 { margin: 0 0 0.5rem; font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+      .brief ul { margin: 0; padding-left: 1.05rem; color: var(--text-2); font-size: 0.82rem; line-height: 1.55; }
+      .brief li + li { margin-top: 0.25rem; }
+      .brief b { color: var(--text); font-weight: 500; }
+
+      section.opt { margin-top: 3rem; }
+      .opt-head { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+      .opt-head h2 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+      .opt-head .letter { font-family: var(--display); font-size: 1.4rem; color: var(--accent); }
+      .tag {
+        font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase;
+        padding: 0.18rem 0.45rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted);
+      }
+      .tag.pick { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+      .opt-body { display: flex; gap: 1.6rem; flex-wrap: wrap; align-items: flex-start; margin-top: 0.9rem; }
+      .opt-notes { flex: 1 1 260px; max-width: 340px; color: var(--text-2); font-size: 0.84rem; line-height: 1.55; }
+      .opt-notes p { margin: 0 0 0.8rem; }
+      .opt-notes h4 { margin: 1rem 0 0.35rem; font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+      .opt-notes ul { margin: 0; padding-left: 1.05rem; }
+      .opt-notes li + li { margin-top: 0.2rem; }
+      .opt-notes .igb li::marker { color: var(--accent); }
+      .opt-notes .cost li::marker { color: var(--trig); }
+      .fig { display: flex; flex-direction: column; gap: 0.45rem; align-items: center; }
+      .fig figcaption { font-family: var(--mono); font-size: 0.66rem; color: var(--muted); letter-spacing: 0.06em; }
+
+      /* ---------- phone frame ---------- */
+      .phone {
+        position: relative;
+        width: 390px;
+        height: 844px;
+        box-sizing: content-box;
+        border: 9px solid #18212c;
+        border-radius: 44px;
+        overflow: hidden;
+        background: var(--bg);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 30px 60px rgba(0, 0, 0, 0.45);
+        font-size: 14px;
+      }
+      .screen { position: absolute; inset: 0; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+      .screen::-webkit-scrollbar { display: none; }
+      .screen > * { flex-shrink: 0; }
+      .status { height: 26px; display: flex; justify-content: space-between; align-items: center; padding: 0 22px; font-size: 0.68rem; font-weight: 600; color: var(--text); }
+
+      /* shared top bar */
+      .tb {
+        position: sticky; top: 0; z-index: 6;
+        display: flex; align-items: center; gap: 0.5rem;
+        padding: 0.45rem 0.75rem 0.5rem;
+        background: rgba(7, 16, 24, 0.94);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--border);
+      }
+      .tb img { width: 28px; height: 28px; border-radius: 50%; }
+      .tb .name { font-family: var(--display); font-weight: 650; font-size: 1.02rem; letter-spacing: 0.01em; }
+      .chip-live {
+        display: inline-flex; align-items: center; gap: 0.3rem;
+        padding: 0.1rem 0.4rem; border-radius: 999px; border: 1px solid rgba(61, 214, 198, 0.4);
+        color: var(--accent); font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.08em;
+      }
+      .chip-live i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+      .tb .sp { flex: 1; }
+      .tb .here { font-family: var(--mono); font-size: 0.6rem; color: var(--muted); }
+      .tb .join {
+        padding: 0.32rem 0.6rem; border-radius: 999px; background: var(--cream); color: #0b1c33;
+        font-size: 0.68rem; font-weight: 600; white-space: nowrap;
+      }
+
+      .flag { width: 14px; height: 10px; border-radius: 1.5px; object-fit: cover; display: block; box-shadow: 0 0 0 1px rgba(0,0,0,0.3); }
+
+      /* values */
+      .v { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 0.7rem; color: #faf6f0; line-height: 1; }
+      .v.s1 { color: #918e86; }
+      .v.s2 { color: #6f6a62; }
+      .v.done { color: #6f6a62; font-size: 0.6rem; letter-spacing: 0.02em; }
+      .v.trig { color: var(--trig); font-weight: 700; }
+
+      /* bottom nav */
+      .bn {
+        position: sticky; bottom: 0; z-index: 8; margin-top: auto;
+        display: grid; grid-template-columns: repeat(4, 1fr);
+        padding: 0.4rem 0.4rem 1.1rem;
+        background: #09121b;
+        border-top: 1px solid var(--border);
+      }
+      .bn a { display: flex; flex-direction: column; align-items: center; gap: 0.18rem; padding: 0.3rem 0; border-radius: 0.6rem; color: var(--muted); font-size: 0.62rem; text-decoration: none; }
+      .bn a svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+      .bn a.on { color: var(--accent); background: rgba(61, 214, 198, 0.08); }
+      .bn a .n { font-family: var(--mono); font-size: 0.56rem; padding: 0 0.3rem; border-radius: 999px; background: rgba(61, 214, 198, 0.16); color: var(--accent); margin-left: 0.2rem; }
+      .bn a.join-tab { color: var(--cream); }
+
+      /* ======================= A: lens table ======================= */
+      .a-sig {
+        display: flex; align-items: center; gap: 0.5rem;
+        padding: 0.45rem 0.75rem; border-bottom: 1px solid var(--border);
+        font-size: 0.7rem; color: var(--text-2);
+        background: linear-gradient(90deg, rgba(61, 214, 198, 0.08), transparent 70%);
+      }
+      .a-sig .k { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.12em; color: var(--accent); text-transform: uppercase; }
+      .a-sig .t { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .a-sig .t b { color: var(--text); font-weight: 500; }
+      .a-sig .more { font-family: var(--mono); font-size: 0.6rem; color: var(--muted); }
+      .a-ctl {
+        position: sticky; top: 45px; z-index: 5;
+        display: flex; align-items: center; gap: 0.4rem;
+        padding: 0.5rem 0.6rem 0.45rem;
+        background: rgba(7, 16, 24, 0.96);
+      }
+      .seg { display: flex; flex: 1; padding: 3px; border-radius: 0.55rem; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); }
+      .seg button {
+        flex: 1; border: 0; background: transparent; color: var(--muted); font: 500 0.7rem var(--font);
+        padding: 0.36rem 0; border-radius: 0.4rem; cursor: pointer;
+      }
+      .seg button.on { background: #13202d; color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,0.05), 0 2px 6px rgba(0,0,0,0.3); }
+      .icon-btn {
+        display: inline-flex; align-items: center; gap: 0.3rem;
+        height: 32px; padding: 0 0.55rem; border-radius: 0.55rem; border: 1px solid var(--border);
+        color: var(--text-2); font-size: 0.68rem; background: rgba(255,255,255,0.03);
+      }
+      .icon-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+      .icon-btn .n { font-family: var(--mono); font-size: 0.58rem; color: var(--bg); background: var(--accent); border-radius: 999px; padding: 0 0.28rem; }
+
+      .lt { --mcol: 160px; }
+      .lt-head, .lt-row { display: grid; grid-template-columns: var(--mcol) repeat(var(--n), 1fr); }
+      .lt-head {
+        position: sticky; top: 92px; z-index: 4;
+        background: #0a141e; border-bottom: 1px solid var(--border); border-top: 1px solid var(--border);
+      }
+      .lt-head > div {
+        font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.03em; color: var(--muted);
+        padding: 0.42rem 0; text-align: center; white-space: nowrap;
+      }
+      .lt-head > div:first-child { text-align: left; padding-left: 0.7rem; }
+      .lt-head > div.sorted::after { content: " ↓"; }
+      .lt-row { border-bottom: 1px solid var(--border); min-height: 46px; }
+      .lt-row:nth-child(even) { background: rgba(255, 255, 255, 0.035); }
+      .lt-row > div { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 0.36rem; }
+      .lt-row .mc {
+        display: grid; grid-template-columns: 30px 13px minmax(0, 1fr); align-items: center; min-width: 0; column-gap: 0.3rem;
+        padding: 0.35rem 0.3rem 0.35rem 0.55rem;
+        position: sticky; left: 0;
+      }
+      .mc .when { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; }
+      .mc .min { font-family: var(--mono); font-size: 0.6rem; color: var(--accent); white-space: nowrap; letter-spacing: -0.02em; }
+      .mc .sc, .mc .tn { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+      .mc .sc span { font-family: var(--mono); font-size: 0.74rem; font-weight: 500; text-align: center; line-height: 1; }
+      .mc .tn span { font-size: 0.72rem; font-weight: 500; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .lt-row .kc { font-family: var(--display); font-weight: 650; font-size: 1rem; color: var(--k); }
+      .lt-row .kc.s1 { color: #918e86; } .lt-row .kc.s2 { color: #6f6a62; }
+      /* tinted columns, matching the desktop tones */
+      .lt [data-t] { background: rgba(var(--tb), 0.07); }
+      .lt .lt-row:nth-child(even) [data-t] { background: rgba(var(--tb), 0.12); }
+      .lt-head [data-t] { color: var(--tc); background: rgba(var(--tb), 0.12); }
+      [data-t="k"] { --tc: var(--k); --tb: var(--t-k-bg); }
+      [data-t="urg"] { --tc: var(--t-urg); --tb: var(--t-urg-bg); }
+      [data-t="d5"] { --tc: var(--t-d5); --tb: var(--t-d5-bg); }
+      [data-t="d10"] { --tc: var(--t-d10); --tb: var(--t-d10-bg); }
+      [data-t="lbar"] { --tc: var(--t-lbar); --tb: var(--t-lbar-bg); }
+      [data-t="phi"] { --tc: var(--t-phi); --tb: var(--t-phi-bg); }
+      [data-t="tslg"] { --tc: var(--t-tslg); --tb: var(--t-tslg-bg); }
+      .lt .odds-cell { flex-direction: row !important; gap: 0.5rem !important; }
+      .lt .odds-cell .v { width: 2.2rem; text-align: center; }
+      .lt-row .ko { font-size: 0.6rem; color: var(--muted); }
+      .lt-row .stack-pair { display: flex; flex-direction: column; gap: 0.36rem; align-items: center; }
+      /* pinned shelf */
+      .pin-cap {
+        padding: 0.4rem 0.75rem 0.32rem; font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.14em; text-transform: uppercase;
+        color: rgb(var(--pin-rgb)); border-bottom: 1px solid rgba(var(--pin-rgb), 0.14);
+        background: linear-gradient(90deg, rgba(var(--pin-rgb), 0.09), rgba(var(--pin-rgb), 0) 50%);
+        box-shadow: inset 3px 0 0 rgba(var(--pin-rgb), 0.9);
+      }
+      .pin-cap em { font-style: normal; color: var(--muted); letter-spacing: 0.06em; text-transform: none; margin-left: 0.4rem; }
+      .is-pin { box-shadow: inset 3px 0 0 rgba(var(--pin-rgb), 0.9); background-image: linear-gradient(90deg, rgba(var(--pin-rgb), 0.13), rgba(var(--pin-rgb), 0) 55%) !important; border-bottom-color: rgba(var(--pin-rgb), 0.38) !important; }
+      .is-hot { background-color: rgba(61, 214, 198, 0.05); }
+
+      /* A filter sheet */
+      .sheet-full { position: absolute; inset: 0; z-index: 20; background: #0a131c; display: flex; flex-direction: column; }
+      .sheet-full header { display: flex; align-items: center; justify-content: space-between; padding: 0.9rem 1rem 0.75rem; border-bottom: 1px solid var(--border); }
+      .sheet-full header h3 { margin: 0; font-family: var(--display); font-size: 1.15rem; font-weight: 650; }
+      .sheet-full header .x { font-size: 1.2rem; color: var(--muted); }
+      .sheet-body { flex: 1; overflow: auto; padding: 0.9rem 1rem 1rem; }
+      .funnel {
+        display: flex; align-items: center; gap: 0.9rem; padding: 0.8rem 0.9rem; border-radius: 0.7rem;
+        border: 1px solid rgba(61, 214, 198, 0.25); background: rgba(61, 214, 198, 0.06);
+      }
+      .funnel .big { font-family: var(--display); font-size: 1.9rem; font-weight: 650; color: var(--accent); line-height: 1; }
+      .funnel .of { font-size: 0.72rem; color: var(--text-2); line-height: 1.4; }
+      .funnel .of b { color: var(--text); font-weight: 500; }
+      .funnel .clr { margin-left: auto; font-size: 0.66rem; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0.25rem 0.55rem; }
+      .grp { margin-top: 1.1rem; }
+      .grp h5 { margin: 0 0 0.3rem; font-family: var(--mono); font-size: 0.58rem; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+      .tgl { display: flex; align-items: center; gap: 0.7rem; padding: 0.62rem 0; border-bottom: 1px solid var(--border); }
+      .tgl .lbl { flex: 1; font-size: 0.8rem; }
+      .tgl .lbl small { display: block; margin-top: 0.15rem; font-size: 0.66rem; color: var(--muted); }
+      .tgl .cut { font-family: var(--mono); font-size: 0.6rem; color: var(--muted); }
+      .sw { width: 34px; height: 20px; border-radius: 999px; background: rgba(255,255,255,0.12); position: relative; flex: none; }
+      .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #b7b0a3; }
+      .sw.on { background: rgba(61, 214, 198, 0.55); }
+      .sw.on::after { left: 17px; background: #eafffb; }
+      .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+      .chips span { padding: 0.32rem 0.6rem; border-radius: 999px; border: 1px solid var(--border); font-size: 0.7rem; color: var(--text-2); }
+      .chips span.on { border-color: rgba(228, 197, 106, 0.6); color: var(--k); background: rgba(228, 197, 106, 0.08); }
+      .search-in { display: flex; align-items: center; gap: 0.5rem; padding: 0.55rem 0.7rem; border-radius: 0.6rem; border: 1px solid var(--border); color: var(--muted); font-size: 0.76rem; margin-top: 0.4rem; }
+      .sheet-cta { padding: 0.7rem 1rem 1.3rem; border-top: 1px solid var(--border); background: #0a131c; }
+      .sheet-cta div { text-align: center; padding: 0.75rem; border-radius: 0.65rem; background: var(--accent); color: #04211e; font-weight: 600; font-size: 0.86rem; }
+
+      /* ======================= B: signal cards ======================= */
+      .b-chips { display: flex; gap: 0.4rem; overflow-x: auto; padding: 0.55rem 0.7rem; scrollbar-width: none; border-bottom: 1px solid var(--border); position: sticky; top: 45px; z-index: 5; background: rgba(7,16,24,0.96); }
+      .b-chips::-webkit-scrollbar { display: none; }
+      .b-chips span { flex: none; padding: 0.3rem 0.6rem; border-radius: 999px; border: 1px solid var(--border); font-size: 0.68rem; color: var(--text-2); white-space: nowrap; }
+      .b-chips span.on { border-color: rgba(61, 214, 198, 0.45); color: var(--accent); background: rgba(61, 214, 198, 0.08); }
+      .b-chips span.sort { color: var(--k); border-color: rgba(228,197,106,0.45); }
+      .b-sig { margin: 0.6rem 0.7rem 0; display: flex; gap: 0.45rem; overflow-x: auto; scrollbar-width: none; }
+      .b-sig::-webkit-scrollbar { display: none; }
+      .b-sig div { flex: none; width: 210px; padding: 0.5rem 0.6rem; border-radius: 0.6rem; border: 1px solid var(--border); border-left: 2px solid var(--accent); background: rgba(12,21,32,0.9); }
+      .b-sig b { display: block; font-size: 0.72rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .b-sig span { display: block; margin-top: 0.2rem; font-family: var(--mono); font-size: 0.6rem; color: var(--text-2); }
+      .b-sig em { font-style: normal; color: var(--accent); }
+      .b-list { padding: 0.6rem 0.7rem 0; display: flex; flex-direction: column; gap: 0.55rem; }
+      .card { border: 1px solid var(--border); border-radius: 0.8rem; background: rgba(12, 21, 32, 0.85); overflow: hidden; cursor: pointer; }
+      .card.is-pin { border-color: rgba(var(--pin-rgb), 0.45); }
+      .card-top { display: flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.7rem 0; font-family: var(--mono); font-size: 0.58rem; color: var(--muted); letter-spacing: 0.04em; }
+      .card-top .lg { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .card-top .min { color: var(--accent); font-size: 0.64rem; }
+      .card-top .star { color: rgb(var(--pin-rgb)); font-size: 0.8rem; }
+      .card-mid { display: grid; grid-template-columns: 1fr auto 46px; align-items: center; gap: 0.6rem; padding: 0.35rem 0.7rem 0.5rem; }
+      .card-mid .teams div { display: flex; align-items: center; gap: 0.45rem; font-size: 0.86rem; font-weight: 500; line-height: 1.5; }
+      .crest { width: 16px; height: 16px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 0.48rem; font-weight: 600; color: #0b1520; }
+      .card-mid .score { display: flex; flex-direction: column; font-family: var(--display); font-weight: 650; font-size: 1.15rem; line-height: 1.3; text-align: right; }
+      .kbadge { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 46px; border-radius: 0.55rem; background: rgba(228, 197, 106, 0.1); border: 1px solid rgba(228,197,106,0.28); }
+      .kbadge b { font-family: var(--display); font-size: 1.15rem; color: var(--k); line-height: 1; }
+      .kbadge span { font-family: var(--mono); font-size: 0.5rem; color: rgba(228,197,106,0.75); margin-top: 0.15rem; }
+      .strip { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--border); }
+      .strip > div { padding: 0.35rem 0 0.4rem; text-align: center; background: rgba(var(--tb), 0.08); }
+      .strip > div + div { border-left: 1px solid rgba(255,255,255,0.04); }
+      .strip .lab { font-family: var(--mono); font-size: 0.54rem; color: var(--tc); margin-bottom: 0.3rem; }
+      .strip .hv { display: flex; justify-content: center; gap: 0.28rem; }
+      .strip .hv .v { font-size: 0.64rem; }
+      .strip .hv i { font-style: normal; font-family: var(--mono); font-size: 0.5rem; color: var(--muted); }
+      .card-foot { display: flex; gap: 0.75rem; padding: 0.4rem 0.7rem; font-family: var(--mono); font-size: 0.6rem; color: var(--muted); border-top: 1px solid var(--border); }
+      .card-foot b { color: var(--text-2); font-weight: 500; }
+      .card-x { padding: 0.55rem 0.7rem 0.7rem; border-top: 1px solid var(--border); background: rgba(255,255,255,0.02); }
+      .bar { display: grid; grid-template-columns: 26px 1fr 54px 1fr 26px; align-items: center; gap: 0.35rem; margin-top: 0.4rem; font-family: var(--mono); font-size: 0.64rem; }
+      .bar .l { text-align: right; } .bar .r { text-align: left; }
+      .bar .nm { text-align: center; font-size: 0.52rem; letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; }
+      .bar .tr { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.07); position: relative; }
+      .bar .tr i { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+      .bar .tr.h i { right: 0; background: var(--accent); }
+      .bar .tr.a i { left: 0; background: #8b96a3; }
+      .oddsline { display: flex; justify-content: space-between; margin-top: 0.65rem; padding-top: 0.55rem; border-top: 1px dashed var(--border); font-family: var(--mono); font-size: 0.62rem; color: var(--muted); }
+      .oddsline b { color: var(--text); font-weight: 500; margin: 0 0.15rem; }
+      .open-full { margin-top: 0.65rem; text-align: center; padding: 0.5rem; border-radius: 0.55rem; border: 1px solid rgba(61,214,198,0.35); color: var(--accent); font-size: 0.72rem; }
+
+      /* ======================= C: pulse feed ======================= */
+      .c-tabs { display: flex; gap: 1.1rem; padding: 0.55rem 0.9rem 0; border-bottom: 1px solid var(--border); position: sticky; top: 45px; z-index: 5; background: rgba(7,16,24,0.96); }
+      .c-tabs span { padding-bottom: 0.5rem; font-size: 0.74rem; color: var(--muted); border-bottom: 2px solid transparent; }
+      .c-tabs span.on { color: var(--text); border-bottom-color: var(--accent); }
+      .c-tabs span i { font-style: normal; font-family: var(--mono); font-size: 0.6rem; color: var(--muted); margin-left: 0.2rem; }
+      .c-tabs .flt { margin-left: auto; color: var(--text-2); }
+      .c-row { display: grid; grid-template-columns: 42px 1fr auto; gap: 0.6rem; align-items: center; padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--border); cursor: pointer; }
+      .c-row .kk { font-family: var(--display); font-weight: 650; font-size: 1.3rem; color: var(--k); text-align: center; line-height: 1; }
+      .c-row .kk.s1 { color: #a49a7c; } .c-row .kk.s2 { color: #6f6a62; }
+      .c-row .kk small { display: block; font-family: var(--mono); font-size: 0.48rem; color: var(--muted); margin-top: 0.2rem; font-weight: 400; }
+      .c-row .mt { min-width: 0; }
+      .c-row .mt .ln { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; line-height: 1.45; }
+      .c-row .mt .ln .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .c-row .mt .ln b { font-family: var(--mono); font-weight: 500; font-size: 0.78rem; width: 0.9rem; text-align: right; }
+      .c-row .rt { display: flex; flex-direction: column; align-items: flex-end; gap: 0.3rem; min-width: 92px; }
+      .c-row .rt .min { font-family: var(--mono); font-size: 0.62rem; color: var(--accent); }
+      .hot {
+        display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.18rem 0.42rem; border-radius: 0.4rem;
+        font-family: var(--mono); font-size: 0.62rem; color: var(--tc); background: rgba(var(--tb), 0.13); border: 1px solid rgba(var(--tb), 0.3);
+      }
+      .hot.fire { color: #fff3e8; background: rgba(249,115,22,0.22); border-color: rgba(249,115,22,0.7); }
+      .hot i { font-style: normal; opacity: 0.7; font-size: 0.54rem; }
+      .c-row.is-pin { box-shadow: inset 3px 0 0 rgba(var(--pin-rgb), 0.9); }
+      .scrim { position: absolute; inset: 0; z-index: 15; background: rgba(2, 6, 10, 0.6); }
+      .bsheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 16; height: 74%; border-radius: 1.1rem 1.1rem 0 0; background: #0c1621; border-top: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; }
+      .bsheet .grab { width: 38px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.18); margin: 0.5rem auto 0.2rem; }
+      .bs-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 0.5rem; padding: 0.4rem 1rem 0.7rem; border-bottom: 1px solid var(--border); }
+      .bs-head .t { font-size: 0.82rem; font-weight: 600; }
+      .bs-head .t.r { text-align: right; }
+      .bs-head .s { text-align: center; }
+      .bs-head .s b { display: block; font-family: var(--display); font-size: 1.4rem; font-weight: 650; }
+      .bs-head .s span { font-family: var(--mono); font-size: 0.6rem; color: var(--accent); }
+      .bs-body { flex: 1; overflow: auto; padding: 0.3rem 1rem 1rem; }
+      .ledg { padding: 0.6rem 0; border-bottom: 1px solid var(--border); }
+      .ledg .top { display: flex; align-items: baseline; gap: 0.5rem; }
+      .ledg .top b { font-size: 0.76rem; font-weight: 600; color: var(--tc); }
+      .ledg .top span { font-family: var(--mono); font-size: 0.58rem; color: var(--muted); }
+      .ledg p { margin: 0.2rem 0 0.4rem; font-size: 0.66rem; color: var(--muted); line-height: 1.45; }
+      .ledg .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+      .ledg .side { display: flex; align-items: center; gap: 0.45rem; }
+      .ledg .side .nm { font-size: 0.64rem; color: var(--text-2); width: 3.4rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ledg .side .tr { flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.07); position: relative; }
+      .ledg .side .tr i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--tc); opacity: 0.85; }
+      .ledg .side .v { width: 2rem; text-align: right; }
+
+      @media (max-width: 460px) {
+        .phone { width: calc(100vw - 32px - 18px); }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="kicker">kalchas.live · mobile board · 390 × 844</p>
+      <h1>A board that works on a phone</h1>
+      <p class="lead">
+        Three directions for phone widths (≤ 640px). Desktop stays exactly as it is: each option is a
+        mobile-only component behind a media query. Rows are the live board at 16:28 today.
+        Crests are stand-ins.
+      </p>
+
+      <div class="brief">
+        <div>
+          <h3>What breaks today at 390px</h3>
+          <ul>
+            <li>The first match sits <b>632px down</b>. The hero (597px) and Recent signals (243px) fill the first screen.</li>
+            <li>The table is <b>1604px wide</b> in a 369px window. You see star, League, Score and Match. Time, odds, K·idx, all five signals and stats are off-screen.</li>
+            <li>Swipe right and <b>Match scrolls away</b>. The numbers have no team next to them.</li>
+            <li>Six filter checkboxes wrap over three rows. Signal explanations live in hover tips, which a phone can't open.</li>
+            <li>The floating “here now” tile sits on top of the team names.</li>
+            <li>The match overlay works full-screen, with tabs and bars. All three options reuse it for the deep view.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>InPlayGuru at 390px (public /inplay)</h3>
+          <ul>
+            <li>Still a table on phones. Their guide even calls the scanner <b>“optimised for desktop”</b>. What feels right is the chrome around it.</li>
+            <li><b>Time-window switch</b> (Full / 5 / 10 / 15 / 20 min) and <b>saved Layouts</b> change which numbers you see, so the screen never has to show everything.</li>
+            <li><b>Full-screen Filters sheet</b> with a “match funnel” (272 live, 272 make it through) and a sticky <b>“Show 272 matches”</b> button.</li>
+            <li><b>Bottom tab bar</b> with a live-count badge. Controls fold into a 3 × 2 button grid instead of inline checkboxes.</li>
+            <li>Home and away <b>stacked in one cell</b>, plus a momentum sparkline per row.</li>
+            <li>Weak spot: <b>no frozen Match column</b>, same as ours. Logged out, tapping a row only highlights it.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Shared by all three</h3>
+          <ul>
+            <li>A 45px sticky top bar replaces the hero: mark, LIVE, people here, and a cream <b>Join</b> pill. The full pitch moves into the Join tab.</li>
+            <li>Filters move into a sheet. The six checkboxes keep their current defaults.</li>
+            <li>The pinned brass shelf carries over as-is.</li>
+            <li>Tapping a match opens the existing match overlay (Stats / Timeline / H2H / Lineups).</li>
+            <li>A tap opens what hover opens on desktop, so signal explanations are reachable.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ===================== A ===================== -->
+      <section class="opt">
+        <div class="opt-head"><span class="letter">A</span><h2>Lens table</h2><span class="tag pick">recommended</span></div>
+        <div class="opt-body">
+          <div class="opt-notes">
+            <p>
+              Still the board, without the sideways scroll. The match column is frozen, about 160px wide.
+              A three-way <b>lens</b> picks what fills the rest: Signals, Stats or Odds. Every lens fits
+              in 390px. Tap a header to sort. About <b>12 matches per screen</b> on a 390 × 844 phone.
+            </p>
+            <p>Tap the lens buttons in the first phone to switch.</p>
+            <h4>Borrows from InPlayGuru</h4>
+            <ul class="igb">
+              <li>The time-window switch and Layouts idea: one control that changes which columns show.</li>
+              <li>Home over away stacked in each cell.</li>
+              <li>The filters sheet with a live funnel count and a sticky “Show N matches” button.</li>
+              <li>Bottom tab bar with count badges.</li>
+            </ul>
+            <h4>Fixes what they don't</h4>
+            <ul class="igb"><li>The match column never scrolls away.</li></ul>
+            <h4>Costs</h4>
+            <ul class="cost">
+              <li>K·idx and the signals share one screen, but stats sit one tap away.</li>
+              <li>Team names clip around 15 characters.</li>
+            </ul>
+            <h4>Why this one</h4>
+            <p style="margin:0">
+              The board is for comparing one signal down a column and sorting by it. A keeps that.
+              B and C give it up for nicer single matches.
+            </p>
+          </div>
+          <figure class="fig" style="margin:0">
+            <div class="phone"><div class="screen" id="a-main"></div></div>
+            <figcaption>Board · Signals lens</figcaption>
+          </figure>
+          <figure class="fig" style="margin:0">
+            <div class="phone"><div class="screen" id="a-filter"></div></div>
+            <figcaption>Filters sheet</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ===================== B ===================== -->
+      <section class="opt">
+        <div class="opt-head"><span class="letter">B</span><h2>Signal cards</h2><span class="tag">option</span></div>
+        <div class="opt-body">
+          <div class="opt-notes">
+            <p>
+              One card per match. The header shows league, minute, pin and a gold K·idx badge. Teams sit
+              with a large Fraunces score, then a five-tile strip in the signal tones. The footer carries
+              SOT, DA, corners and TSLG. Tap a card to open bars and odds inline. About
+              <b>3 matches per screen</b>.
+            </p>
+            <h4>Borrows from InPlayGuru</h4>
+            <ul class="igb">
+              <li>Home and away read together inside each tile.</li>
+              <li>Filters reduced to compact one-tap controls, here as a chip row.</li>
+              <li>Recent signals as a swipeable strip, in the spirit of their alert toasts.</li>
+            </ul>
+            <h4>Costs</h4>
+            <ul class="cost">
+              <li>You can't run your eye down Δ5′ across 20 matches. Sorting still works, but it reads as a feed.</li>
+              <li>About four times the scrolling of A.</li>
+            </ul>
+          </div>
+          <figure class="fig" style="margin:0">
+            <div class="phone"><div class="screen" id="b-main"></div></div>
+            <figcaption>Feed</figcaption>
+          </figure>
+          <figure class="fig" style="margin:0">
+            <div class="phone"><div class="screen" id="b-open"></div></div>
+            <figcaption>Card tapped open</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ===================== C ===================== -->
+      <section class="opt">
+        <div class="opt-head"><span class="letter">C</span><h2>Pulse feed + sheet</h2><span class="tag">option</span></div>
+        <div class="opt-body">
+          <div class="opt-notes">
+            <p>
+              The most glanceable. One slim row per match: K·idx large on the left, teams and score, then
+              the minute and the <b>single hottest signal</b>. It turns orange when it fires. Tap a row and
+              a bottom sheet opens with every signal, its home and away bars, and the hover-tip
+              explanation in plain sight. About <b>12 rows per screen</b>, the same as A, but each shows one signal instead of five.
+            </p>
+            <h4>Borrows from InPlayGuru</h4>
+            <ul class="igb">
+              <li>Tabs (Live / Signals / Pinned) with counts, like their In-Play badge.</li>
+              <li>“Phones are for alerts”: Recent signals gets its own tab instead of a panel.</li>
+              <li>One headline metric per row, the way their Momentum leads every row.</li>
+            </ul>
+            <h4>Costs</h4>
+            <ul class="cost">
+              <li>Four of the five signals hide behind a tap.</li>
+              <li>“Hottest” is a new rule we would have to define: the highest share of its own scale, with a fire beating everything.</li>
+            </ul>
+          </div>
+          <figure class="fig" style="margin:0">
+            <div class="phone"><div class="screen" id="c-main"></div></div>
+            <figcaption>Feed</figcaption>
+          </figure>
+          <figure class="fig" style="margin:0">
+            <div class="phone"><div class="screen" id="c-sheet" style="overflow:hidden"></div></div>
+            <figcaption>Match sheet</figcaption>
+          </figure>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      // Live board rows, 2026-10-31 16:28. Fires (trig) marked on three cells for illustration.
+      const M = [
+        { cc: "gb-eng", lg: "Premier League", min: "90+5′", half: "2H", h: "Chelsea", a: "Manchester Utd", hs: 2, as: 0, k: 44, pin: true,
+          ko: [2.0, 3.6, 3.4], live: [15.0, 1.05, 15.0],
+          s: { urg: [-0.3, 0.9], d5: [1.5, 5.0], d10: [37, 53], lbar: ["Done", 1.5], phi: [19, 63] }, tslg: ["31′", "—"],
+          st: { sot: [9, 5], soff: [8, 7], att: [98, 71], da: [60, 38], crn: [8, 7], pos: [62, 38], yc: [1, 6], rc: [0, 1] }, c: ["#1d4ed8", "#dc2626"] },
+        { cc: "tr", lg: "1. Lig", min: "70′", half: "2H", h: "Karagumruk", a: "Pendikspor", hs: 0, as: 1, k: 39,
+          ko: [1.8, 3.5, 4.0], live: [7.5, 3.25, 1.57],
+          s: { urg: [0.8, -0.2], d5: [5.0, 2.5], d10: [56, 34], lbar: [1.2, "Done"], phi: [52, 0] }, tslg: ["—", "19′"],
+          st: { sot: [3, 3], soff: [8, 9], att: [83, 63], da: [31, 19], crn: [4, 4], pos: [69, 31], yc: [3, 1], rc: [0, 0] }, c: ["#b91c1c", "#e5e7eb"] },
+        { cc: "il", lg: "Ligat Ha'al", min: "70′", half: "2H", h: "Beitar Jerusalem", a: "Kiryat Shmona", hs: 1, as: 0, k: 37,
+          ko: [1.22, 5.5, 8.5], live: [1.08, 8.0, 41.0],
+          s: { urg: [0.6, 0.3], d5: [5.5, 1.5], d10: [53, 9], lbar: [0.2, 0.8], phi: [68, 15] }, tslg: ["28′", "—"],
+          st: { sot: [9, 1], soff: [8, 4], att: [170, 88], da: [131, 56], crn: [8, 1], pos: [69, 31], yc: [2, 2], rc: [0, 0] }, c: ["#facc15", "#60a5fa"] },
+        { cc: "mw", lg: "Super League", min: "62′", half: "2H", h: "Red Lions", a: "Silver Strikers", hs: 0, as: 0, k: 33, hot: true,
+          ko: [3.9, 3.0, 1.91], live: [4.33, 1.83, 3.1],
+          s: { urg: [0.3, 0.6], d5: [8.0, 2.5], d10: [53, 31], lbar: [0.2, 0.3], phi: [72, 18] }, trig: { d5: 0 }, tslg: ["—", "—"],
+          st: { sot: [1, 3], soff: [3, 4], att: [82, 87], da: [87, 121], crn: [6, 6], pos: [50, 50], yc: [0, 0], rc: [0, 0] }, c: ["#ef4444", "#cbd5e1"] },
+        { cc: "cz", lg: "3. liga · Group A", min: "69′", half: "2H", h: "Ceske Budejovice", a: "Motorlet Prague", hs: 0, as: 0, k: 32, hot: true,
+          ko: [1.4, 4.2, 5.5], live: [1.36, 3.2, 15.0],
+          s: { urg: [1.1, 0.7], d5: [5.0, 0.0], d10: [39, 4], lbar: [1.5, 1.3], phi: [42, 0] }, trig: { lbar: 0 }, tslg: ["—", "—"],
+          st: { sot: [5, 4], soff: [7, 1], att: [101, 73], da: [66, 21], crn: [3, 0], pos: [65, 35], yc: [2, 1], rc: [0, 2] }, c: ["#3b82f6", "#f97316"] },
+        { cc: "ee", lg: "Meistriliiga", min: "90+2′", half: "2H", h: "Tammeka", a: "Harju JK Laagri", hs: 2, as: 1, k: 25, hot: true,
+          ko: [2.25, 3.4, 2.7], live: [1.02, 17.0, 101.0],
+          s: { urg: [-0.2, 0.2], d5: [7.0, 4.0], d10: [56, 73], lbar: ["Done", 1.0], phi: [55, 44] }, trig: { d10: 1 }, tslg: ["33′", "18′"],
+          st: { sot: [10, 6], soff: [11, 8], att: [102, 76], da: [77, 59], crn: [5, 9], pos: [51, 49], yc: [2, 2], rc: [0, 0] }, c: ["#f8fafc", "#22c55e"] },
+        { cc: "lv", lg: "1. Liga", min: "71′", half: "2H", h: "Leevon PPK", a: "Valmiera", hs: 0, as: 0, k: 23,
+          ko: [2.2, 3.4, 2.62], live: [2.6, 2.05, 4.75],
+          s: { urg: [0.7, 0.3], d5: [3.5, 1.0], d10: [40, 8], lbar: [1.2, 1.2], phi: [39, 23] }, tslg: ["—", "—"],
+          st: { sot: [3, 1], soff: [6, 3], att: [89, 60], da: [61, 36], crn: [5, 2], pos: [50, 50], yc: [0, 0], rc: [0, 0] }, c: ["#0ea5e9", "#a3e635"] },
+        { cc: "ae", lg: "Division 1", min: "72′", half: "2H", h: "Al Hamriyah", a: "Gulf United", hs: 0, as: 1, k: 22,
+          ko: [1.91, 3.5, 3.1], live: [9.0, 3.75, 1.36],
+          s: { urg: [0.8, -0.5], d5: [2.0, 0.0], d10: [52, 6], lbar: [1.6, 0.4], phi: [24, 0] }, tslg: ["—", "54′"],
+          st: { sot: [3, 2], soff: [7, 4], att: [77, 47], da: [64, 29], crn: [7, 3], pos: [66, 34], yc: [0, 0], rc: [0, 0] }, c: ["#16a34a", "#f59e0b"] },
+        { cc: "dk", lg: "2. Division", min: "28′", half: "1H", h: "F. Amager", a: "Middelfart", hs: 0, as: 0, k: 20,
+          ko: [2.75, 3.1, 2.25], live: [3.4, 3.1, 2.2],
+          s: { urg: [0.1, 0.4], d5: [1.0, 3.5], d10: [6, 33], lbar: [0.4, 0.4], phi: [18, 59] }, tslg: ["—", "—"],
+          st: { sot: [0, 3], soff: [2, 2], att: [18, 18], da: [8, 16], crn: [0, 0], pos: [50, 50], yc: [0, 0], rc: [0, 0] }, c: ["#e11d48", "#94a3b8"] },
+      ];
+      // Repeat the slate so the phones scroll like a real evening.
+      const ROWS = [...M, ...M.slice(1).map((m) => ({ ...m, pin: false, k: Math.max(6, m.k - 12) }))];
+
+      const SIG = [
+        { key: "urg", label: "UrG", name: "Unrealised goals", min: -1, max: 3, d: 1, tip: "Shots say they should have scored more. Around 1 is worth a look." },
+        { key: "d5", label: "Δ5′", name: "5-minute pressure", min: 0, max: 12, d: 1, tip: "Pressure in the last 5 minutes. 4 is common. 8+ is a real wave." },
+        { key: "d10", label: "Δ10′", name: "Sustained pressure", min: 0, max: 100, d: 0, tip: "Pressure over about 10 minutes, out of 100. 70 is a surge." },
+        { key: "lbar", label: "F Bar", name: "Form Bar", min: -2, max: 2, d: 1, tip: "Goals behind the pace their form sets. 1.0 is a goal behind." },
+        { key: "phi", label: "ΦI", name: "Efficiency", min: 0, max: 100, d: 0, tip: "How well attacks become shots, out of 100." },
+      ];
+
+      const flag = (cc) => `<img class="flag" src="https://flagcdn.com/20x15/${cc}.png" alt="">`;
+      const pct = (v, s) => (typeof v !== "number" ? 0 : Math.max(0, Math.min(1, (v - s.min) / (s.max - s.min))));
+      const step = (p) => (p < 0.22 ? " s2" : p < 0.4 ? " s1" : "");
+      const fmt = (v, d) => (typeof v !== "number" ? v : d ? v.toFixed(d) : String(Math.round(v)));
+      function val(m, sig, side) {
+        const v = m.s[sig.key][side];
+        if (typeof v !== "number") return `<span class="v done">${v}</span>`;
+        const fire = m.trig && m.trig[sig.key] === side;
+        return `<span class="v${fire ? " trig" : step(pct(v, sig))}">${fmt(v, sig.d)}</span>`;
+      }
+      const kStep = (k) => (k < 20 ? " s2" : k < 30 ? " s1" : "");
+      const crest = (c, name) => `<span class="crest" style="background:${c}">${name[0]}</span>`;
+
+      const STATUS = `<div class="status"><span>16:28</span><span>●●● 5G ▮</span></div>`;
+      const TOPBAR = `
+        <div class="tb">
+          <img src="../src/assets/kalchas-mark.png" alt="">
+          <span class="name">Kalchas</span>
+          <span class="chip-live"><i></i>LIVE</span>
+          <span class="sp"></span>
+          <span class="here">3 here</span>
+          <span class="join">Join alerts</span>
+        </div>`;
+      const ico = {
+        live: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2"/><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14"/></svg>',
+        bolt: '<svg viewBox="0 0 24 24"><path d="M13 3 5 13h6l-1 8 8-10h-6z"/></svg>',
+        star: '<svg viewBox="0 0 24 24"><path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.8z"/></svg>',
+        send: '<svg viewBox="0 0 24 24"><path d="M21 4 3 11l6 2.5L11.5 20 21 4zM9 13.5 21 4"/></svg>',
+        filter: '<svg viewBox="0 0 24 24"><path d="M4 5h16l-6 7.5V19l-4-2v-4.5z"/></svg>',
+        search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.2-4.2"/></svg>',
+      };
+      const BOTNAV = (active) => `
+        <nav class="bn">
+          <a class="${active === "live" ? "on" : ""}">${ico.live}<span>Live<span class="n">96</span></span></a>
+          <a class="${active === "sig" ? "on" : ""}">${ico.bolt}<span>Signals<span class="n">4</span></span></a>
+          <a class="${active === "pin" ? "on" : ""}">${ico.star}<span>Pinned<span class="n">1</span></span></a>
+          <a class="join-tab">${ico.send}<span>Join</span></a>
+        </nav>`;
+
+      /* ---------------- A: lens table ---------------- */
+      const LENS = {
+        signals: {
+          cols: [{ t: "k", label: "K", sorted: true }, ...SIG.map((s) => ({ t: s.key, label: s.label }))],
+          cells: (m) => [
+            `<div data-t="k"><span class="kc${kStep(m.k)}">${m.k}</span></div>`,
+            ...SIG.map((s) => `<div data-t="${s.key}">${val(m, s, 0)}${val(m, s, 1)}</div>`),
+          ],
+        },
+        stats: {
+          cols: [
+            { label: "SOT" }, { label: "SOFF" }, { label: "DA" }, { label: "CRN" }, { label: "POS" }, { t: "tslg", label: "TSLG" },
+          ],
+          cells: (m) => {
+            const pair = (k) => {
+              const [h, a] = m.st[k];
+              const lead = h + a ? Math.max(h, a) / (h + a) : 0;
+              const dim = (x) => (lead >= 0.6 && x < Math.max(h, a) ? " s2" : "");
+              return `<div><span class="v${dim(h)}">${h}</span><span class="v${dim(a)}">${a}</span></div>`;
+            };
+            return [
+              pair("sot"), pair("soff"), pair("da"), pair("crn"), pair("pos"),
+              `<div data-t="tslg"><span class="v">${m.tslg[0]}</span><span class="v">${m.tslg[1]}</span></div>`,
+            ];
+          },
+        },
+        odds: {
+          cols: [{ label: "1" }, { label: "X" }, { label: "2" }],
+          cells: (m) =>
+            [0, 1, 2].map(
+              (i) => `<div><span class="v">${m.live[i].toFixed(2)}</span><span class="v ko">${m.ko[i].toFixed(2)}</span></div>`,
+            ),
+        },
+      };
+      function lensTable(lens) {
+        const L = LENS[lens];
+        const head = `<div class="lt-head">
+            <div>Match</div>
+            ${L.cols.map((c) => `<div ${c.t ? `data-t="${c.t}"` : ""} class="${c.sorted ? "sorted" : ""}">${c.label}</div>`).join("")}
+          </div>`;
+        const pinned = ROWS.filter((m) => m.pin);
+        const row = (m) => `
+          <div class="lt-row${m.pin ? " is-pin" : ""}${m.hot ? " is-hot" : ""}">
+            <div class="mc">
+              <div class="when">${flag(m.cc)}<span class="min">${m.min}</span></div>
+              <div class="sc"><span>${m.hs}</span><span>${m.as}</span></div>
+              <div class="tn"><span>${m.h}</span><span>${m.a}</span></div>
+            </div>
+            ${L.cells(m).join("")}
+          </div>`;
+        return `<div class="lt" style="--n:${L.cols.length}">
+            ${head}
+            ${lens === "odds" ? `<div style="padding:.35rem .75rem;font-family:var(--mono);font-size:.56rem;color:var(--muted);border-bottom:1px solid var(--border)">LIVE 1X2 · <span style="opacity:.7">kickoff under it</span></div>` : ""}
+            ${pinned.length ? `<div class="pin-cap">★ Pinned · ${pinned.length}<em>stay on top while live</em></div>` : ""}
+            ${ROWS.map(row).join("")}
+          </div>`;
+      }
+      function renderA(lens) {
+        document.getElementById("a-main").innerHTML = `
+          ${STATUS}${TOPBAR}
+          <div class="a-sig"><span class="k">● Signal</span><span class="t"><b>Ostrov v Hvezda Cheb</b> · F Bar 1.4 · 5′ ago</span><span class="more">4 ›</span></div>
+          <div class="a-ctl">
+            <div class="seg">
+              ${["signals", "stats", "odds"].map((l) => `<button data-lens="${l}" class="${l === lens ? "on" : ""}">${l[0].toUpperCase() + l.slice(1)}</button>`).join("")}
+            </div>
+            <span class="icon-btn">${ico.filter}<span class="n">3</span></span>
+            <span class="icon-btn">${ico.search}</span>
+          </div>
+          ${lensTable(lens)}
+          
+          ${BOTNAV("live")}`;
+        document.querySelectorAll("#a-main [data-lens]").forEach((b) =>
+          b.addEventListener("click", () => {
+            const top = document.getElementById("a-main").scrollTop;
+            renderA(b.dataset.lens);
+            document.getElementById("a-main").scrollTop = top;
+          }),
+        );
+      }
+      renderA("signals");
+
+      document.getElementById("a-filter").innerHTML = `
+        ${STATUS}
+        <div class="sheet-full" style="top:26px">
+          <header><h3>Filters</h3><span class="x">✕</span></header>
+          <div class="sheet-body">
+            <div class="funnel">
+              <span class="big">41</span>
+              <span class="of"><b>of 118 live matches</b><br>make it through your filters</span>
+              <span class="clr">Clear</span>
+            </div>
+            <div class="grp">
+              <h5>Show only</h5>
+              <div class="tgl"><span class="lbl">Triggered<small>A signal has fired on this match</small></span><span class="cut">−55</span><span class="sw on"></span></div>
+              <div class="tgl"><span class="lbl">Pinned<small>Your starred matches</small></span><span class="sw"></span></div>
+              <div class="tgl"><span class="lbl">Sweet spot<small>Inside the alert windows</small></span><span class="sw"></span></div>
+            </div>
+            <div class="grp">
+              <h5>Hide</h5>
+              <div class="tgl"><span class="lbl">Halftimers</span><span class="cut">−9</span><span class="sw on"></span></div>
+              <div class="tgl"><span class="lbl">Statless<small>No live stats from the provider</small></span><span class="cut">−11</span><span class="sw on"></span></div>
+              <div class="tgl"><span class="lbl">TSLG under 10′<small>Alerts stay quiet after a goal</small></span><span class="cut">−2</span><span class="sw on"></span></div>
+            </div>
+            <div class="grp">
+              <h5>Sort by</h5>
+              <div class="chips"><span class="on">K·idx ↓</span><span>Minute</span><span>Δ5′</span><span>Δ10′</span><span>UrG</span><span>League</span></div>
+            </div>
+            <div class="grp">
+              <h5>Search</h5>
+              <div class="search-in">${ico.search.replace("<svg", '<svg width="14" height="14" stroke="currentColor" fill="none" stroke-width="1.7"')} Team or league</div>
+            </div>
+          </div>
+          <div class="sheet-cta"><div>Show 41 matches</div></div>
+        </div>`;
+
+      /* ---------------- B: signal cards ---------------- */
+      function card(m, open) {
+        const strip = SIG.map(
+          (s) => `<div data-t="${s.key}"><div class="lab">${s.label}</div><div class="hv">${val(m, s, 0)}<i>·</i>${val(m, s, 1)}</div></div>`,
+        ).join("");
+        const bars = [["SOT", "sot"], ["Dangerous", "da"], ["Corners", "crn"], ["Possession", "pos"]]
+          .map(([n, k]) => {
+            const [h, a] = m.st[k];
+            const mx = Math.max(h, a, 1);
+            return `<div class="bar"><span class="l v">${h}</span><span class="tr h"><i style="width:${(h / mx) * 100}%"></i></span><span class="nm">${n}</span><span class="tr a"><i style="width:${(a / mx) * 100}%"></i></span><span class="r v">${a}</span></div>`;
+          })
+          .join("");
+        return `
+          <article class="card${m.pin ? " is-pin" : ""}">
+            <div class="card-top">${flag(m.cc)}<span class="lg">${m.lg}</span><span class="min">${m.min}</span><span class="star">${m.pin ? "★" : "☆"}</span></div>
+            <div class="card-mid">
+              <div class="teams"><div>${crest(m.c[0], m.h)}${m.h}</div><div>${crest(m.c[1], m.a)}${m.a}</div></div>
+              <div class="score"><span>${m.hs}</span><span>${m.as}</span></div>
+              <div class="kbadge"><b>${m.k}</b><span>K·IDX</span></div>
+            </div>
+            <div class="strip">${strip}</div>
+            ${
+              open
+                ? `<div class="card-x">${bars}
+                    <div class="oddsline"><span>KO <b>${m.ko.map((x) => x.toFixed(2)).join(" · ")}</b></span><span>LIVE <b>${m.live.map((x) => x.toFixed(2)).join(" · ")}</b></span></div>
+                    <div class="oddsline" style="border:0;margin-top:.3rem;padding-top:0"><span>TSLG <b>${m.tslg[0]}</b> · <b>${m.tslg[1]}</b></span><span>Cards <b>${m.st.yc[0]}–${m.st.yc[1]}</b> · Red <b>${m.st.rc[0]}–${m.st.rc[1]}</b></span></div>
+                    <div class="open-full">Open full match · timeline · H2H ›</div></div>`
+                : `<div class="card-foot"><span>SOT <b>${m.st.sot[0]}–${m.st.sot[1]}</b></span><span>DA <b>${m.st.da[0]}–${m.st.da[1]}</b></span><span>CRN <b>${m.st.crn[0]}–${m.st.crn[1]}</b></span><span>TSLG <b>${m.tslg[0]}</b>·<b>${m.tslg[1]}</b></span></div>`
+            }
+          </article>`;
+      }
+      const B_CHIPS = `<div class="b-chips"><span class="sort">K·idx ↓</span><span>Triggered</span><span>Pinned</span><span>Sweet spot</span><span class="on">Hide HT</span><span class="on">Hide statless</span><span class="on">TSLG ≥ 10′</span><span>⌕ Search</span></div>`;
+      document.getElementById("b-main").innerHTML = `
+        ${STATUS}${TOPBAR}${B_CHIPS}
+        <div class="b-sig">
+          <div><b>Ostrov v Hvezda Cheb</b><span><em>Monitoring</em> · F Bar 1.4 · 5′ ago</span></div>
+          <div><b>Al Hamriyah v Gulf United</b><span><em>Monitoring</em> · Δ10′ 71 · 6′ ago</span></div>
+        </div>
+        <div class="b-list">${ROWS.slice(0, 9).map((m) => card(m, false)).join("")}</div>
+        ${BOTNAV("live")}`;
+      document.getElementById("b-open").innerHTML = `
+        ${STATUS}${TOPBAR}${B_CHIPS}
+        <div class="b-list">${card(ROWS[1], false)}${card(ROWS[3], true)}${card(ROWS[4], false)}</div>
+        ${BOTNAV("live")}`;
+
+      /* ---------------- C: pulse feed ---------------- */
+      function hottest(m) {
+        let best = null;
+        for (const s of SIG) {
+          for (const side of [0, 1]) {
+            const v = m.s[s.key][side];
+            if (typeof v !== "number") continue;
+            const fire = m.trig && m.trig[s.key] === side;
+            const score = (fire ? 10 : 0) + pct(v, s);
+            if (!best || score > best.score) best = { s, side, v, fire, score };
+          }
+        }
+        return best;
+      }
+      function cRow(m) {
+        const h = hottest(m);
+        return `
+          <div class="c-row${m.pin ? " is-pin" : ""}">
+            <div class="kk${kStep(m.k)}">${m.k}<small>K·IDX</small></div>
+            <div class="mt">
+              <div class="ln">${crest(m.c[0], m.h)}<span class="nm">${m.h}</span><b>${m.hs}</b></div>
+              <div class="ln">${crest(m.c[1], m.a)}<span class="nm">${m.a}</span><b>${m.as}</b></div>
+            </div>
+            <div class="rt">
+              <span class="min">${flag(m.cc).replace('class="flag"', 'class="flag" style="display:inline-block;vertical-align:-1px;margin-right:4px"')}${m.min}</span>
+              <span class="hot${h.fire ? " fire" : ""}" data-t="${h.s.key}">${h.s.label} ${fmt(h.v, h.s.d)} <i>${h.side ? "A" : "H"}</i></span>
+            </div>
+          </div>`;
+      }
+      const C_TABS = `<div class="c-tabs"><span class="on">Live<i>96</i></span><span>Signals<i>4</i></span><span>Pinned<i>1</i></span><span class="flt">Filters · 3</span></div>`;
+      const C_NAV = `<nav class="bn">
+          <a class="on">${ico.live}<span>Board</span></a>
+          <a>${ico.filter}<span>Filters</span></a>
+          <a>${ico.search}<span>Search</span></a>
+          <a class="join-tab">${ico.send}<span>Join</span></a>
+        </nav>`;
+      document.getElementById("c-main").innerHTML = `
+        ${STATUS}${TOPBAR}${C_TABS}
+        ${ROWS.map(cRow).join("")}
+        ${C_NAV}`;
+
+      const sm = ROWS[3];
+      const ledger = SIG.map((s) => {
+        const side = (i) => {
+          const v = sm.s[s.key][i];
+          return `<div class="side"><span class="nm">${i ? sm.a : sm.h}</span><span class="tr"><i style="width:${pct(v, s) * 100}%"></i></span>${val(sm, s, i)}</div>`;
+        };
+        return `<div class="ledg" data-t="${s.key}"><div class="top"><b>${s.name}</b><span>${s.label}</span></div><p>${s.tip}</p><div class="two">${side(0)}${side(1)}</div></div>`;
+      }).join("");
+      document.getElementById("c-sheet").innerHTML = `
+        ${STATUS}${TOPBAR}${C_TABS}
+        ${ROWS.slice(0, 9).map(cRow).join("")}
+        <div class="scrim"></div>
+        <div class="bsheet">
+          <div class="grab"></div>
+          <div class="bs-head">
+            <span class="t">${sm.h}</span>
+            <span class="s"><b>${sm.hs} – ${sm.as}</b><span>${sm.min} · K ${sm.k}</span></span>
+            <span class="t r">${sm.a}</span>
+          </div>
+          <div class="bs-body">
+            ${ledger}
+            <div class="ledg" data-t="tslg"><div class="top"><b>TSLG</b><span>since last goal</span></div><div class="two"><div class="side"><span class="nm">${sm.h}</span><span class="v">${sm.tslg[0]}</span></div><div class="side"><span class="nm">${sm.a}</span><span class="v">${sm.tslg[1]}</span></div></div></div>
+            <div class="open-full" style="margin-top:.8rem">Open full match · stats · timeline · H2H ›</div>
+          </div>
+        </div>`;
+    </script>
+  </body>
+</html>

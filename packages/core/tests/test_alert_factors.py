@@ -211,3 +211,36 @@ def test_csv_row_flattens_pairs() -> None:
     assert row["k_home"] == 72
     assert "omega_home" not in row
     assert row["also_firing"] == "delta_5min"
+
+
+def test_alert_live_odds_need_a_fetch_stamp() -> None:
+    """Pre-stamp alerts often froze a 20th-minute price onto a 90th-minute
+    alert, so their live 1X2 is not reported; stamped lines are."""
+    unstamped = factors_from_payload(
+        {"odds": {"live": {"home": 11.0, "draw": 1.055, "away": 17.0}}},
+        strategy="delta_5min",
+        team="home",
+        minute=68,
+        score="0-0",
+    )
+    assert unstamped["live_home"] is None
+    assert unstamped["live_away"] is None
+    stamped = factors_from_payload(
+        {
+            "odds": {
+                "live": {
+                    "home": 3.1,
+                    "draw": 2.0,
+                    "away": 4.8,
+                    "fetched_at": "2026-11-04T20:10:05+00:00",
+                    "minute": 68,
+                }
+            }
+        },
+        strategy="delta_5min",
+        team="home",
+        minute=68,
+        score="0-0",
+    )
+    assert stamped["live_home"] == 3.1
+    assert stamped["live_away"] == 4.8

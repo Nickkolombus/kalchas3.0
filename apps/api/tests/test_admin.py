@@ -141,11 +141,11 @@ def test_save_preset_as_stores_and_applies(monkeypatch) -> None:
         "list_saved_presets",
         lambda dsn, strategy: list(stored),
     )
-    monkeypatch.setattr(kalchas_db.settings, "reset_weights", lambda dsn, strategy, key=None: 0)
+    replaced: list[tuple[str, dict]] = []
     monkeypatch.setattr(
         kalchas_db.settings,
-        "upsert_weight",
-        lambda dsn, strategy, key, value: None,
+        "replace_weights",
+        lambda dsn, strategy, values: replaced.append((strategy, dict(values))),
     )
     monkeypatch.setattr(
         kalchas_db.settings,
@@ -173,6 +173,50 @@ def test_save_preset_as_stores_and_applies(monkeypatch) -> None:
     assert "Night set" in body["saved_presets"]
     assert stored["Night set"]["weights"]["sot_weight"] == 0.4
     assert stored["Night set"]["conditions"] == []
+    # One replace call, so the config history gets one weights row, not one per coeff.
+    assert len(replaced) == 1
+    assert replaced[0][0] == "rule_of_three"
+    assert replaced[0][1]["sot_weight"] == 0.4
+
+
+def test_apply_saved_preset_replaces_weights_once(monkeypatch) -> None:
+    import kalchas_api.runtime
+    import kalchas_db.settings
+
+    monkeypatch.setenv("ADMIN_PASSWORD", "s3cret")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
+    replaced: list[tuple[str, dict]] = []
+    conditions: list[tuple[int, list]] = []
+    monkeypatch.setattr(
+        kalchas_db.settings,
+        "get_saved_preset_bundle",
+        lambda dsn, strategy, name: (
+            {"sot_weight": 0.4, "not_a_weight": 9.0},
+            [{"left_scope": "triggering", "left_metric": "npei", "operator": ">="}],
+        ),
+    )
+    monkeypatch.setattr(
+        kalchas_db.settings,
+        "replace_weights",
+        lambda dsn, strategy, values: replaced.append((strategy, dict(values))),
+    )
+    monkeypatch.setattr(
+        kalchas_db.settings,
+        "replace_strategy_conditions",
+        lambda dsn, slot, rows: conditions.append((slot, list(rows))) or list(rows),
+    )
+    monkeypatch.setattr(kalchas_db.settings, "list_weight_overrides", lambda dsn: {})
+    monkeypatch.setattr(kalchas_db.settings, "list_strategy_conditions", lambda dsn: {})
+    monkeypatch.setattr(kalchas_api.runtime, "clear_board_tuning_cache", lambda: None)
+    client = TestClient(app)
+    client.post("/api/admin/login", json={"password": "s3cret"})
+    res = client.post(
+        "/api/admin/weights/preset",
+        json={"strategy": "rule_of_three", "preset": "Night set"},
+    )
+    assert res.status_code == 200
+    assert replaced == [("rule_of_three", {"sot_weight": 0.4})]
+    assert conditions[0][0] == 1
 
 
 def test_admin_preview_requires_session(monkeypatch) -> None:
