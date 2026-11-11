@@ -92,15 +92,15 @@ def test_delta5_same_surge_does_not_refire_on_tiny_increase() -> None:
     assert second.blocked_by == "STILL_SURGING"
 
 
-def test_team_stack_blocks_k_after_component_alert() -> None:
+def test_team_stack_blocks_second_strategy_on_same_team() -> None:
     book = CooldownBook()
     first = book.decide("1", 4, 75, 8.0, team="home")
     assert first.can_send
     book.confirm(first.cooldown_key)
-    stacked = book.decide("1", 7, 75, 60.0, team="home")
+    stacked = book.decide("1", 1, 75, 2.0, team="home")
     assert not stacked.can_send
     assert stacked.blocked_by == "TEAM_STACK"
-    other_side = book.decide("1", 7, 75, 60.0, team="away")
+    other_side = book.decide("1", 1, 75, 2.0, team="away")
     assert other_side.can_send
 
 
@@ -108,9 +108,34 @@ def test_team_stack_clears_after_window() -> None:
     book = CooldownBook()
     first = book.decide("1", 4, 70, 8.0, team="home")
     book.confirm(first.cooldown_key)
-    assert not book.decide("1", 7, 79, 62.0, team="home").can_send
-    later = book.decide("1", 7, 80, 62.0, team="home")
+    assert not book.decide("1", 1, 79, 2.0, team="home").can_send
+    later = book.decide("1", 1, 80, 2.0, team="home")
     assert later.can_send
+
+
+def test_kscore_fires_in_the_same_scan_as_rule_of_three() -> None:
+    """Slot 1 reserves the team first; K-Score on that team still goes out."""
+    book = CooldownBook()
+    ro3 = book.decide("1", 1, 66, 3.7, team="home")
+    assert ro3.can_send
+    ks = book.decide("1", 7, 66, 70.0, team="home")
+    assert ks.can_send
+
+
+def test_kscore_alert_does_not_hold_the_teams_turn() -> None:
+    book = CooldownBook()
+    ks = book.decide("1", 7, 60, 68.0, team="home")
+    book.confirm(ks.cooldown_key)
+    assert book.decide("1", 1, 62, 2.0, team="home").can_send
+
+
+def test_kscore_keeps_its_own_cooldown() -> None:
+    book = CooldownBook()
+    first = book.decide("1", 7, 60, 68.0, team="home")
+    book.confirm(first.cooldown_key)
+    again = book.decide("1", 7, 63, 69.0, team="home")
+    assert not again.can_send
+    assert again.blocked_by == "S7_COOLDOWN"
 
 
 def test_reservation_expires() -> None:
