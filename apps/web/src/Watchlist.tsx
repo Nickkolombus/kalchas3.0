@@ -244,7 +244,7 @@ function dayKey(iso: string, today: string): DayKey {
 
 /* -------------------------------------------------------------- helpers */
 
-function clock(iso: string): string {
+export function clock(iso: string): string {
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return "";
   return at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -283,7 +283,7 @@ function price(value?: number | null): string {
   return value ? value.toFixed(2) : "–";
 }
 
-function plural(n: number, word: string): string {
+export function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : /(ch|sh|s|x)$/.test(word) ? "es" : "s"}`;
 }
 
@@ -450,7 +450,7 @@ function started(iso: string): boolean {
 
 /* ---------------------------------------------------------- small parts */
 
-function Crest({ src, name, size = 18 }: { src?: string | null; name: string; size?: number }) {
+export function Crest({ src, name, size = 18 }: { src?: string | null; name: string; size?: number }) {
   const [broken, setBroken] = useState(false);
   if (!src || broken) {
     return (
@@ -1284,9 +1284,9 @@ function leagueName(day: WatchlistDay, key: string): string {
 
 /* ---------------------------------------------------------------- parlay */
 
-type ParlayStyle = "safer" | "balanced" | "bolder";
+export type ParlayStyle = "safer" | "balanced" | "bolder";
 
-type ParlayLeg = {
+export type ParlayLeg = {
   match_id: string;
   kickoff: string;
   league: string;
@@ -1306,7 +1306,7 @@ type ParlayLeg = {
   outcome_note?: string;
 };
 
-type ParlayDay = {
+export type ParlayDay = {
   status: "ready" | "preparing" | "none";
   day: string;
   today: string;
@@ -1316,9 +1316,9 @@ type ParlayDay = {
   unpriced: { match_id: string; home: string; away: string; tags: string[] }[];
 };
 
-const PARLAY_MIN = 3;
-const PARLAY_PRESETS = [3, 5, 8, 12, 18];
-const PARLAY_STYLES: { key: ParlayStyle; name: string; desc: string }[] = [
+export const PARLAY_MIN = 3;
+export const PARLAY_PRESETS = [3, 5, 8, 12, 18];
+export const PARLAY_STYLES: { key: ParlayStyle; name: string; desc: string }[] = [
   { key: "safer", name: "Safer", desc: "Shortest prices first, and only legs that came in at least 7 times in 10 recently." },
   { key: "balanced", name: "Balanced", desc: "The strongest patterns of the day, in the order the watchlist ranks them." },
   {
@@ -1329,7 +1329,7 @@ const PARLAY_STYLES: { key: ParlayStyle; name: string; desc: string }[] = [
 ];
 
 /** "about 1 in 14" from the combined decimal odds. */
-function oneIn(odds: number): string {
+export function oneIn(odds: number): string {
   if (odds < 2) return "better than even";
   const n = Math.round(odds);
   if (n >= 10_000) return `about 1 in ${Math.round(n / 1000).toLocaleString()},000`;
@@ -1338,7 +1338,7 @@ function oneIn(odds: number): string {
 }
 
 /** Where the slip stands once games are played. */
-function parlayState(legs: ParlayLeg[]): string | null {
+export function parlayState(legs: ParlayLeg[]): string | null {
   const missed = legs.filter((l) => l.outcome === "missed").length;
   const landed = legs.filter((l) => l.outcome === "landed").length;
   if (missed) return `Lost: ${missed} of ${legs.length} ${missed === 1 ? "leg" : "legs"} missed.`;
@@ -1347,7 +1347,31 @@ function parlayState(legs: ParlayLeg[]): string | null {
   return null;
 }
 
-function Record({ leg }: { leg: ParlayLeg }) {
+/** The slip a style makes: its first `n` legs, in kick-off order. The admin
+ * page uses the same function with its edits: `pinned` legs go in first,
+ * `removed` ones never do. */
+export function pickParlay(
+  data: Pick<ParlayDay, "legs" | "order"> | null | undefined,
+  style: ParlayStyle,
+  wanted: number,
+  edits: { removed?: readonly string[]; pinned?: readonly string[] } = {},
+): { legs: ParlayLeg[]; n: number; most: number } {
+  const byId = new Map((data?.legs ?? []).map((l) => [l.match_id, l]));
+  const removed = new Set(edits.removed ?? []);
+  const pinned = (edits.pinned ?? []).filter((id) => byId.has(id) && !removed.has(id));
+  const order = data?.order?.[style] ?? [];
+  const pool = [...new Set([...pinned, ...order])].filter((id) => !removed.has(id));
+  const most = pool.length;
+  const n = Math.max(Math.min(wanted, most), Math.min(PARLAY_MIN, most));
+  const legs = pool
+    .slice(0, n)
+    .map((id) => byId.get(id))
+    .filter((l): l is ParlayLeg => Boolean(l))
+    .sort((a, b) => a.kickoff.localeCompare(b.kickoff) || a.match_id.localeCompare(b.match_id));
+  return { legs, n, most };
+}
+
+export function Record({ leg }: { leg: ParlayLeg }) {
   const share = leg.n ? Math.round((leg.hit / leg.n) * 100) : 0;
   return (
     <span className="wl-rec" title={`Happened in ${leg.hit} of the two teams' last ${leg.n} games`}>
@@ -1392,15 +1416,7 @@ function ParlayView({
   useDayKeys(bounds, toDay);
 
   const ready = data?.status === "ready";
-  const byId = useMemo(() => new Map((data?.legs ?? []).map((l) => [l.match_id, l])), [data]);
-  const order = data?.order?.[style] ?? [];
-  const most = order.length;
-  const n = Math.max(Math.min(wanted, most), Math.min(PARLAY_MIN, most));
-  const legs = order
-    .slice(0, n)
-    .map((id) => byId.get(id))
-    .filter((l): l is ParlayLeg => Boolean(l))
-    .sort((a, b) => a.kickoff.localeCompare(b.kickoff) || a.match_id.localeCompare(b.match_id));
+  const { legs, n, most } = pickParlay(data, style, wanted);
   const odds = legs.reduce((total, l) => total * l.price, 1);
   const looks = legs.filter((l) => l.watch === "look").length;
   const strongPriced = data ? data.legs.filter((l) => l.watch === "strong").length : 0;

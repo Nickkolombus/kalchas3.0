@@ -50,152 +50,170 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     return c
 
 
+def pages(n: int = 7) -> list[dict[str, Any]]:
+    return [page(str(i), f"2026-11-07T1{i}:00:00+03:00") for i in range(1, n + 1)]
+
+
+def refs(day: dict[str, Any], ids: list[str]) -> list[dict[str, Any]]:
+    by = {leg["match_id"]: leg for leg in day["legs"]}
+    return [{"match_id": i, "market": by[i]["market"], "price": by[i]["price"]} for i in ids]
+
+
 def test_requires_admin(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ADMIN_PASSWORD", "s3cret")
     monkeypatch.setenv("DATABASE_URL", "postgresql://test")
-    assert TestClient(app).get("/api/admin/parlay").status_code == 401
+    assert TestClient(app).get("/api/admin/parlay/day").status_code == 401
 
 
-def test_compose_today_and_exclude(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    pages = [
-        page("1", "2026-11-07T14:00:00+03:00"),
-        page("2", "2026-11-07T15:00:00+03:00"),
-        page("3", "2026-11-07T16:00:00+03:00"),
-        page("4", "2026-11-07T17:00:00+03:00"),
-    ]
-    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages)
-    body = client.get("/api/admin/parlay?slot=today&style=balanced").json()
+def test_day_is_the_public_payload(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages())
+    from kalchas_core.watchlist.parlay import build
+
+    body = client.get("/api/admin/parlay/day?slot=today").json()
+    public = build(pages())  # what GET /api/watchlist/parlay/{day} serves
     assert body["status"] == "ready"
-    assert body["day"] == "2026-11-07"
-    assert body["stake"] == 10
-    assert body["window_label"] is None
-    assert len(body["selected"]) >= 3
-
-    trimmed = client.get("/api/admin/parlay?slot=today&style=balanced&exclude=2").json()
-    assert "2" not in [leg["match_id"] for leg in trimmed["selected"]]
+    assert body["order"] == public["order"]
+    assert [leg["match_id"] for leg in body["legs"]] == [leg["match_id"] for leg in public["legs"]]
 
 
-def test_nightly_filters_early_kickoffs(
+def test_nightly_keeps_early_kickoffs_only(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from datetime import date, timedelta
-
-    pages = [
-        page("n1", "2026-11-08T02:00:00+03:00"),
-        page("n2", "2026-11-08T03:30:00+03:00"),
-        page("n3", "2026-11-08T04:00:00+03:00"),
-        page("day", "2026-11-08T15:00:00+03:00"),
-    ]
-    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages)
-
-    def fake_slot(slot: str, today: date, now=None) -> date:
-        if slot == "nightly":
-            return date(2026, 11, 8)
-        if slot == "tomorrow":
-            return today + timedelta(days=1)
-        return today
-
-    monkeypatch.setattr(admin_parlay, "slot_day", fake_slot)
-    body = client.get("/api/admin/parlay?slot=nightly&style=balanced").json()
+    early = [page(str(i), f"2026-11-08T0{i}:00:00+03:00") for i in range(1, 5)]
+    late = [page("9", "2026-11-08T18:00:00+03:00")]
+    monkeypatch.setattr(
+        "kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: early + late
+    )
+    monkeypatch.setattr(admin_parlay, "slot_day", lambda slot, today: datetime(2026, 11, 8).date())
+    body = client.get("/api/admin/parlay/day?slot=nightly").json()
+    assert {leg["match_id"] for leg in body["legs"]} == {"1", "2", "3", "4"}
+    assert "9" not in body["order"]["balanced"]
     assert body["window_label"] == "00:00–07:00 GMT+3"
-    ids = [leg["match_id"] for leg in body["legs"]]
-    assert ids == ["n1", "n2", "n3"]
-    assert "day" not in ids
 
 
-def test_preview_returns_png(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    pages = [
-        page("1", "2026-11-07T14:00:00+03:00"),
-        page("2", "2026-11-07T15:00:00+03:00"),
-        page("3", "2026-11-07T16:00:00+03:00"),
-    ]
-    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages)
+def test_preview_renders_exactly_the_legs(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages())
+    day = client.get("/api/admin/parlay/day").json()
     res = client.post(
-        "/api/admin/parlay/preview",
-        json={"slot": "today", "style": "balanced", "match_ids": ["1", "2", "3"]},
+        "/api/admin/parlay/preview", json={"slot": "today", "legs": refs(day, ["1", "4", "6"])}
     )
     assert res.status_code == 200
-    assert res.headers["content-type"] == "image/png"
     assert res.content[:8] == b"\x89PNG\r\n\x1a\n"
 
 
-def test_preview_rejects_too_few_legs(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    pages = [page("1", "2026-11-07T14:00:00+03:00"), page("2", "2026-11-07T15:00:00+03:00")]
-    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages)
+def test_too_few_legs_is_refused(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages())
+    day = client.get("/api/admin/parlay/day").json()
     res = client.post(
-        "/api/admin/parlay/preview",
-        json={"slot": "today", "style": "balanced", "match_ids": ["1", "2"]},
+        "/api/admin/parlay/preview", json={"slot": "today", "legs": refs(day, ["1", "2"])}
     )
     assert res.status_code == 422
 
 
-def test_compose_respects_leg_count(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    pages = [page(str(i), f"2026-11-07T{14 + i:02d}:00:00+03:00") for i in range(1, 7)]
-    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages)
-    body = client.get("/api/admin/parlay?slot=today&style=balanced&legs=3").json()
-    assert body["wanted"] == 3
-    assert len(body["selected"]) == 3
-    assert "explanation" in body and "balanced" in body["explanation"].lower()
-
-
-def test_evaluate_calls_claude(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    pages = [
-        page("1", "2026-11-07T14:00:00+03:00"),
-        page("2", "2026-11-07T15:00:00+03:00"),
-        page("3", "2026-11-07T16:00:00+03:00"),
-    ]
-    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setattr(
-        "kalchas_api.parlay_claude.evaluate",
-        lambda **kw: {"ok": True, "advice": "Weakest: Home1 v Away1", "model": "test"},
-    )
+def test_a_moved_price_blocks_saving(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages())
+    day = client.get("/api/admin/parlay/day").json()
+    legs = refs(day, ["1", "2", "3"])
+    legs[1]["price"] = 9.99
+    saved: list[Any] = []
+    monkeypatch.setattr("kalchas_db.parlay_slips.insert_slip_sync", lambda *a, **k: saved.append(k))
     res = client.post(
-        "/api/admin/parlay/evaluate",
-        json={"slot": "today", "style": "balanced", "match_ids": ["1", "2", "3"]},
+        "/api/admin/parlay/slips",
+        json={"slot": "today", "legs": legs, "channels": {"x": True}},
     )
-    assert res.status_code == 200
-    assert "Weakest" in res.json()["advice"]
+    assert res.status_code == 409
+    assert "9.99" in res.json()["detail"]["changes"][0]
+    assert saved == []
 
 
-def test_post_fans_out(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    pages = [
-        page("1", "2026-11-07T14:00:00+03:00"),
-        page("2", "2026-11-07T15:00:00+03:00"),
-        page("3", "2026-11-07T16:00:00+03:00"),
-    ]
-    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages)
-    monkeypatch.setattr(
-        "kalchas_api.parlay_post.fanout",
-        lambda image, **kw: {
-            "x": {"ok": True, "ref": "1"},
-            "telegram_free": {"ok": True, "ref": "2"},
-        },
-    )
-    monkeypatch.setattr(
-        "kalchas_db.discord_settings.get_discord_settings",
-        lambda dsn: {
-            "free_channel_id": "1",
-            "paid_channel_id": "2",
-            "free_enabled": True,
-            "paid_enabled": True,
-        },
-    )
+def test_save_keeps_the_slip_as_seen(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages())
+    day = client.get("/api/admin/parlay/day").json()
+    got: dict[str, Any] = {}
+
+    def insert(dsn: str, **kw: Any) -> dict[str, Any]:
+        got.update(kw)
+        return {"id": 7, "status": "approved", "outcomes": {}, **kw}
+
+    monkeypatch.setattr("kalchas_db.parlay_slips.insert_slip_sync", insert)
     res = client.post(
-        "/api/admin/parlay/post",
+        "/api/admin/parlay/slips",
         json={
             "slot": "today",
-            "style": "balanced",
-            "match_ids": ["1", "2", "3"],
-            "channels": {"x": True, "telegram_free": True},
-            "caption": "test",
-            "autopost": True,
+            "style": "bolder",
+            "legs": refs(day, ["5", "2", "3"]),
+            "channels": {"x": True, "telegram_free": True, "bogus": True},
+            "autopost": False,
         },
     )
     assert res.status_code == 200
-    body = res.json()
-    assert body["ok"] is True
-    assert body["post_log"]["x"]["ok"] is True
+    assert [leg["match_id"] for leg in got["legs"]] == ["2", "3", "5"]  # kick-off order
+    assert got["channels"] == {
+        "x": True,
+        "telegram_free": True,
+        "telegram_paid": False,
+        "discord_free": False,
+        "discord_paid": False,
+    }
+    assert got["autopost"] is False
+    assert "riskier slip" in got["caption"]
+    assert res.json()["verdict"]["done"] is False
+
+
+def test_save_needs_a_channel(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages())
+    day = client.get("/api/admin/parlay/day").json()
+    res = client.post(
+        "/api/admin/parlay/slips", json={"legs": refs(day, ["1", "2", "3"]), "channels": {}}
+    )
+    assert res.status_code == 422
+
+
+def test_decide_only_answers_an_open_question(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    row = {
+        "id": 3,
+        "day": "2026-11-07",
+        "slot": "today",
+        "style": "balanced",
+        "status": "needs_decision",
+        "legs": [{"match_id": "1", "price": 1.5}, {"match_id": "2", "price": 1.6}],
+        "outcomes": {"1": {"outcome": "landed"}, "2": {"state": "off", "note": "Postponed"}},
+    }
+    monkeypatch.setattr("kalchas_db.parlay_slips.get_slip_sync", lambda dsn, i: row)
+    calls: list[Any] = []
+    monkeypatch.setattr(
+        "kalchas_db.parlay_slips.decide_leg_sync",
+        lambda dsn, i, mid, out, by: calls.append((mid, out)) or row,
+    )
+    bad = client.post(
+        "/api/admin/parlay/slips/3/decide", json={"match_id": "2", "outcome": "landed"}
+    )
+    assert bad.status_code == 409
+    ok = client.post("/api/admin/parlay/slips/3/decide", json={"match_id": "2", "outcome": "void"})
+    assert ok.status_code == 200
+    assert calls == [("2", "void")]
+
+
+def test_evaluate_sends_unused_legs_in_style_order(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages())
+    day = client.get("/api/admin/parlay/day").json()
+    seen: dict[str, Any] = {}
+
+    def fake(**kw: Any) -> dict[str, Any]:
+        seen.update(kw)
+        return {"ok": True, "advice": "fine", "suggestions": []}
+
+    monkeypatch.setattr("kalchas_api.parlay_claude.evaluate", fake)
+    res = client.post("/api/admin/parlay/evaluate", json={"legs": refs(day, ["1", "2", "3"])})
+    assert res.status_code == 200
+    assert {leg["match_id"] for leg in seen["unused"]} == {"4", "5", "6", "7"}
+    assert len(seen["selected"]) == 3
 
 
 def test_claude_retries_with_available_model_on_404(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -228,16 +246,6 @@ def test_claude_retries_with_available_model_on_404(monkeypatch: pytest.MonkeyPa
     assert seen == ["claude-retired", "claude-sonnet-x"]
 
 
-def test_default_caption_explains_style_and_links_site() -> None:
-    composed = {"slot": "today", "style": "bolder"}
-    legs = [{"price": 1.5}, {"price": 1.6}, {"price": 1.7}]
-    caption = admin_parlay._default_caption(composed, legs)
-    assert "riskier slip" in caption
-    assert "kalchas.live" in caption
-    assert "kalchas.live/parlay" not in caption
-    assert "For research & football enthusiast purposes only" in caption
-
-
 def test_claude_ignores_thinking_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
     import httpx
     from kalchas_api import parlay_claude
@@ -264,24 +272,6 @@ def test_claude_ignores_thinking_blocks(monkeypatch: pytest.MonkeyPatch) -> None
     assert out["ok"] is True
     assert out["advice"] == "Weakest: leg 3"
     assert out["suggestions"] == []
-
-
-def test_include_pins_a_leg_into_the_slip(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    pages = [page(str(i), f"2026-11-07T1{i}:00:00+03:00") for i in range(1, 8)]
-    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages)
-    base = client.get("/api/admin/parlay?slot=today&style=balanced&legs=3").json()
-    picked = [leg["match_id"] for leg in base["selected"]]
-    spare = next(leg["match_id"] for leg in base["legs"] if leg["match_id"] not in picked)
-    swapped = client.get(
-        f"/api/admin/parlay?slot=today&style=balanced&legs=3&exclude={picked[0]}&include={spare}"
-    ).json()
-    ids = [leg["match_id"] for leg in swapped["selected"]]
-    assert len(ids) == 3
-    assert spare in ids
-    assert picked[0] not in ids
-    assert swapped["include"] == [spare]
 
 
 def test_split_suggestions_keeps_only_valid_actions() -> None:
