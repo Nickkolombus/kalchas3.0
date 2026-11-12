@@ -3026,6 +3026,19 @@
   white-space: nowrap;
 }
 
+.ap-chanfail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ap-chanretry {
+  flex: none;
+  padding: 1px 10px;
+  font-size: 0.76rem;
+}
+
 .ap-leglog li {
   display: grid;
   gap: 1px;

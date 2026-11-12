@@ -75,6 +75,9 @@ class DecideBody(BaseModel):
     outcome: Literal["landed", "missed", "void"]
 
 
+Channel = Literal["x", "telegram_free", "telegram_paid", "discord_free", "discord_paid"]
+
+
 class ReplyBody(BaseModel):
     action: Literal["post", "skip", "retry"]
 
@@ -324,6 +327,20 @@ def retry(slip_id: int, request: Request) -> dict[str, Any]:
 
     if not retry_post_sync(_dsn(), slip_id):
         raise HTTPException(status_code=409, detail="only a failed slip can be retried")
+    return _out(_load(slip_id))
+
+
+@router.post("/slips/{slip_id}/retry/{channel}")
+def retry_channel(slip_id: int, channel: Channel, request: Request) -> dict[str, Any]:
+    """Post a slip again to one channel that failed, leaving the others alone."""
+    require_admin(request)
+    from kalchas_db.parlay_slips import retry_channel_sync
+
+    if not retry_channel_sync(_dsn(), slip_id, channel):
+        raise HTTPException(
+            status_code=409,
+            detail="that channel can't be retried: it already posted, or the slip has settled",
+        )
     return _out(_load(slip_id))
 
 

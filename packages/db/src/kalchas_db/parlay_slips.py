@@ -36,7 +36,7 @@ RETURNING {_COLUMNS}
 FINISH_POST = """
 UPDATE parlay_slips
 SET status = $2, post_log = $3::jsonb, updated_at = NOW(),
-    posted_at = CASE WHEN $2 = 'posted' THEN NOW() ELSE posted_at END
+    posted_at = CASE WHEN $2 = 'posted' THEN COALESCE(posted_at, NOW()) ELSE posted_at END
 WHERE id = $1
 """
 
@@ -196,6 +196,31 @@ RETRY_POST = text(
     """
 )
 
+# Send the slip again to one channel that failed (or never went), without
+# touching the channels that worked: the entry is flagged "retry" and the bot,
+# seeing a flag, posts to the flagged channels only. Only before the slip
+# settles: after that the result reply flow owns it.
+RETRY_STATUSES = ("failed", "posted", "needs_decision", "approved")
+
+RETRY_CHANNEL = text(
+    """
+    UPDATE parlay_slips
+    SET status = 'approved',
+        post_log = jsonb_set(
+            COALESCE(post_log, '{}'::jsonb),
+            ARRAY[CAST(:channel AS text)],
+            COALESCE(post_log -> CAST(:channel AS text), '{}'::jsonb)
+                || jsonb_build_object('retry', true)
+        ),
+        updated_at = NOW()
+    WHERE id = :id
+      AND status = ANY(:allowed)
+      AND channels ->> CAST(:channel AS text) = 'true'
+      AND COALESCE(post_log -> CAST(:channel AS text) ->> 'ok', 'false') <> 'true'
+    RETURNING id
+    """
+)
+
 # post: send the result reply; skip: never reply; retry: try a failed reply again.
 _REPLY_ACTIONS: dict[str, tuple[str, tuple[str, ...]]] = {
     "post": ("reply_approved", ("awaiting_reply", "reply_skipped")),
@@ -280,6 +305,16 @@ def set_reply_sync(dsn: str, slip_id: int, action: str) -> bool:
 def retry_post_sync(dsn: str, slip_id: int) -> bool:
     with sync_engine(dsn).begin() as conn:
         row = conn.execute(RETRY_POST, {"id": slip_id}).first()
+    return row is not None
+
+
+def retry_channel_sync(dsn: str, slip_id: int, channel: str) -> bool:
+    """Queue one failed channel for posting again; False if it can't be."""
+    with sync_engine(dsn).begin() as conn:
+        row = conn.execute(
+            RETRY_CHANNEL,
+            {"id": slip_id, "channel": channel, "allowed": list(RETRY_STATUSES)},
+        ).first()
     return row is not None
 
 

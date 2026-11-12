@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 type Api = <T>(path: string, init?: RequestInit) => Promise<T>;
 
-type Entry = { ok: boolean; ref?: string; to?: string; error?: string; at?: string };
+type Entry = { ok: boolean; ref?: string; to?: string; error?: string; at?: string; retry?: boolean };
 
 type SlipLeg = {
   match_id: string;
@@ -59,6 +59,9 @@ export const CHANNELS: { key: string; label: string }[] = [
   { key: "discord_free", label: "Discord free" },
   { key: "discord_paid", label: "Discord paid" },
 ];
+
+// A failed channel can be sent again until the slip settles (the API holds the same list).
+const RETRYABLE = new Set(["failed", "posted", "needs_decision", "approved"]);
 
 const SLOT: Record<string, string> = { today: "Today", tomorrow: "Tomorrow", nightly: "Nightly" };
 
@@ -151,6 +154,12 @@ export function AdminParlayPosted({ api, refresh }: { api: Api; refresh: number 
     }
   };
 
+  const retryChannel = (s: Slip, channel: string, label: string) => {
+    const started = s.legs.filter((l) => new Date(l.kickoff).getTime() <= Date.now()).length;
+    if (started && !window.confirm(`${started} of ${s.legs.length} matches have already kicked off. Post slip #${s.id} to ${label} anyway?`)) return;
+    void act(`/api/admin/parlay/slips/${s.id}/retry/${channel}`);
+  };
+
   if (error && !slips) return <p className="kit-error">{error}</p>;
   if (!slips) return <p className="kit-empty">Loading…</p>;
   if (!slips.length)
@@ -193,9 +202,20 @@ export function AdminParlayPosted({ api, refresh }: { api: Api; refresh: number 
                       return (
                         <li key={c.key}>
                           <span>{c.label}</span>
-                          <span className={p ? (p.ok ? "is-ok" : "is-bad") : "kit-muted"} title={p?.error ?? ""}>
-                            {p ? (p.ok ? "posted" : `failed: ${p.error ?? ""}`) : "waiting"}
-                          </span>
+                          {p?.retry ? (
+                            <span className="kit-muted">sending again…</span>
+                          ) : p && !p.ok && RETRYABLE.has(s.status) ? (
+                            <span className="ap-chanfail">
+                              <span className="is-bad" title={p.error ?? ""}>failed: {p.error ?? ""}</span>
+                              <button type="button" className="kit-btn ap-chanretry" onClick={() => retryChannel(s, c.key, c.label)}>
+                                Retry
+                              </button>
+                            </span>
+                          ) : (
+                            <span className={p ? (p.ok ? "is-ok" : "is-bad") : "kit-muted"} title={p?.error ?? ""}>
+                              {p ? (p.ok ? "posted" : `failed: ${p.error ?? ""}`) : "waiting"}
+                            </span>
+                          )}
                           <span className={r ? (r.ok ? "is-ok" : "is-bad") : "kit-muted"} title={r?.error ?? ""}>
                             {r ? (r.ok ? "result replied" : `reply failed: ${r.error ?? ""}`) : p?.ok ? "result to come" : ""}
                           </span>

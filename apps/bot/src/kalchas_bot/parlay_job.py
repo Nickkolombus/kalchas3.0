@@ -129,8 +129,12 @@ async def post_slip(
     x_text = str(slip.get("x_text") or "") or caption
     out: dict[str, Any] = dict(slip.get("post_log") or {})
     wanted = slip.get("channels") or {}
+    # A retry the admin asked for, channel by channel, goes to those channels only.
+    only = {name for name, entry in out.items() if (entry or {}).get("retry")}
     for name in CHANNELS:
         if not wanted.get(name) or (out.get(name) or {}).get("ok"):
+            continue
+        if only and name not in only:
             continue
         dest = _destination(name, targets, discord)
         if dest is None:

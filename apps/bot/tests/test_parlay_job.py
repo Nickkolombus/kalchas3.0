@@ -204,6 +204,19 @@ async def test_post_skips_channels_already_sent() -> None:
     assert log == done
 
 
+async def test_a_channel_retry_posts_to_that_channel_only() -> None:
+    bot = Bot()
+    log = {
+        "telegram_free": {"ok": False, "error": "flood", "retry": True},
+        "telegram_paid": {"ok": False, "error": "flood"},
+    }
+    one = slip(channels={"telegram_free": True, "telegram_paid": True}, post_log=log)
+    out = await parlay_job.post_slip(bot, TARGETS, one, {})
+    assert len(bot.sent) == 1
+    assert out["telegram_free"]["ok"] is True and "retry" not in out["telegram_free"]
+    assert out["telegram_paid"] == {"ok": False, "error": "flood"}
+
+
 async def test_reply_goes_under_each_original_post(monkeypatch: pytest.MonkeyPatch) -> None:
     replies: list[dict[str, Any]] = []
 

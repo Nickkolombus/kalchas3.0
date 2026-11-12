@@ -293,3 +293,21 @@ def test_split_suggestions_keeps_only_valid_actions() -> None:
     assert [s["kind"] for s in out] == ["swap", "add"]
     assert out[0]["remove_label"] == "Home1 v Away1 · BTTS No 1.90"
     assert out[0]["add_label"] == "Home9 v Away9 · Over 2.5 1.67"
+
+
+def test_retry_one_channel(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[int, str]] = []
+
+    def retry(dsn: str, slip_id: int, channel: str) -> bool:
+        calls.append((slip_id, channel))
+        return channel == "x"
+
+    monkeypatch.setattr("kalchas_db.parlay_slips.retry_channel_sync", retry)
+    monkeypatch.setattr(
+        "kalchas_db.parlay_slips.get_slip_sync",
+        lambda dsn, i: {"id": i, "legs": [], "outcomes": {}, "status": "approved"},
+    )
+    assert client.post("/api/admin/parlay/slips/2/retry/x").status_code == 200
+    assert client.post("/api/admin/parlay/slips/2/retry/telegram_paid").status_code == 409
+    assert client.post("/api/admin/parlay/slips/2/retry/myspace").status_code == 422
+    assert calls == [(2, "x"), (2, "telegram_paid")]
