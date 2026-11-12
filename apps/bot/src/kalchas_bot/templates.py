@@ -25,6 +25,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from kalchas_core.chance import chance_for_alert
 from kalchas_core.weights import short_label_for
 
 from kalchas_bot.discord_channel import html_to_discord
@@ -97,6 +98,18 @@ TAGS: tuple[Tag, ...] = (
     Tag("team", "Team the signal is for (empty if it's for both)", "Signal", "Arsenal"),
     Tag("side", "home or away", "Signal", "home"),
     Tag("form_note", "Form Bar's note (Form Bar only)", "Signal", "Scored in 9 of last 10"),
+    Tag(
+        "chance",
+        "Chance the signal's team scores before full time (needs kickoff odds)",
+        "Signal",
+        "58%",
+    ),
+    Tag(
+        "chance_odds_only",
+        "The same chance from kickoff odds and the clock alone, without the signal",
+        "Signal",
+        "44%",
+    ),
     Tag(
         "versus",
         "Match line: teams, minute, signal team in bold",
@@ -422,6 +435,13 @@ def alert_values(rows: Sequence[Mapping[str, Any]], *, with_score: bool = False)
             number = _int_text(raw)
             values[f"{name}_{team_side}"] = f"{number}{suffix}" if number else ""
     values.update(_odds_values(payload.get("odds"), home=home, away=away, side=side))
+    chance = (
+        chance_for_alert(payload, team=side, minute=first.get("minute"), score=values["score"])
+        if side
+        else None
+    )
+    values["chance"] = f"{chance.percent}%" if chance else ""
+    values["chance_odds_only"] = f"{chance.baseline_percent}%" if chance else ""
     values.update(_h2h_values(payload.get("h2h")))
     return values
 

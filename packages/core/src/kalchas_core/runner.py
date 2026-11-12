@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from kalchas_core.chance import scoring_chance
 from kalchas_core.conditions import (
     ConditionMatch,
     favourite_from_kickoff,
@@ -98,10 +99,25 @@ def _condition_match(
     live_away_odds: float | None,
     yellow_cards: Any,
     red_cards: Any,
+    draw_odds: float | None = None,
+    first_half: bool | None = None,
 ) -> ConditionMatch:
     snap = timeline.current
     yellow = _card_pair(yellow_cards)
     red = _card_pair(red_cards)
+
+    def _chance(side: Side) -> float | None:
+        reading = scoring_chance(
+            side,
+            minute=timeline.current_minute,
+            home_goals=home_goals,
+            away_goals=away_goals,
+            home_odds=home_odds,
+            draw_odds=draw_odds,
+            away_odds=away_odds,
+            first_half=first_half,
+        )
+        return None if reading is None else reading.chance * 100.0
 
     def _side(side: Side, index: int) -> dict[str, float | None]:
         team = snap.team(side) if snap is not None else None
@@ -123,6 +139,7 @@ def _condition_match(
             "goals": float(home_goals if side is Side.HOME else away_goals),
             "kickoff_odds": home_odds if side is Side.HOME else away_odds,
             "live_odds": live_home_odds if side is Side.HOME else live_away_odds,
+            "chance": _chance(side),
         }
 
     return ConditionMatch(
@@ -166,6 +183,16 @@ def home_away_odds(odds: dict[str, Any] | None) -> tuple[float | None, float | N
     return _odds_pair(odds)
 
 
+def kickoff_draw_odds(odds: dict[str, Any] | None) -> float | None:
+    """Kickoff draw price, read from the same block as `home_away_odds`."""
+    if not isinstance(odds, dict):
+        return None
+    nested = odds.get("kickoff")
+    if isinstance(nested, dict) and _odds_pair(nested) != (None, None):
+        return _parse_decimal_odds(nested.get("draw"))
+    return _parse_decimal_odds(odds.get("draw"))
+
+
 def live_home_away_odds(
     odds: dict[str, Any] | None,
     *,
@@ -199,6 +226,8 @@ def evaluate_match(
     yellow_cards: Any = (0, 0),
     red_cards: Any = (0, 0),
     conditions: dict[int, list] | None = None,
+    draw_odds: float | None = None,
+    first_half: bool | None = None,
 ) -> list[AlertCandidate]:
     """Run selected strategy slots; return candidates that cross their threshold."""
     w = weights or WeightSet.defaults()
@@ -383,6 +412,8 @@ def evaluate_match(
             live_away_odds=live_away_odds,
             yellow_cards=yellow_cards,
             red_cards=red_cards,
+            draw_odds=draw_odds,
+            first_half=first_half,
         )
         candidates = [
             cand
@@ -435,6 +466,8 @@ def board_snapshot(
     yellow_cards: Any = (0, 0),
     red_cards: Any = (0, 0),
     conditions: dict[int, list] | None = None,
+    draw_odds: float | None = None,
+    first_half: bool | None = None,
 ) -> dict[str, Any]:
     """Continuous strategy + stat lines for the live board (not only alert fires)."""
     w = weights or WeightSet.defaults()
@@ -486,6 +519,8 @@ def board_snapshot(
             live_away_odds=live_away_odds,
             yellow_cards=yellow_cards,
             red_cards=red_cards,
+            draw_odds=draw_odds,
+            first_half=first_half,
         )
 
     def _fired(slot: int, side: Side, native: bool) -> bool:

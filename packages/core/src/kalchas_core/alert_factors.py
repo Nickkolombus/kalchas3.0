@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any
 
 from kalchas_core.alert_outcomes.score import parse_score
+from kalchas_core.chance import chance_for_alert
 from kalchas_core.odds import live_line_fetched_at
 from kalchas_core.sweet_spot import SweetSpotWindows, in_sweet_spot
 
@@ -75,6 +76,8 @@ CSV_COLUMNS: tuple[str, ...] = (
     "also_firing",
     "settle_score",
     "settle_minute",
+    "chance",
+    "chance_baseline",
 )
 
 
@@ -229,6 +232,19 @@ def _tslg_bucket(tslg_min: int | None, no_goal: bool) -> str:
     return "20'+"
 
 
+CHANCE_BUCKETS: tuple[str, ...] = ("under 30%", "30-39%", "40-49%", "50-59%", "60-69%", "70%+")
+
+
+def _chance_bucket(percent: int | None) -> str | None:
+    if percent is None:
+        return None
+    if percent < 30:
+        return CHANCE_BUCKETS[0]
+    if percent >= 70:
+        return CHANCE_BUCKETS[-1]
+    return CHANCE_BUCKETS[(percent - 20) // 10]
+
+
 def _odds_bucket(price: float | None) -> str:
     if price is None:
         return "unknown"
@@ -330,6 +346,8 @@ def factors_from_payload(
     k_row = board.get("kscore") if isinstance(board.get("kscore"), Mapping) else {}
     if isinstance(k_row, Mapping):
         k_match = _finite(k_row.get("match"))
+    chance = chance_for_alert(raw, team=side, minute=clock, score=score)
+    chance_percent = chance.percent if chance else None
     return {
         "status": status,
         "country": str(raw.get("country") or "") or None,
@@ -365,6 +383,9 @@ def factors_from_payload(
         "clock_bucket": _clock_bucket(clock),
         "tslg_bucket": _tslg_bucket(tslg_min, no_goal),
         "odds_bucket": _odds_bucket(trigger_odds),
+        "chance": chance_percent,
+        "chance_baseline": chance.baseline_percent if chance else None,
+        "chance_bucket": _chance_bucket(chance_percent),
         "h2h": raw.get("h2h") if isinstance(raw.get("h2h"), Mapping) else None,
         "last_5min": raw.get("last_5min") if isinstance(raw.get("last_5min"), Mapping) else None,
         "last_10min": raw.get("last_10min") if isinstance(raw.get("last_10min"), Mapping) else None,
@@ -403,6 +424,9 @@ def pattern_summary(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
         ("TSLG", "tslg_bucket", ("no goal yet", "0-9'", "10-19'", "20'+")),
         ("Sweet spot", "sweet_spot", ("yes", "no")),
         ("Kickoff odds (trigger side)", "odds_bucket", ("favourite <2", "mid 2-3.5", "dog >3.5")),
+        # How often alerts landed against the chance given for the alerted team
+        # to score before full time. Reads cleanly for team-to-score strategies.
+        ("Scoring chance (alerted team)", "chance_bucket", CHANCE_BUCKETS),
         ("Weekday (UTC)", "weekday_bucket", _WEEKDAY_LABELS),
         ("Hour (UTC)", "hour_bucket", _HOUR_LABELS),
     )
@@ -611,4 +635,6 @@ def csv_row(item: Mapping[str, Any]) -> dict[str, Any]:
         "also_firing": ",".join(str(s) for s in (factors.get("also_firing") or [])),
         "settle_score": item.get("settle_score") or "",
         "settle_minute": item.get("settle_minute"),
+        "chance": factors.get("chance"),
+        "chance_baseline": factors.get("chance_baseline"),
     }

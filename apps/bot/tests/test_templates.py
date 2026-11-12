@@ -112,6 +112,32 @@ def test_values_cover_every_tag() -> None:
     assert goal["goal_minute"] == "72′"
 
 
+def test_chance_tags_read_for_the_signal_team() -> None:
+    # No stamp on the alert: worked out from kickoff odds, minute and score.
+    home = t.alert_values([_row()])
+    assert home["chance"] == "51%"
+    assert home["chance_odds_only"] == "38%"
+    away = t.alert_values([_row(team="away")])
+    assert away["chance"] == "40%"
+    # A stamped reading is what the alert said when it fired.
+    stamped = _row()
+    stamped["payload"] = {**stamped["payload"], "chance": {"chance": 0.62, "baseline": 0.47}}
+    assert t.alert_values([stamped])["chance"] == "62%"
+    assert t.render("Chance: {chance} (odds alone {chance_odds_only})", home) == (
+        "Chance: 51% (odds alone 38%)"
+    )
+
+
+def test_chance_line_drops_without_one_team_or_without_odds() -> None:
+    both = t.alert_values(
+        [_row(), _row(id=11, strategy_slot=1, strategy_key="rule_of_three", team="away")]
+    )
+    no_odds = t.alert_values([_row(payload={"league": "Premier League"})])
+    for values in (both, no_odds):
+        assert values["chance"] == ""
+        assert t.render("{home}\nChance: {chance}", values) == "Arsenal"
+
+
 def test_joint_values_join_strategies_and_blank_team_when_both_sides() -> None:
     rows = [
         _row(),

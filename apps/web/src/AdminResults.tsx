@@ -44,6 +44,8 @@ type ResultFactors = {
   score_state?: string | null;
   odds_bucket?: string | null;
   tslg_bucket?: string | null;
+  chance?: number | null;
+  chance_baseline?: number | null;
 };
 
 type ResultItem = {
@@ -748,6 +750,10 @@ export function AdminResults({
                                   <div><span>Score state</span><b>{f?.score_state || "–"}</b></div>
                                   <div><span>Time since last goal</span><b>{f?.tslg_bucket || f?.tslg || "–"}</b></div>
                                   <div><span>Odds band</span><b>{f?.odds_bucket || "–"}</b></div>
+                                  <div title="Chance the alerted team scores before full time. In brackets: what kickoff odds and the clock say on their own.">
+                                    <span>Scoring chance</span>
+                                    <b>{f?.chance != null ? `${f.chance}%${f.chance_baseline != null ? ` (odds alone ${f.chance_baseline}%)` : ""}` : "–"}</b>
+                                  </div>
                                   <div><span>Sweet spot</span><b>{f?.sweet_spot == null ? "–" : f.sweet_spot ? "yes" : "no"}</b></div>
                                   <div><span>Minutes to goal</span><b>{gap != null ? `${gap}′` : "–"}</b></div>
                                 </div>

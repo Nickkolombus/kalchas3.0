@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 from kalchas_core.alert_factors import compact_board, sweet_spot_flag
 from kalchas_core.alert_outcomes import AlertOutcomeEvaluator, evaluator_from_rule_rows
+from kalchas_core.chance import chance_record, scoring_chance
 from kalchas_core.cooldown import (
     DEFAULT_BASE_COOLDOWN,
     DEFAULT_BYPASS_DELTA,
@@ -42,6 +43,7 @@ from kalchas_core.runner import (
     board_snapshot,
     evaluate_match,
     home_away_odds,
+    kickoff_draw_odds,
     live_home_away_odds,
 )
 from kalchas_core.strategies.delta_5min import last_5min_block
@@ -675,6 +677,8 @@ class Scanner:
 
         odds_payload = self._odds_payload(match.match_id)
         home_odds, away_odds = home_away_odds(odds_payload)
+        draw_odds = kickoff_draw_odds(odds_payload)
+        first_half = _in_first_half(match.status_short)
         live_home, live_away = live_home_away_odds(odds_payload)
         yellow, red = count_cards_by_side(ssot_events)
         candidates = evaluate_match(
@@ -696,6 +700,8 @@ class Scanner:
             yellow_cards=yellow,
             red_cards=red,
             conditions=self.conditions,
+            draw_odds=draw_odds,
+            first_half=first_half,
         )
         pending: list[tuple] = []
         for cand in candidates:
@@ -709,7 +715,7 @@ class Scanner:
                 goal_events=goals,
                 last_goal=tslg.get("last_goal") or None,
                 red_cards=reds,
-                first_half=_in_first_half(match.status_short),
+                first_half=first_half,
             )
             if not decision.can_send:
                 logger.debug(
@@ -741,6 +747,8 @@ class Scanner:
                     yellow_cards=yellow,
                     red_cards=red,
                     conditions=self.conditions,
+                    draw_odds=draw_odds,
+                    first_half=first_half,
                 )
             )
         emitted: list[dict] = []
@@ -781,6 +789,23 @@ class Scanner:
             }
             if cand.strategy_key == "delta_goal":
                 payload["form_bar"] = detail
+            if cand.side is not None:
+                # Chance the alerted team scores before full time; stamped so
+                # results can later be checked against what was said at the time.
+                chance = chance_record(
+                    scoring_chance(
+                        cand.side,
+                        minute=match.minute,
+                        home_goals=match.home_score,
+                        away_goals=match.away_score,
+                        home_odds=home_odds,
+                        draw_odds=draw_odds,
+                        away_odds=away_odds,
+                        first_half=first_half,
+                    )
+                )
+                if chance:
+                    payload["chance"] = chance
             if timeline is not None:
                 last_5 = last_5min_block(timeline)
                 last_10 = last_10min_block(timeline)

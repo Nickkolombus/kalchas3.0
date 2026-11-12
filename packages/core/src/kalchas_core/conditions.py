@@ -46,6 +46,9 @@ CONDITION_METRICS: tuple[tuple[str, str], ...] = (
     ("goals", "Goals"),
     ("kickoff_odds", "Kickoff odds"),
     ("live_odds", "Live odds"),
+    # 0-100: chance the side scores before full time (kalchas_core.chance).
+    # No reading without kickoff odds, so a row on it then blocks the alert.
+    ("chance", "Chance %"),
 )
 
 CONDITION_OPERATORS: tuple[str, ...] = (">", ">=", "<", "<=", "=")

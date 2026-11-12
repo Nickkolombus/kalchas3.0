@@ -248,6 +248,8 @@ def _slice_dims(zone: tzinfo) -> tuple[tuple[str, Callable[[Mapping[str, Any]], 
         ("Score", lambda row: _SCORE_LABELS.get(str(_factors(row).get("score_state") or ""))),
         ("Kickoff odds", lambda row: known(_factors(row).get("odds_bucket"))),
         ("Kickoff role", kickoff_role),
+        # Chance given for the alerted team to score before full time.
+        ("Scoring chance", lambda row: known(_factors(row).get("chance_bucket"))),
         ("Side", lambda row: {"home": "Home team", "away": "Away team"}.get(row.get("team") or "")),
         ("Sweet spot", sweet),
         ("Time since last goal", lambda row: known(_factors(row).get("tslg_bucket"))),

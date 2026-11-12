@@ -19,7 +19,12 @@ from kalchas_core.alert_outcomes import DEFAULT_RULES, evaluator_from_rule_rows,
 from kalchas_core.events import count_cards_by_side
 from kalchas_core.match import MatchTimeline
 from kalchas_core.odds import fresh_live_line, kickoff_home_away
-from kalchas_core.runner import board_snapshot, home_away_odds, live_home_away_odds
+from kalchas_core.runner import (
+    board_snapshot,
+    home_away_odds,
+    kickoff_draw_odds,
+    live_home_away_odds,
+)
 from kalchas_core.weights import WeightSet, strategy_names
 from kalchas_football import apifootball_badge_url, https_asset_url
 from pydantic import BaseModel, Field
@@ -602,6 +607,7 @@ def _enrich_live_row(
             yellow_cards=yellow,
             red_cards=red,
             conditions=tuning.conditions,
+            draw_odds=kickoff_draw_odds(odds_data),
         )
         strategy_status = _strategy_blocks(board["strategy_status"])
         active = list(board.get("active_strategies") or [])

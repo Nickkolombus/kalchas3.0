@@ -9,7 +9,12 @@ from kalchas_core.alert_outcomes import match_is_terminal
 from kalchas_core.events import count_cards_by_side
 from kalchas_core.form import TeamForm
 from kalchas_core.match import MatchTimeline
-from kalchas_core.runner import board_snapshot, home_away_odds, live_home_away_odds
+from kalchas_core.runner import (
+    board_snapshot,
+    home_away_odds,
+    kickoff_draw_odds,
+    live_home_away_odds,
+)
 from kalchas_core.weights import WeightSet
 from kalchas_db.settings import SLOT_BY_KEY
 
@@ -89,6 +94,7 @@ def _snapshot_row(
         yellow_cards=yellow,
         red_cards=red,
         conditions=conditions,
+        draw_odds=kickoff_draw_odds(odds_data),
     )
     status = board.get("strategy_status") or {}
     return {
