@@ -46,11 +46,14 @@ WHERE status = ANY($1::text[])
 ORDER BY created_at
 """  # noqa: S608
 
+# $4 is cast everywhere: it is also tested with IS NOT NULL, and without the
+# cast Postgres can't type it and refuses to prepare the statement.
 SAVE_SETTLE = """
 UPDATE parlay_slips
-SET outcomes = $2::jsonb, status = $3, result = $4, updated_at = NOW(),
+SET outcomes = $2::jsonb, status = $3, result = $4::text, updated_at = NOW(),
     asked_at = CASE WHEN $5 THEN NOW() ELSE asked_at END,
-    settled_at = CASE WHEN $4 IS NOT NULL AND settled_at IS NULL THEN NOW() ELSE settled_at END
+    settled_at = CASE WHEN $4::text IS NOT NULL AND settled_at IS NULL THEN NOW()
+                      ELSE settled_at END
 WHERE id = $1 AND status = ANY($6::text[]) AND updated_at = $7
 RETURNING id
 """
