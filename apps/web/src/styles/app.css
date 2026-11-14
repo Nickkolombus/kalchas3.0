@@ -2295,43 +2295,150 @@ body {
   border-top: 1px solid var(--border);
 }
 
-/* Signals */
-.mp-sig .wl-num {
-  width: 6rem;
+/* Signals: the Stats tab's layout, with each signal's alert line marked on
+   the bars. A team that passes the line turns green. */
+.mp-read {
+  margin: 0.15rem 0 0.2rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--text);
 }
 
-.mp-sig tbody th {
+.mp-sigrow {
+  padding: 0.55rem 0 0.6rem;
+  border-top: 1px solid var(--border);
+}
+
+.mp-sigrow.is-hero {
+  border-top: 0;
+  padding-bottom: 0;
+}
+
+.mp-sigrow-top {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr) 4rem;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.mp-sigrow-top > b {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mp-sigrow-top > b:last-child {
+  text-align: right;
+}
+
+.mp-sigrow-top > b.is-on {
+  color: var(--wl-strong);
+}
+
+.mp-sigrow-top > b.is-dim {
+  color: var(--muted);
   font-weight: 500;
 }
 
-.mp-sig tbody th .hover-anchor {
-  text-align: left;
+.mp-sigrow.is-hero .mp-sigrow-top {
+  align-items: end;
 }
 
-.mp-sig tbody th .hover-anchor > span {
+.mp-sigrow.is-hero .mp-sigrow-top > b {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.mp-sigrow-name {
+  text-align: center;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.mp-sigrow-name .hover-anchor {
+  display: inline-flex;
+  width: auto;
+  margin: 0;
+}
+
+.mp-sigrow-name .hover-anchor > span {
   cursor: help;
   border-bottom: 1px dotted rgba(232, 220, 196, 0.3);
 }
 
-.mp-sig tr.is-on th {
-  color: var(--accent);
-}
-
-.mp-sig-val .wl-mini i {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.mp-sig-val.is-on {
-  color: var(--accent);
-}
-
-.mp-sig-val.is-on .wl-mini i {
-  background: var(--accent);
-}
-
-.mp-sig-norm {
+.mp-sigrow-name small {
+  display: block;
+  margin-top: 1px;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.74rem;
+  font-weight: 400;
+}
+
+.mp-alert {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0 0.3rem;
+  border-radius: 4px;
+  background: var(--wl-strong);
+  color: #04120c;
+  font-size: 0.7rem;
+  font-style: normal;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+.mp-alert.is-held {
+  background: transparent;
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--border);
+  cursor: help;
+}
+
+.mp-sbars {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 0.4rem;
+}
+
+.mp-sbar {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--wl-track);
+}
+
+.mp-sbar i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+}
+
+.mp-sbar.is-home i {
+  right: 0;
+  background: rgba(61, 214, 198, 0.55);
+}
+
+.mp-sbar.is-away i {
+  left: 0;
+  background: rgba(111, 155, 209, 0.55);
+}
+
+.mp-sbar i.is-on {
+  background: var(--wl-strong);
+}
+
+/* the alert line */
+.mp-sbar u {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin: 0 -1px;
+  border-radius: 1px;
+  background: var(--text-2);
 }
 
 /* Stats: the name in the middle, the bar split at the centre */
@@ -2755,14 +2862,6 @@ body {
     flex-basis: 34px;
   }
 
-  .mp-sig .wl-num {
-    width: 4.6rem;
-  }
-
-  .mp-sig-norm {
-    display: none;
-  }
-
   .mp-lineups {
     grid-template-columns: 1fr;
   }
@@ -2777,6 +2876,16 @@ body {
 
   .mp-tl-head .mp-seg {
     justify-self: start;
+  }
+
+  /* The Stats tab's small graph keeps its link beside the title. */
+  .mp-tl.is-compact .mp-tl-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title seg";
+  }
+
+  .mp-sigrow-top {
+    grid-template-columns: 2.8rem minmax(0, 1fr) 2.8rem;
   }
 
   .mp-tl-head .wl-sub {

@@ -7,7 +7,6 @@ import {
   HoverTip,
   hoverBarPct,
   hoverLead,
-  phiInk,
   windowLabel,
   windowRecipe,
   type HoverScale,
@@ -192,25 +191,27 @@ const STRAT_ROWS: {
   label: string;
   digits: number;
   tip: string;
-  /** The "What's normal" column on the Signals tab. */
-  normal: string;
+  /** One plain line under the name: what the number measures. */
+  what: string;
   suffix?: string;
   signed?: boolean;
   tone: string;
   scale: HoverScale;
+  /** Efficiency has no alert of its own, so no line is drawn on its bars. */
+  noLine?: boolean;
 }[] = [
   {
-    key: "rule_of_three",
-    normal: "Around 1 is worth a look",
-    label: "Unrealised goals",
-    digits: 1,
-    tone: "urg",
-    scale: { min: -1, max: 3 },
-    tip: "Shots say they should have scored more. Around 1 is worth a look. Negative means the score is already ahead of the chances.",
+    key: "kscore",
+    what: "All the signals in one number",
+    label: "K-Score",
+    digits: 0,
+    tone: "k",
+    scale: { min: 0, max: 100 },
+    tip: "Blend of the other signals, out of 100. A match is picked once a team passes the alert line.",
   },
   {
     key: "delta_5min",
-    normal: "4 is common, 8+ is a wave",
+    what: "Dangerous attacks in the last 5 minutes",
     label: "5-minute pressure",
     digits: 1,
     tone: "d5",
@@ -219,7 +220,7 @@ const STRAT_ROWS: {
   },
   {
     key: "pressure_index",
-    normal: "70 is a surge, 90+ a siege",
+    what: "Pressure over about 10 minutes, out of 100",
     label: "Sustained pressure",
     digits: 0,
     tone: "d10",
@@ -227,33 +228,106 @@ const STRAT_ROWS: {
     tip: "Pressure over about 10 minutes, out of 100. 70 is a surge. 90+ is a siege.",
   },
   {
+    key: "rule_of_three",
+    what: "Goals their chances say they're owed",
+    label: "Unrealised goals",
+    digits: 1,
+    tone: "urg",
+    scale: { min: 0, max: 3 },
+    tip: "Shots say they should have scored more. Around 1 is worth a look. Negative means the score is already ahead of the chances.",
+  },
+  {
     key: "delta_goal",
-    normal: "1.0 = a goal behind their pace",
+    what: "Goals behind what their form expects",
     label: "Form Bar",
     digits: 1,
     tone: "lbar",
-    scale: { min: -2, max: 2 },
+    scale: { min: 0, max: 2 },
     tip: "Goals behind the pace their form sets: their median scored and the opponent's median conceded over the last 10 games, spread over 90 minutes. 1.0 is a goal behind. Ahead means they have scored more than their pace so far. Done means they already have their full expected share. Needs 5+ recent games, or reads blank.",
   },
   {
     key: "npei",
-    normal: "Attacks turned into shots, out of 100",
+    what: "Attacks turned into shots, out of 100",
     label: "Efficiency",
     digits: 0,
     tone: "phi",
     scale: { min: 0, max: 100 },
     tip: "How well attacks become shots, out of 100. A higher number means more shots from the same attacks.",
-  },
-  {
-    key: "kscore",
-    normal: "60+ is a picked match",
-    label: "K-Score",
-    digits: 0,
-    tone: "k",
-    scale: { min: 0, max: 100 },
-    tip: "Blend of the other signals, out of 100. 60+ is a picked match.",
+    noLine: true,
   },
 ];
+
+type StratRow = (typeof STRAT_ROWS)[number];
+
+/** An alert line as people say it: 7, 1.5, 1.3, never 7.0. */
+function lineText(line: number): string {
+  return String(Number(line.toFixed(1)));
+}
+
+/** Signal names inside a sentence: lower case, except the two proper names. */
+function signalInSentence(row: StratRow): string {
+  return row.key === "kscore" || row.key === "delta_goal" ? row.label : row.label.toLowerCase();
+}
+
+/** The Signals tab's opening sentence: who is ahead, who is pushing, and
+ * which alert lines are passed, or the one closest to it. */
+function signalsRead(panel: MatchPanel, ended: boolean): string {
+  const status = panel.strategy_status || {};
+  const value = (key: string, side: "home" | "away") => Number(status[key]?.teams?.[side]?.value ?? 0) || 0;
+  const name = { home: panel.home_team, away: panel.away_team };
+  const [h, a] = (panel.score || "0-0").split("-").map((n) => Number(n) || 0);
+  const leader = h > a ? "home" : a > h ? "away" : null;
+  const ph = value("pressure_index", "home");
+  const pa = value("pressure_index", "away");
+  const pusher = Math.max(ph, pa) < 20 ? null : ph > pa * 2 ? "home" : pa > ph * 2 ? "away" : null;
+  const scoreline = `${Math.max(h, a)}–${Math.min(h, a)}`;
+  const are = ended ? "were" : "are";
+  let first: string;
+  if (leader && pusher && leader !== pusher) {
+    first = `${name[leader]} ${ended ? "won" : "lead"} ${scoreline}, but ${name[pusher]} ${are} doing the pushing.`;
+  } else if (leader && pusher) {
+    first = `${name[leader]} ${ended ? "won" : "lead"} ${scoreline} and ${are} ${ended ? "on top at the end" : "still on top"}.`;
+  } else if (pusher) {
+    first = `${ended ? `It finished ${h}–${a}` : h || a ? `Level at ${h}–${a}` : "Still 0–0"}, ${name[pusher]} ${are} doing the pushing.`;
+  } else {
+    first = ended ? "Neither side was on top at the end." : "Neither side is on top right now.";
+  }
+
+  const lined = STRAT_ROWS.filter((row) => !row.noLine);
+  const passed: { side: "home" | "away"; row: StratRow }[] = [];
+  for (const row of lined) {
+    for (const side of ["home", "away"] as const) {
+      if (status[row.key]?.teams?.[side]?.triggered) passed.push({ side, row });
+    }
+  }
+  if (passed.length) {
+    const list = (rows: string[]) => (rows.length > 1 ? `${rows.slice(0, -1).join(", ")} and ${rows[rows.length - 1]}` : rows[0]);
+    const parts = (["home", "away"] as const)
+      .map((side) => ({ side, rows: passed.filter((p) => p.side === side).map((p) => signalInSentence(p.row)) }))
+      .filter((g) => g.rows.length)
+      .map((g) => `${name[g.side]}: ${list(g.rows)}`);
+    return `${first} Alert${passed.length > 1 ? "s" : ""} ${ended ? "fired" : "firing"} for ${parts.join("; ")}.`;
+  }
+  let near: { side: "home" | "away"; row: StratRow; ratio: number; line: number } | null = null;
+  for (const row of lined) {
+    const line = Number(status[row.key]?.threshold);
+    if (!(line > 0)) continue;
+    for (const side of ["home", "away"] as const) {
+      if (status[row.key]?.teams?.[side]?.delivered) continue;
+      const ratio = value(row.key, side) / line;
+      if (!near || ratio > near.ratio) near = { side, row, ratio, line };
+    }
+  }
+  if (near && near.ratio >= 1) {
+    const v = fmt(value(near.row.key, near.side), near.row.digits);
+    return `${first} No alert ${ended ? "fired" : "yet"}. ${name[near.side]}'s ${signalInSentence(near.row)} is past its line (${v} against ${lineText(near.line)}), but that alert's other conditions ${ended ? "weren't" : "aren't"} met.`;
+  }
+  if (near && near.ratio >= 0.6) {
+    const v = fmt(value(near.row.key, near.side), near.row.digits);
+    return `${first} Nothing has reached an alert line${ended ? "" : " yet"}. Closest: ${name[near.side]}'s ${signalInSentence(near.row)}, ${v} with the alert at ${lineText(near.line)}.`;
+  }
+  return `${first} Nothing is near an alert line.`;
+}
 
 function fmt(v: number | undefined | null, digits = 0): string {
   if (v === undefined || v === null || Number.isNaN(v)) return "—";
@@ -343,8 +417,10 @@ function overlayClock(
   return `${minute}'`;
 }
 
-/** One signal as a table row: a value and small bar per team, what's normal,
- * and the same hover card on the name as before. */
+/** One signal in the Stats tab's layout: a number at each end, the name and
+ * what it measures in the middle, and a bar per team growing out from the
+ * centre. The alert line is a mark on each bar; a team that passes it turns
+ * green. The name keeps its hover card with how the number is worked out. */
 function SignalRow({
   label,
   home,
@@ -359,14 +435,16 @@ function SignalRow({
   awayName,
   tone,
   scale,
-  inkHome,
-  inkAway,
   homeNote,
   awayNote,
   windowHeading,
   homeText,
   awayText,
-  normal,
+  homeEmpty = false,
+  awayEmpty = false,
+  what,
+  line,
+  hero = false,
 }: {
   label: string;
   home: number;
@@ -381,24 +459,28 @@ function SignalRow({
   awayName?: string;
   tone?: string;
   scale?: HoverScale;
-  inkHome?: string;
-  inkAway?: string;
   homeNote?: string;
   awayNote?: string;
   windowHeading?: string;
   /** Replaces the formatted number (Form Bar's Done / Ahead). */
   homeText?: string;
   awayText?: string;
-  normal: string;
+  /** Draws no bar, as for Form Bar once a team is Done or Ahead. */
+  homeEmpty?: boolean;
+  awayEmpty?: boolean;
+  what: string;
+  /** The alert line, from the feed; none for Efficiency. */
+  line?: number | null;
+  /** K-Score's larger version at the top of the tab. */
+  hero?: boolean;
 }) {
   const extras = { suffix, signed };
   const lead = hoverLead(
     { value: home, triggered: homeTriggered },
     { value: away, triggered: awayTriggered },
   );
-  const title =
-    homeName && awayName ? `${label} - ${homeName} vs ${awayName}` : label;
-  const labelNode = tip ? (
+  const title = homeName && awayName ? `${label} - ${homeName} vs ${awayName}` : label;
+  const name = tip ? (
     <HoverTip
       title={title}
       cardClass={tone ? `hover-tone-${tone}` : undefined}
@@ -428,21 +510,48 @@ function SignalRow({
   ) : (
     label
   );
-  const cell = (value: number, text: string, triggered: boolean, ink?: string) => (
-    <td className={`wl-num mp-sig-val${triggered ? " is-on" : ""}`}>
-      <span style={ink && !triggered ? { color: ink } : undefined}>{text}</span>
-      <span className="wl-mini" aria-hidden>
-        <i style={{ width: `${Math.max(3, hoverBarPct(value, scale) ?? 0)}%` }} />
-      </span>
-    </td>
+  const hasLine = line != null && line > 0;
+  const linePct = hasLine ? hoverBarPct(line, scale) : null;
+  const number = (text: string, on: boolean) => (
+    <b className={on ? "is-on" : text === "Done" || text === "Ahead" || text === "—" ? "is-dim" : ""}>{text}</b>
   );
+  const bar = (side: "home" | "away", value: number, on: boolean, empty: boolean) => (
+    <span className={`mp-sbar is-${side}`}>
+      {empty ? null : (
+        <i className={on ? "is-on" : ""} style={{ width: `${Math.max(2, hoverBarPct(value, scale) ?? 0)}%` }} />
+      )}
+      {linePct != null ? <u style={side === "home" ? { right: `${linePct}%` } : { left: `${linePct}%` }} /> : null}
+    </span>
+  );
+  const passed = homeTriggered || awayTriggered;
+  // Past the line without firing: the alert's extra conditions (a minute
+  // window, say) aren't met, so no green.
+  const over = (value: number, empty: boolean) => hasLine && !empty && value >= (line ?? Infinity);
+  const held = !passed && (over(home, homeEmpty) || over(away, awayEmpty));
   return (
-    <tr className={homeTriggered || awayTriggered ? "is-on" : ""}>
-      <th scope="row">{labelNode}</th>
-      {cell(home, homeText ?? fmtSignal(home, digits, extras), homeTriggered, inkHome)}
-      {cell(away, awayText ?? fmtSignal(away, digits, extras), awayTriggered, inkAway)}
-      <td className="mp-sig-norm">{normal}</td>
-    </tr>
+    <div className={`mp-sigrow${hero ? " is-hero" : ""}`}>
+      <div className="mp-sigrow-top">
+        {number(homeText ?? fmtSignal(home, digits, extras), homeTriggered)}
+        <div className="mp-sigrow-name">
+          {name}
+          {passed && !hero ? <em className="mp-alert">Alert</em> : null}
+          {held && !hero ? (
+            <em className="mp-alert is-held" title="Past the line, but this alert's other conditions aren't met">
+              No alert
+            </em>
+          ) : null}
+          <small>
+            {what}
+            {hasLine ? ` · alert at ${lineText(line ?? 0)}` : ""}
+          </small>
+        </div>
+        {number(awayText ?? fmtSignal(away, digits, extras), awayTriggered)}
+      </div>
+      <div className="mp-sbars" aria-hidden>
+        {bar("home", home, homeTriggered, homeEmpty)}
+        {bar("away", away, awayTriggered, awayEmpty)}
+      </div>
+    </div>
   );
 }
 
@@ -1379,6 +1488,43 @@ export function MatchOverlay({
     );
   };
   const hasLineups = Boolean(panel.lineup.home.starting.length || panel.lineup.away.starting.length);
+  const renderSignal = (row: StratRow, hero: boolean) => {
+    const block = panel.strategy_status[row.key];
+    const window = row.key === "delta_5min" ? panel.last_5min : row.key === "pressure_index" ? panel.last_10min : null;
+    const span = row.key === "delta_5min" ? 5 : row.key === "pressure_index" ? 10 : 0;
+    const formBar = row.key === "delta_goal";
+    const cell = (side: "home" | "away") => block?.teams?.[side];
+    const empty = (side: "home" | "away") =>
+      formBar && (Boolean(cell(side)?.delivered) || Number(cell(side)?.value ?? 0) < 0);
+    return (
+      <SignalRow
+        key={row.key}
+        hero={hero}
+        label={row.label}
+        what={row.what}
+        line={row.noLine ? null : Number(block?.threshold) || null}
+        home={Number(cell("home")?.value || 0)}
+        away={Number(cell("away")?.value || 0)}
+        digits={row.digits}
+        homeTriggered={!row.noLine && Boolean(cell("home")?.triggered)}
+        awayTriggered={!row.noLine && Boolean(cell("away")?.triggered)}
+        tip={row.tip}
+        suffix={row.suffix}
+        signed={row.signed}
+        homeName={panel.home_team}
+        awayName={panel.away_team}
+        tone={row.tone}
+        scale={row.scale}
+        homeNote={window ? windowRecipe(window, "home") : (cell("home")?.note ?? undefined)}
+        awayNote={window ? windowRecipe(window, "away") : (cell("away")?.note ?? undefined)}
+        windowHeading={window && span ? windowLabel(window, span) : undefined}
+        homeText={formBar ? formBarText(cell("home")) : undefined}
+        awayText={formBar ? formBarText(cell("away")) : undefined}
+        homeEmpty={empty("home")}
+        awayEmpty={empty("away")}
+      />
+    );
+  };
 
   return (
     <div className="overlay-backdrop" onClick={onClose} role="presentation">
@@ -1461,65 +1607,36 @@ export function MatchOverlay({
         {loadError ? <p className="mp-note">Showing the live row until the match feed catches up.</p> : null}
         <div className="mp-body">
           {tab === "signals" ? (
-            <section className="wl-sec">
-              <div>
-                <h3>Kalchas signals</h3>
-                <p className="wl-sub">
-                  Who is pushing right now and whether a goal looks due. A value turns teal once that team passes its
-                  alert line. Hover or tap a name for how it&apos;s worked out.
-                </p>
-                <div className="wl-table-wrap">
-                  <table className="wl-ptable mp-sig">
-                    <thead>
-                      <tr>
-                        <th />
-                        <th className="wl-num">{panel.home_team}</th>
-                        <th className="wl-num">{panel.away_team}</th>
-                        <th className="mp-sig-norm">What&apos;s normal</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {STRAT_ROWS.map((row) => {
-                        const block = panel.strategy_status[row.key];
-                        const window =
-                          row.key === "delta_5min"
-                            ? panel.last_5min
-                            : row.key === "pressure_index"
-                              ? panel.last_10min
-                              : null;
-                        const span = row.key === "delta_5min" ? 5 : row.key === "pressure_index" ? 10 : 0;
-                        return (
-                          <SignalRow
-                            key={row.key}
-                            label={row.label}
-                            normal={row.normal}
-                            home={Number(block?.teams?.home?.value || 0)}
-                            away={Number(block?.teams?.away?.value || 0)}
-                            digits={row.digits}
-                            homeTriggered={row.key !== "npei" && Boolean(block?.teams?.home?.triggered)}
-                            awayTriggered={row.key !== "npei" && Boolean(block?.teams?.away?.triggered)}
-                            inkHome={row.key === "npei" ? phiInk(block?.teams?.home?.value) : undefined}
-                            inkAway={row.key === "npei" ? phiInk(block?.teams?.away?.value) : undefined}
-                            tip={row.tip}
-                            suffix={row.suffix}
-                            signed={row.signed}
-                            homeName={panel.home_team}
-                            awayName={panel.away_team}
-                            tone={row.tone}
-                            scale={row.scale}
-                            homeNote={window ? windowRecipe(window, "home") : (block?.teams?.home?.note ?? undefined)}
-                            awayNote={window ? windowRecipe(window, "away") : (block?.teams?.away?.note ?? undefined)}
-                            windowHeading={window && span ? windowLabel(window, span) : undefined}
-                            homeText={row.key === "delta_goal" ? formBarText(block?.teams?.home) : undefined}
-                            awayText={row.key === "delta_goal" ? formBarText(block?.teams?.away) : undefined}
-                          />
-                        );
-                      })}
-                    </tbody>
-                  </table>
+            <>
+              <section className="wl-sec">
+                <div>
+                  <h3>Right now</h3>
+                  <p className="mp-read">{signalsRead(panel, ENDED.has(status))}</p>
+                  {renderSignal(STRAT_ROWS[0], true)}
                 </div>
-              </div>
-            </section>
+              </section>
+              <section className="wl-sec">
+                <div>
+                  <h3>Signal by signal</h3>
+                  <p className="wl-sub">
+                    The white mark on each bar is the alert line. A bar turns green when that team&apos;s alert fires;
+                    some alerts have extra conditions, so a bar can pass the line without one. Hover or tap a name for
+                    how it&apos;s worked out.
+                  </p>
+                  <div className="mp-keys">
+                    <span>
+                      <i className="is-home" />
+                      {panel.home_team}
+                    </span>
+                    <span>
+                      {panel.away_team}
+                      <i className="is-away" />
+                    </span>
+                  </div>
+                  {STRAT_ROWS.slice(1).map((row) => renderSignal(row, false))}
+                </div>
+              </section>
+            </>
           ) : null}
           {tab === "stats" ? (
             <>
