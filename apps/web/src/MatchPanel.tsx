@@ -169,10 +169,10 @@ const TIMING_SLOTS: { key: keyof H2HTiming; label: string; threshold: number }[]
 type TabId = "signals" | "stats" | "timeline" | "before" | "lineups";
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: "signals", label: "Signals" },
   { id: "stats", label: "Stats" },
   { id: "timeline", label: "Timeline" },
   { id: "before", label: "Before kick-off" },
+  { id: "signals", label: "Signals" },
   { id: "lineups", label: "Line-ups" },
 ];
 
@@ -520,11 +520,11 @@ const AXIS_MINUTES = [0, 15, 30, 45, 60, 75, 90];
 /** Pressure is smoothed over five minutes, the middle one counting most. */
 const MOMENTUM_WEIGHTS = [1, 2, 3, 2, 1];
 // Rows of the drawing: home events, the plot, away events, the minute axis.
-const HOME_ROW = 11;
-const PLOT_TOP = 26;
-const PLOT_BOTTOM = 166;
-const AWAY_ROW = 181;
-const GRAPH_H = 206;
+// The compact one sits on top of the Stats tab.
+const ROWS = {
+  full: { home: 11, top: 26, bottom: 166, away: 181, height: 206 },
+  compact: { home: 9, top: 21, bottom: 81, away: 93, height: 116 },
+};
 
 /** One value per minute: who was on top. Each team's dangerous attacks per
  * minute, smoothed over five minutes, home minus away. */
@@ -568,14 +568,22 @@ function TimelineGraph({
   homeName,
   awayName,
   minute,
+  compact = false,
+  onMore,
 }: {
   points: TimelinePoint[];
   story: StoryEvent[];
   homeName: string;
   awayName: string;
   minute: number;
+  /** Pressure only, shorter, without the switch: the Stats tab's header graph. */
+  compact?: boolean;
+  /** Opens the full Timeline tab. */
+  onMore?: () => void;
 }) {
-  const [view, setView] = useState<TimelineView>("pressure");
+  const [picked, setView] = useState<TimelineView>("pressure");
+  const view = compact ? "pressure" : picked;
+  const rows = compact ? ROWS.compact : ROWS.full;
   // Drawn at its real width, so text stays 11px on a phone as on a laptop.
   const [plot, setPlot] = useState<HTMLDivElement | null>(null);
   const [W, setW] = useState(GRAPH_W);
@@ -592,8 +600,8 @@ function TimelineGraph({
   const x = (m: number) => GRAPH_LEFT + (m / last) * (W - GRAPH_LEFT - GRAPH_RIGHT);
   const step = x(1) - x(0);
   const barWidth = Math.max(1.5, step - Math.min(1.5, step * 0.25));
-  const mid = (PLOT_TOP + PLOT_BOTTOM) / 2;
-  const half = (PLOT_BOTTOM - PLOT_TOP) / 2;
+  const mid = (rows.top + rows.bottom) / 2;
+  const half = (rows.bottom - rows.top) / 2;
   const events = story.filter((e) => e.kind !== "sub");
   const blurb = {
     pressure: `Who was on top, minute by minute: above the line when ${homeName} had more dangerous attacks, below when ${awayName} did. Goals and cards sit on their team's side.`,
@@ -602,7 +610,7 @@ function TimelineGraph({
   }[view];
 
   const axis = (
-    <g transform={`translate(0,${GRAPH_H - 2})`}>
+    <g transform={`translate(0,${rows.height - 2})`}>
       {AXIS_MINUTES.map((m) => (
         <text key={m} className="mp-tl-ax" x={x(m)} textAnchor="middle">
           {m}&apos;
@@ -610,11 +618,11 @@ function TimelineGraph({
       ))}
     </g>
   );
-  const halfTime = <line className="mp-tl-ht" x1={x(45)} x2={x(45)} y1={PLOT_TOP} y2={PLOT_BOTTOM} />;
+  const halfTime = <line className="mp-tl-ht" x1={x(45)} x2={x(45)} y1={rows.top} y2={rows.bottom} />;
 
   // Goals and cards in a row above (home) or below (away) the plot.
   const marks = events.map((e, i) => {
-    const row = e.side === "away" ? AWAY_ROW : HOME_ROW;
+    const row = e.side === "away" ? rows.away : rows.home;
     const cx = x(e.minute - 0.5);
     if (e.kind === "card") {
       const tone = cardTone(e.detail);
@@ -626,7 +634,7 @@ function TimelineGraph({
     }
     // A goal: a football above (home) or below (away) the plot, on a thin
     // stem down or up to the centre line at its minute.
-    const stemTo = (PLOT_TOP + PLOT_BOTTOM) / 2;
+    const stemTo = (rows.top + rows.bottom) / 2;
     return (
       <g key={`e${i}`} className="mp-tl-goal">
         <title>{`${e.minute}' goal: ${e.player} ${(e.scoreAfter ?? "").replace("-", "–")}`}</title>
@@ -642,7 +650,7 @@ function TimelineGraph({
   } else if (view === "unrealised") {
     const lo = -1;
     const hi = 3;
-    const y = (v: number) => PLOT_BOTTOM - ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * (PLOT_BOTTOM - PLOT_TOP);
+    const y = (v: number) => rows.bottom - ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * (rows.bottom - rows.top);
     const line = (of: (p: TimelinePoint) => number) =>
       points
         .filter((p) => p.minute > 0)
@@ -729,25 +737,36 @@ function TimelineGraph({
   }
 
   return (
-    <section className="wl-sec mp-tl">
-      <div className="mp-tl-head">
-        <h3>Timeline</h3>
-        <div className="mp-seg" role="group" aria-label="Graph">
-          {TIMELINE_VIEWS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={view === item.id ? "on" : ""}
-              aria-pressed={view === item.id}
-              onClick={() => setView(item.id)}
-            >
-              <span className="mp-seg-long">{item.label}</span>
-              <span className="mp-seg-short">{item.short}</span>
+    <section className={`wl-sec mp-tl${compact ? " is-compact" : ""}`}>
+      {compact ? (
+        <div className="mp-tl-head">
+          <h3>Who&apos;s on top</h3>
+          {onMore ? (
+            <button type="button" className="mp-tl-more" onClick={onMore}>
+              Full timeline →
             </button>
-          ))}
+          ) : null}
         </div>
-        <p className="wl-sub">{blurb}</p>
-      </div>
+      ) : (
+        <div className="mp-tl-head">
+          <h3>Timeline</h3>
+          <div className="mp-seg" role="group" aria-label="Graph">
+            {TIMELINE_VIEWS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={view === item.id ? "on" : ""}
+                aria-pressed={view === item.id}
+                onClick={() => setView(item.id)}
+              >
+                <span className="mp-seg-long">{item.label}</span>
+                <span className="mp-seg-short">{item.short}</span>
+              </button>
+            ))}
+          </div>
+          <p className="wl-sub">{blurb}</p>
+        </div>
+      )}
       <div className="mp-keys">
         <span>
           <i className="is-home" />
@@ -762,7 +781,7 @@ function TimelineGraph({
       </div>
       <div ref={setPlot} className="mp-tl-plot">
         {body ? (
-          <svg viewBox={`0 0 ${W} ${GRAPH_H}`} role="img" aria-label={`Timeline: ${blurb}`}>
+          <svg viewBox={`0 0 ${W} ${rows.height}`} role="img" aria-label={`Timeline: ${blurb}`}>
             {body}
             {marks}
             {axis}
@@ -1260,7 +1279,7 @@ export function MatchOverlay({
   match: OverlayMatch;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<TabId>("signals");
+  const [tab, setTab] = useState<TabId>("stats");
   const [panel, setPanel] = useState<MatchPanel>(() => panelFromLive(match));
   const [loadError, setLoadError] = useState<string | null>(null);
   const [research, setResearch] = useState<MatchResearch | null>(null);
@@ -1503,29 +1522,40 @@ export function MatchOverlay({
             </section>
           ) : null}
           {tab === "stats" ? (
-            <section className="wl-sec">
-              <div>
-                <h3>Match stats</h3>
-                <div className="mp-keys">
-                  <span>
-                    <i className="is-home" />
-                    {panel.home_team}
-                  </span>
-                  <span>
-                    {panel.away_team}
-                    <i className="is-away" />
-                  </span>
+            <>
+              <TimelineGraph
+                compact
+                points={panel.timeline}
+                story={story}
+                homeName={panel.home_team}
+                awayName={panel.away_team}
+                minute={panel.minute}
+                onMore={() => setTab("timeline")}
+              />
+              <section className="wl-sec">
+                <div>
+                  <h3>Match stats</h3>
+                  <div className="mp-keys">
+                    <span>
+                      <i className="is-home" />
+                      {panel.home_team}
+                    </span>
+                    <span>
+                      {panel.away_team}
+                      <i className="is-away" />
+                    </span>
+                  </div>
+                  {STAT_BARS.map((row) => (
+                    <StatRow
+                      key={row.key}
+                      label={row.label}
+                      home={Number(panel.stat_lines[row.key]?.home || 0)}
+                      away={Number(panel.stat_lines[row.key]?.away || 0)}
+                    />
+                  ))}
                 </div>
-                {STAT_BARS.map((row) => (
-                  <StatRow
-                    key={row.key}
-                    label={row.label}
-                    home={Number(panel.stat_lines[row.key]?.home || 0)}
-                    away={Number(panel.stat_lines[row.key]?.away || 0)}
-                  />
-                ))}
-              </div>
-            </section>
+              </section>
+            </>
           ) : null}
           {tab === "timeline" ? (
             <>

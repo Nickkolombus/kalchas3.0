@@ -2157,6 +2157,8 @@ body {
 /* ---- match pop-up: the watchlist match page's look (.wl-vars) ---- */
 
 .overlay.mp {
+  /* 30% narrower than other overlays (1080px). */
+  width: min(756px, 100%);
   padding: 0;
   background: var(--wl-surface);
   border-radius: 12px;
@@ -2280,6 +2282,17 @@ body {
 .mp-body > .wl-sec:last-child,
 .mp-body > .wl-mbody .wl-col > .wl-sec:last-child {
   border-bottom: 0;
+}
+
+/* Before kick-off: one column at the pop-up's width, the match page's
+   side column (head-to-head, table) below the main one. */
+.mp-body .wl-mbody {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mp-body .wl-col + .wl-col {
+  border-left: 0;
+  border-top: 1px solid var(--border);
 }
 
 /* Signals */
@@ -2442,6 +2455,26 @@ body {
 
 .mp-tl .mp-keys {
   margin-top: 0.2rem;
+}
+
+/* The small pressure graph on top of the Stats tab. */
+.mp-tl-more {
+  grid-area: seg;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text-2);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.mp-tl-more:hover {
+  color: var(--text);
+}
+
+.mp-tl.is-compact svg {
+  margin-top: 0.4rem;
 }
 
 .mp-seg {
