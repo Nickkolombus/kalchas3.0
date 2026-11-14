@@ -139,14 +139,17 @@ def test_picks_lists_strong_watches_and_the_next_to_kick_off(
     }
     sooner = {**later, "match_id": "102", "kickoff": "2098-01-01T20:00:00+03:00"}
     quiet = {**later, "match_id": "103", "watch": "quiet"}
+    look = {**later, "match_id": "104", "watch": "look", "kickoff": "2097-01-01T20:00:00+03:00"}
     played = {**DAY["matches"][0], "kickoff": "2020-01-01T20:00:00+03:00"}
-    today = {**DAY, "matches": [played, later, sooner, quiet]}
+    today = {**DAY, "matches": [played, later, sooner, quiet, look]}
     monkeypatch.setattr(
         "kalchas_db.watchlist.load_watchlist_day",
         lambda dsn, day: today if day == "2026-11-03" else None,
     )
     body = client.get("/api/watchlist/picks").json()
-    assert [p["match_id"] for p in body["picks"]] == ["100", "101", "102"]
+    assert [p["match_id"] for p in body["picks"]] == ["100", "101", "102", "104"]
+    assert [p["watch"] for p in body["picks"]] == ["strong", "strong", "strong", "look"]
+    # A worth a look kicking off first is still not the hero's next pick.
     assert body["next"]["match_id"] == "102"
     assert body["picks"][0]["tag"] == "Both score"
     assert body["picks"][0]["lead_side"] is None  # a row from before sides

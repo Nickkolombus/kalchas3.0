@@ -9,6 +9,8 @@
   --text-2: #b7b0a3;
   --muted: #7d776c;
   --accent: #3dd6c6;
+  /* Worth a look picks on the live board; same ochre as the watchlist's --wl-look. */
+  --look: #e6b450;
   --font-display: "Fraunces", Georgia, serif;
   --font-body: "Sora", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;

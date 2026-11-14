@@ -11,6 +11,8 @@ type Outcome = "landed" | "missed";
 export type Pick = {
   match_id: string;
   day: string;
+  /** Strong watch (teal) or worth a look (ochre). Older API answers carry no field: strong. */
+  watch?: "strong" | "look";
   kickoff: string;
   home: { name: string };
   away: { name: string };
@@ -62,7 +64,7 @@ export function PicksProvider({ children }: { children: ReactNode }) {
     const picks = data?.picks ?? [];
     const next =
       picks
-        .filter((p) => p.day === data?.today && Date.parse(p.kickoff) > now)
+        .filter((p) => !isLook(p) && p.day === data?.today && Date.parse(p.kickoff) > now)
         .sort((a, b) => a.kickoff.localeCompare(b.kickoff))[0] ?? null;
     return { today: data?.today ?? null, byId: new Map(picks.map((p) => [p.match_id, p])), next };
   }, [data, now]);
@@ -73,6 +75,14 @@ export function PicksProvider({ children }: { children: ReactNode }) {
 export function usePick(matchId: string | null | undefined): Pick | null {
   const { byId } = useContext(PicksContext);
   return matchId ? (byId.get(String(matchId)) ?? null) : null;
+}
+
+export function isLook(pick: Pick): boolean {
+  return pick.watch === "look";
+}
+
+function watchLabel(pick: Pick): string {
+  return isLook(pick) ? "worth a look" : "strong watch";
 }
 
 function pickHref(pick: Pick, today: string | null): string {
@@ -257,7 +267,7 @@ export function PickTag({
         cardClass="hover-card-pick"
         body={
           <div className="pick-tip">
-            <p className="pick-tip-k">Watchlist pick · strong watch</p>
+            <p className="pick-tip-k">Watchlist pick · {watchLabel(pick)}</p>
             <p>
               <b>{pick.headline}</b> {pick.reason}
             </p>
@@ -272,7 +282,7 @@ export function PickTag({
         }
       >
         <a
-          className={`pick-tag${decided ? ` is-${decided}` : ""}`}
+          className={`pick-tag${isLook(pick) ? " is-look" : ""}${decided ? ` is-${decided}` : ""}`}
           href={pickHref(pick, today)}
           onClick={() => logVisitEvent("wl_board")}
           title={decided === "landed" ? "Landed" : decided === "missed" ? "Missed" : undefined}
@@ -295,10 +305,10 @@ export function PickBox({ matchId, score, minute }: { matchId: string; score: st
   if (!pick) return null;
   const note = pick.outcome ? pick.outcome_note : liveNote(pick.lead_key, score, pick.home.name, pick.away.name, minute);
   return (
-    <section className="pick-box" aria-label="Watchlist pick">
+    <section className={`pick-box${isLook(pick) ? " is-look" : ""}`} aria-label="Watchlist pick">
       <p className="pick-box-k">
         <SpyglassIcon size={13} />
-        Watchlist pick · strong watch
+        Watchlist pick · {watchLabel(pick)}
       </p>
       <p>
         <b>{pick.headline}</b> {pick.reason}

@@ -113,10 +113,11 @@ class MonthDay(BaseModel):
 
 
 class Pick(BaseModel):
-    """A strong watch, as the live board shows it."""
+    """A strong watch or a worth a look, as the live board shows it."""
 
     match_id: str
     day: str
+    watch: Literal["strong", "look"] = "strong"
     kickoff: str
     home: TeamRef
     away: TeamRef
@@ -434,8 +435,9 @@ def _pick(row: dict, day: str) -> Pick:
 
 @router.get("/picks", response_model=LivePicks)
 def watchlist_picks() -> LivePicks:
-    """For the live board: every strong watch of yesterday and today (late
-    games cross midnight), and the next one of today still to kick off."""
+    """For the live board: every strong watch and worth a look of yesterday
+    and today (late games cross midnight), and the next strong watch of today
+    still to kick off."""
     from kalchas_db.watchlist import load_watchlist_day
 
     now = datetime.now(UTC)
@@ -447,10 +449,12 @@ def watchlist_picks() -> LivePicks:
         for day in (today - timedelta(days=1), today):
             doc = load_watchlist_day(dsn, day.isoformat()) or {}
             for row in doc.get("matches") or []:
-                if row.get("watch") != "strong":
+                if row.get("watch") not in ("strong", "look"):
                     continue
                 pick = _pick(row, day.isoformat())
                 picks.append(pick)
+                if pick.watch != "strong":
+                    continue
                 try:
                     starts = datetime.fromisoformat(pick.kickoff)
                 except ValueError:

@@ -17,7 +17,7 @@ import {
   type HoverScale,
   type WindowBlock,
 } from "./HoverTip";
-import { PickBox, PickTag, SpyglassIcon, WatchlistButton, usePick } from "./WatchlistPicks";
+import { PickBox, PickTag, SpyglassIcon, WatchlistButton, isLook, usePick } from "./WatchlistPicks";
 import { logVisitEvent, visitorId } from "./visit";
 import { MatchOverlay } from "./MatchPanel";
 import { ContactLink, SiteFooter } from "./ContactForm";
@@ -2170,6 +2170,7 @@ function MobileRow({
         `is-${lens}`,
         hot ? "is-hot" : "",
         pick ? "is-pick" : "",
+        pick && isLook(pick) ? "is-look" : "",
         fav ? "is-fav" : "",
         favLast ? "is-fav-last" : "",
         flash ? "is-goal" : "",

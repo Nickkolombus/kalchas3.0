@@ -268,6 +268,27 @@ body {
   text-decoration: none;
 }
 
+/* Worth a look: the same tag in ochre. A miss reads the same grey as above. */
+.pick-tag.is-look {
+  color: var(--look);
+  background: rgba(230, 180, 80, 0.12);
+}
+
+.pick-tag.is-look:hover {
+  background: rgba(230, 180, 80, 0.2);
+}
+
+.pick-tag.is-look.is-landed,
+.pick-tag.is-look.is-landed:hover {
+  color: #071018;
+  background: var(--look);
+}
+
+.pick-tag.is-look.is-missed {
+  color: var(--muted);
+  background: rgba(242, 235, 224, 0.06);
+}
+
 .hover-card.hover-card-pick {
   min-width: 17rem;
   max-width: 21rem;
@@ -352,6 +373,16 @@ body {
   color: var(--accent);
   font-weight: 600;
   text-decoration: none;
+}
+
+.pick-box.is-look {
+  border-color: rgba(230, 180, 80, 0.3);
+  background: rgba(230, 180, 80, 0.05);
+}
+
+.pick-box.is-look .pick-box-k,
+.pick-box.is-look a {
+  color: var(--look);
 }
 
 .hero h1,
