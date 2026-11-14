@@ -64,6 +64,8 @@ export const CHANNELS: { key: string; label: string }[] = [
 const RETRYABLE = new Set(["failed", "posted", "needs_decision", "approved"]);
 
 const SLOT: Record<string, string> = { today: "Today", tomorrow: "Tomorrow", nightly: "Nightly" };
+// An any-market slip (odds typed by the admin) is saved with the style "picks".
+const STYLE: Record<string, string> = { picks: "any market" };
 
 const CHOICES: Record<string, { value: "void" | "missed" | "landed"; label: string }[]> = {
   off: [
@@ -181,7 +183,7 @@ export function AdminParlayPosted({ api, refresh }: { api: Api; refresh: number 
           <div key={s.id} className={`kit-card ap-slipcard is-${st.tone}`}>
             <button type="button" className="ap-slipcard-head" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : s.id)}>
               <span className="ap-slipcard-title">
-                <b>#{s.id}</b> {SLOT[s.slot] ?? s.slot} · {s.legs.length} legs · {s.style}
+                <b>#{s.id}</b> {SLOT[s.slot] ?? s.slot} · {s.legs.length} legs · {STYLE[s.style] ?? s.style}
                 <small> · {when(s.created_at)}</small>
               </span>
               <span className={`ap-pill is-${st.tone}`}>{st.text}</span>

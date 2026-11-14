@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from kalchas_core.watchlist.parlay import MAX_LEGS, build, leg_for, order
+from kalchas_core.watchlist.parlay import MAX_LEGS, build, leg_for, order, pick_for
 
 
 def page(
@@ -125,3 +125,50 @@ def test_a_settled_leg_keeps_its_outcome() -> None:
     leg = leg_for(p)
     assert leg is not None
     assert (leg["outcome"], leg["outcome_note"], leg["result"]["home"]) == ("landed", "4 goals.", 3)
+
+
+def test_a_pick_is_the_strongest_pattern_whatever_the_market() -> None:
+    p = page("1", patterns=[("over_2_5", 0.4), ("late_goal", 0.7)])
+    p["pattern_table"].append(
+        {"key": "late_goal", "home": {"count": 6, "n": 8}, "away": {"count": 5, "n": 9}}
+    )
+    pick = pick_for(p)
+    assert pick is not None
+    assert (pick["market"], pick["label"], pick["price"]) == ("late_goal", "Goal after 75'", None)
+    assert (pick["hit"], pick["n"]) == (11, 17)
+    leg = leg_for(p)
+    assert leg is not None and leg["market"] == "over_2_5"  # the priced slip is unchanged
+
+
+def test_a_pick_keeps_the_price_we_hold() -> None:
+    pick = pick_for(page("1", patterns=[("btts_no", 0.5), ("red_card", 0.2)]))
+    assert pick is not None
+    assert (pick["market"], pick["price"]) == ("btts_no", 2.1)
+    assert (pick["hit"], pick["n"]) == (5, 20)
+
+
+def test_one_team_picks_read_as_bets_and_count_that_team_only() -> None:
+    p = page("1", patterns=[("leaky_home", 0.5)])
+    p["pattern_table"].append(
+        {"key": "clean_sheet", "home": {"count": 1, "n": 10}, "away": {"count": 4, "n": 10}}
+    )
+    pick = pick_for(p)
+    assert pick is not None
+    assert pick["label"] == "Away 1 to score"
+    assert (pick["hit"], pick["n"]) == (9, 10)
+    corners = pick_for(page("2", patterns=[("corners_over_9_5", 0.5)]))
+    assert corners is not None
+    assert (corners["label"], corners["n"]) == ("Over 9.5 corners", 0)
+
+
+def test_build_offers_picks_in_watchlist_order() -> None:
+    pages = [
+        page("1", watch="look", patterns=[("late_goal", 0.9)]),
+        page("2", patterns=[("red_card", 0.3)]),
+        page("3", patterns=[("over_2_5", 0.6)]),
+        page("4", watch="quiet", patterns=[("over_2_5", 0.9)]),
+        page("5", patterns=[("late_goal", 0.1)]),
+    ]
+    built = build(pages)
+    assert [p["match_id"] for p in built["picks"]] == ["1", "2", "3"]
+    assert built["picks_order"] == ["3", "2", "1"]

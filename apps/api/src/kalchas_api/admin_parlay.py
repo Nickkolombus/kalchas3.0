@@ -8,6 +8,10 @@ The server only renders, asks Claude, and saves. A slip is saved exactly as
 the admin saw it: if a price or market moved since, saving is refused with
 what changed. Posting, settling and the result reply are the bot's job
 (``kalchas_bot.parlay_job``), so this request never waits on a channel.
+
+A second kind of slip, ``any``, takes each match's strongest pattern whatever
+the market. We hold a price for only some of those, so the admin types the
+odds: a typed price is taken as given, and every leg needs one to be posted.
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ from datetime import date
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from kalchas_core.watchlist.parlay import MAX_LEGS, MIN_LEGS, STYLES
+from kalchas_core.watchlist.parlay import MAX_LEGS, MIN_LEGS, STYLES, picks_order
 from kalchas_core.watchlist.parlay_share import (
     STAKE,
     WINDOW_LABEL,
@@ -35,6 +39,18 @@ router = APIRouter(prefix="/api/admin/parlay", tags=["admin"])
 
 Slot = Literal["today", "tomorrow", "nightly"]
 Style = Literal["safer", "balanced", "bolder"]
+# priced: the public builder's legs, at the prices we hold. any: each match's
+# strongest pattern of any market, at the odds the admin types.
+Kind = Literal["priced", "any"]
+# What an any-market slip is saved as, where a priced slip keeps its style.
+ANY_STYLE = "picks"
+ANY_NATURE = "The strongest pattern in each match, whatever the market."
+MAX_TYPED_ODDS = 1000.0
+# Claude gets the style as a fact; this tells it what is different about these legs.
+ANY_STYLE_FOR_CLAUDE = (
+    "any market: each match's strongest pattern, whatever the market. A null price means "
+    "the odds are not typed in yet; recent_games 0 means no recent count is held."
+)
 
 CHANNEL_KEYS = ("x", "telegram_free", "telegram_paid", "discord_free", "discord_paid")
 
@@ -46,16 +62,18 @@ STYLE_NATURE: dict[str, str] = {
 
 
 class LegRef(BaseModel):
-    """One leg as the admin saw it. The price is checked before anything is saved."""
+    """One leg as the admin saw it. The price is checked before anything is
+    saved; on an any-market slip it is the odds the admin typed, if any yet."""
 
     match_id: str
     market: str
-    price: float
+    price: float | None = None
 
 
 class SlipBody(BaseModel):
     slot: Slot = "today"
     style: Style = "balanced"
+    kind: Kind = "priced"
     legs: list[LegRef] = Field(default_factory=list)
 
 
@@ -92,8 +110,10 @@ def _dsn() -> str:
 # ---------------------------------------------------------------- the day
 
 
-def day_for(slot: Slot) -> dict[str, Any]:
-    """Everything the slot can use: the public /parlay payload, Nightly-filtered."""
+def day_for(slot: Slot, kind: Kind = "priced") -> dict[str, Any]:
+    """Everything the slot can use: the public /parlay payload, Nightly-filtered.
+    For ``any`` the legs are the any-market picks (``price`` may be None) and
+    every style has the one order they come in."""
     today = watchlist_api.board_today()
     target = slot_day(slot, today=today)
     iso = target.isoformat()
@@ -106,7 +126,13 @@ def day_for(slot: Slot) -> dict[str, Any]:
     legs = list(built.get("legs") or [])
     order = {s: list((built.get("order") or {}).get(s) or []) for s in STYLES}
     unpriced = list(built.get("unpriced") or [])
-    if slot == "nightly":
+    if kind == "any":
+        legs = list(built.get("picks") or [])
+        if slot == "nightly":
+            legs = filter_nightly(legs)
+        order = dict.fromkeys(STYLES, picks_order(legs))
+        unpriced = []
+    elif slot == "nightly":
         legs = filter_nightly(legs)
         order = rebuild_orders(legs)
         unpriced = []  # no kick-off on those rows, so they can't be placed in the window
@@ -116,6 +142,7 @@ def day_for(slot: Slot) -> dict[str, Any]:
         status = "none" if iso < today.isoformat() else "preparing"
     return {
         "slot": slot,
+        "kind": kind,
         "day": iso,
         "today": today.isoformat(),
         "status": status,
@@ -130,12 +157,19 @@ def day_for(slot: Slot) -> dict[str, Any]:
     }
 
 
-def take(slot: Slot, refs: list[LegRef]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """The legs the admin picked, from today's data; 409 if any changed since."""
-    day = day_for(slot)
+def take(
+    slot: Slot, refs: list[LegRef], kind: Kind = "priced", *, need_odds: bool = True
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The legs the admin picked, from today's data; 409 if any changed since.
+
+    On an any-market slip the leg takes the odds the admin typed. Every leg
+    needs them to be drawn or saved (``need_odds``); Claude's read does not.
+    """
+    day = day_for(slot, kind)
     by_id = {str(leg["match_id"]): leg for leg in day["legs"]}
     picked: list[dict[str, Any]] = []
     changed: list[str] = []
+    no_odds: list[str] = []
     seen: set[str] = set()
     for ref in refs:
         if ref.match_id in seen:
@@ -146,6 +180,14 @@ def take(slot: Slot, refs: list[LegRef]) -> tuple[dict[str, Any], list[dict[str,
             changed.append(f"{ref.match_id}: no longer on the list")
         elif leg["market"] != ref.market:
             changed.append(f"{_name(leg)}: the leg is now {leg['label']}")
+        elif kind == "any":
+            if ref.price is not None and 1 < ref.price <= MAX_TYPED_ODDS:
+                picked.append({**leg, "price": round(ref.price, 2)})
+            else:
+                no_odds.append(_name(leg))
+                picked.append({**leg, "price": None})
+        elif ref.price is None:
+            changed.append(f"{_name(leg)}: no price was sent, it is {float(leg['price']):.2f}")
         elif round(float(leg["price"]), 2) != round(ref.price, 2):
             changed.append(f"{_name(leg)}: price {ref.price:.2f} is now {float(leg['price']):.2f}")
         else:
@@ -159,6 +201,11 @@ def take(slot: Slot, refs: list[LegRef]) -> tuple[dict[str, Any], list[dict[str,
         raise HTTPException(
             status_code=422, detail=f"a slip needs {MIN_LEGS} to {MAX_LEGS} legs, not {len(picked)}"
         )
+    if no_odds and need_odds:
+        raise HTTPException(
+            status_code=422,
+            detail="Every leg needs odds above 1.00. Still missing: " + "; ".join(no_odds),
+        )
     picked.sort(key=lambda leg: (str(leg.get("kickoff") or ""), str(leg["match_id"])))
     return day, picked
 
@@ -167,14 +214,14 @@ def _name(leg: dict[str, Any]) -> str:
     return f"{(leg.get('home') or {}).get('name', '')} v {(leg.get('away') or {}).get('name', '')}"
 
 
-def default_caption(slot: str, style: str, legs: list[dict[str, Any]]) -> str:
+def default_caption(slot: str, style: str, legs: list[dict[str, Any]], kind: str = "priced") -> str:
     combined = 1.0
     for leg in legs:
         combined *= float(leg["price"])
     word = "Nightly" if slot == "nightly" else "Tomorrow's" if slot == "tomorrow" else "Today's"
     lines = [
         f"{word} Kalchas parlay",
-        STYLE_NATURE.get(style, STYLE_NATURE["balanced"]),
+        ANY_NATURE if kind == "any" else STYLE_NATURE.get(style, STYLE_NATURE["balanced"]),
         "",
         f"{len(legs)} legs · combined {combined:.2f}",
         f"A {STAKE:.0f} stake returns {STAKE * combined:.2f}",
@@ -189,10 +236,10 @@ def default_caption(slot: str, style: str, legs: list[dict[str, Any]]) -> str:
 
 
 @router.get("/day")
-def get_day(request: Request, slot: Slot = "today") -> dict[str, Any]:
+def get_day(request: Request, slot: Slot = "today", kind: Kind = "priced") -> dict[str, Any]:
     """Every leg the slot can use and each style's order, like GET /api/watchlist/parlay."""
     require_admin(request)
-    return day_for(slot)
+    return day_for(slot, kind)
 
 
 @router.post("/preview")
@@ -201,7 +248,7 @@ def preview(body: SlipBody, request: Request) -> Response:
     require_admin(request)
     from kalchas_bot.parlay_slip import render_parlay_slip
 
-    day, legs = take(body.slot, body.legs)
+    day, legs = take(body.slot, body.legs, body.kind)
     png = render_parlay_slip(legs, slot=body.slot, style=body.style, day=day["day"])
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
 
@@ -209,8 +256,8 @@ def preview(body: SlipBody, request: Request) -> Response:
 @router.post("/caption")
 def caption(body: SlipBody, request: Request) -> dict[str, str]:
     require_admin(request)
-    _, legs = take(body.slot, body.legs)
-    return {"caption": default_caption(body.slot, body.style, legs)}
+    _, legs = take(body.slot, body.legs, body.kind)
+    return {"caption": default_caption(body.slot, body.style, legs, body.kind)}
 
 
 @router.post("/evaluate")
@@ -219,16 +266,15 @@ def evaluate_slip(body: EvaluateBody, request: Request) -> dict[str, Any]:
     require_admin(request)
     from kalchas_api.parlay_claude import evaluate
 
-    day, legs = take(body.slot, body.legs)
+    day, legs = take(body.slot, body.legs, body.kind, need_odds=False)
     chosen = {str(leg["match_id"]) for leg in legs}
     rank = {mid: i for i, mid in enumerate(day["order"].get(body.style) or [])}
     unused = sorted(
         (leg for leg in day["legs"] if str(leg["match_id"]) not in chosen),
         key=lambda leg: (rank.get(str(leg["match_id"]), len(rank)), -float(leg.get("score") or 0)),
     )
-    result = evaluate(
-        slot=body.slot, style=body.style, day=day["day"], selected=legs, unused=unused
-    )
+    style = ANY_STYLE_FOR_CLAUDE if body.kind == "any" else body.style
+    result = evaluate(slot=body.slot, style=style, day=day["day"], selected=legs, unused=unused)
     if not result.get("ok"):
         raise HTTPException(status_code=502, detail=str(result.get("error") or "Claude failed"))
     return result
@@ -243,13 +289,13 @@ def save_slip(body: SaveBody, request: Request) -> dict[str, Any]:
     channels = {key: bool(body.channels.get(key)) for key in CHANNEL_KEYS}
     if not any(channels.values()):
         raise HTTPException(status_code=422, detail="pick at least one channel")
-    day, legs = take(body.slot, body.legs)
-    text = body.caption.strip() or default_caption(body.slot, body.style, legs)
+    day, legs = take(body.slot, body.legs, body.kind)
+    text = body.caption.strip() or default_caption(body.slot, body.style, legs, body.kind)
     row = insert_slip_sync(
         _dsn(),
         day=date.fromisoformat(day["day"]),
         slot=body.slot,
-        style=body.style,
+        style=ANY_STYLE if body.kind == "any" else body.style,
         legs=[snapshot(leg) for leg in legs],
         caption=text,
         x_text=(body.x_text.strip() or text)[:280],

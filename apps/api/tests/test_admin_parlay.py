@@ -311,3 +311,135 @@ def test_retry_one_channel(client: TestClient, monkeypatch: pytest.MonkeyPatch) 
     assert client.post("/api/admin/parlay/slips/2/retry/telegram_paid").status_code == 409
     assert client.post("/api/admin/parlay/slips/2/retry/myspace").status_code == 422
     assert calls == [(2, "x"), (2, "telegram_paid")]
+
+
+def any_pages() -> list[dict[str, Any]]:
+    """Seven matches; in 2, 4 and 6 a late goal is the strongest pattern."""
+    out = pages()
+    for p in out:
+        if int(p["match_id"]) % 2 == 0:
+            p["patterns"].insert(
+                0,
+                {"key": "late_goal", "tag": "Late goals", "brief": "Late goals.", "score": 0.8},
+            )
+            p["pattern_table"].append(
+                {"key": "late_goal", "home": {"count": 6, "n": 8}, "away": {"count": 5, "n": 8}}
+            )
+    return out
+
+
+def test_any_market_day_offers_the_strongest_pattern(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: any_pages()
+    )
+    day = client.get("/api/admin/parlay/day?kind=any").json()
+    by = {leg["match_id"]: leg for leg in day["legs"]}
+    assert len(by) == 7
+    assert (by["2"]["label"], by["2"]["price"]) == ("Goal after 75'", None)
+    assert (by["1"]["market"], by["1"]["price"]) == ("over_2_5", 1.45)
+    assert day["order"]["balanced"][:3] == ["2", "4", "6"]  # strongest patterns first
+    assert day["order"]["safer"] == day["order"]["balanced"]
+    # The priced slip still offers the priced leg for the same match.
+    priced = client.get("/api/admin/parlay/day").json()
+    assert {leg["match_id"]: leg["market"] for leg in priced["legs"]}["2"] == "over_2_5"
+
+
+def test_any_market_slip_needs_odds_on_every_leg(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: any_pages()
+    )
+    saved: list[Any] = []
+    monkeypatch.setattr("kalchas_db.parlay_slips.insert_slip_sync", lambda *a, **k: saved.append(k))
+    legs = [
+        {"match_id": "1", "market": "over_2_5", "price": 1.45},
+        {"match_id": "2", "market": "late_goal", "price": None},
+        {"match_id": "4", "market": "late_goal", "price": 1.0},
+    ]
+    body = {"slot": "today", "kind": "any", "legs": legs, "channels": {"x": True}}
+    res = client.post("/api/admin/parlay/slips", json=body)
+    assert res.status_code == 422
+    assert "Home2 v Away2" in res.json()["detail"] and "Home4 v Away4" in res.json()["detail"]
+    assert client.post("/api/admin/parlay/preview", json=body).status_code == 422
+    assert saved == []
+
+
+def test_any_market_slip_is_saved_at_the_typed_odds(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: any_pages()
+    )
+    got: dict[str, Any] = {}
+
+    def insert(dsn: str, **kw: Any) -> dict[str, Any]:
+        got.update(kw)
+        return {"id": 8, "status": "approved", "outcomes": {}, **kw}
+
+    monkeypatch.setattr("kalchas_db.parlay_slips.insert_slip_sync", insert)
+    legs = [
+        {"match_id": "4", "market": "late_goal", "price": 1.8},
+        {"match_id": "1", "market": "over_2_5", "price": 1.5},  # typed over the price we hold
+        {"match_id": "2", "market": "late_goal", "price": 2.004},
+    ]
+    body = {"slot": "today", "kind": "any", "legs": legs, "channels": {"telegram_free": True}}
+    preview = client.post("/api/admin/parlay/preview", json=body)
+    assert preview.status_code == 200 and preview.content[:4] == b"\x89PNG"
+    res = client.post("/api/admin/parlay/slips", json=body)
+    assert res.status_code == 200
+    assert [(leg["match_id"], leg["market"], leg["price"]) for leg in got["legs"]] == [
+        ("1", "over_2_5", 1.5),
+        ("2", "late_goal", 2.0),
+        ("4", "late_goal", 1.8),
+    ]
+    assert got["style"] == "picks"
+    assert "whatever the market" in got["caption"]
+    assert "combined 5.40" in got["caption"]
+    assert res.json()["verdict"]["combined"] == 5.4
+
+
+def test_any_market_slip_refuses_a_pick_that_changed(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: any_pages()
+    )
+    legs = [
+        {"match_id": "1", "market": "over_2_5", "price": 1.45},
+        {"match_id": "2", "market": "over_2_5", "price": 1.45},  # the pick is a late goal
+        {"match_id": "3", "market": "over_2_5", "price": 1.45},
+    ]
+    res = client.post(
+        "/api/admin/parlay/caption", json={"slot": "today", "kind": "any", "legs": legs}
+    )
+    assert res.status_code == 409
+    assert "Goal after 75'" in res.json()["detail"]["changes"][0]
+
+
+def test_claude_reads_an_any_market_slip_before_the_odds_are_typed(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: any_pages()
+    )
+    seen: dict[str, Any] = {}
+
+    def fake(**kw: Any) -> dict[str, Any]:
+        seen.update(kw)
+        return {"ok": True, "advice": "fine", "suggestions": []}
+
+    monkeypatch.setattr("kalchas_api.parlay_claude.evaluate", fake)
+    legs = [
+        {"match_id": "2", "market": "late_goal"},
+        {"match_id": "4", "market": "late_goal", "price": 1.9},
+        {"match_id": "6", "market": "late_goal"},
+    ]
+    res = client.post(
+        "/api/admin/parlay/evaluate", json={"slot": "today", "kind": "any", "legs": legs}
+    )
+    assert res.status_code == 200
+    assert [leg["price"] for leg in seen["selected"]] == [None, 1.9, None]
+    assert len(seen["unused"]) == 4

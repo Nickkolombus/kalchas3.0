@@ -2652,6 +2652,39 @@
   border-left-color: var(--accent);
 }
 
+/* Any-market slip: the price column is an odds box the admin types in. */
+.wl-leg.ap-leg.is-any {
+  grid-template-columns: 1.4rem 3.2rem minmax(0, 1fr) auto 4.6rem 1.8rem;
+}
+
+.ap-odds {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 7px;
+  border: 1px solid var(--border-2, var(--border));
+  border-radius: 6px;
+  background: var(--surface-3, var(--wl-surface-2));
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.ap-odds::placeholder {
+  font-weight: 400;
+  color: var(--text-3, var(--wl-muted));
+}
+
+.ap-odds.is-need {
+  border-color: var(--warn);
+}
+
+.ap-odds:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .ap-tag {
   color: var(--accent);
 }
@@ -3109,6 +3142,10 @@
   /* The public row's phone layout, with the remove button on the right. */
   .wl-leg.ap-leg {
     grid-template-columns: 2.8rem minmax(0, 1fr) 3rem 1.8rem;
+  }
+
+  .wl-leg.ap-leg.is-any {
+    grid-template-columns: 2.8rem minmax(0, 1fr) 4.4rem 1.8rem;
   }
 
   .wl-leg.ap-leg .ap-x {

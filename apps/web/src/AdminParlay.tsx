@@ -52,9 +52,25 @@ const SLOTS: { key: Slot; label: string; hint: string }[] = [
 ];
 
 
-type LegRef = { match_id: string; market: string; price: number };
+/* Two builders share this page. "priced" is the public slip: legs we hold a
+   bookmaker price for. "any" takes each match's strongest pattern whatever the
+   market; we hold a price for only some of those, so each leg has an odds box
+   and the slip can be posted once every box is filled. A leg still waiting
+   for odds carries price 0 here. */
+type Kind = "priced" | "any";
 
-const refsOf = (legs: ParlayLeg[]): LegRef[] => legs.map((l) => ({ match_id: l.match_id, market: l.market, price: l.price }));
+type LegRef = { match_id: string; market: string; price: number | null };
+
+const hasPrice = (l: ParlayLeg) => l.price > 1;
+
+const refsOf = (legs: ParlayLeg[]): LegRef[] =>
+  legs.map((l) => ({ match_id: l.match_id, market: l.market, price: hasPrice(l) ? l.price : null }));
+
+/** Odds as typed, "1.85" or "1,85". Null until it reads as a price above 1. */
+function typedOdds(raw: string): number | null {
+  const n = Number(raw.trim().replace(",", "."));
+  return Number.isFinite(n) && n > 1 && n <= 1000 ? Math.round(n * 100) / 100 : null;
+}
 
 /** POST that keeps the server's structured detail (a 409 lists what changed). */
 async function post(path: string, body: unknown): Promise<Response> {
@@ -77,7 +93,7 @@ async function problem(res: Response): Promise<{ message: string; changes: strin
 }
 
 export function AdminParlay({ api }: { api: Api }) {
-  const [tab, setTab] = useState<"build" | "posted">("build");
+  const [tab, setTab] = useState<"build" | "any" | "posted">("build");
   const [postedTick, setPostedTick] = useState(0);
   return (
     <div className="ap wl-vars">
@@ -85,12 +101,17 @@ export function AdminParlay({ api }: { api: Api }) {
         <button type="button" role="tab" aria-selected={tab === "build"} className={tab === "build" ? "on" : ""} onClick={() => setTab("build")}>
           Build a slip
         </button>
+        <button type="button" role="tab" aria-selected={tab === "any"} className={tab === "any" ? "on" : ""} onClick={() => setTab("any")}>
+          Any-market slip
+        </button>
         <button type="button" role="tab" aria-selected={tab === "posted"} className={tab === "posted" ? "on" : ""} onClick={() => setTab("posted")}>
           Posted slips
         </button>
       </div>
-      {tab === "build" ? (
+      {tab !== "posted" ? (
         <Builder
+          key={tab}
+          kind={tab === "any" ? "any" : "priced"}
           api={api}
           onSaved={() => {
             setPostedTick((t) => t + 1);
@@ -104,12 +125,15 @@ export function AdminParlay({ api }: { api: Api }) {
   );
 }
 
-function Builder({ api, onSaved }: { api: Api; onSaved: () => void }) {
+function Builder({ api, kind, onSaved }: { api: Api; kind: Kind; onSaved: () => void }) {
+  const any = kind === "any";
   const [slot, setSlot] = useState<Slot>("today");
   const [style, setStyle] = useState<ParlayStyle>("balanced");
   const [wanted, setWanted] = useState(5);
   const [removed, setRemoved] = useState<string[]>([]);
   const [pinned, setPinned] = useState<string[]>([]);
+  // Any-market slip: what the admin typed in each leg's odds box, by match.
+  const [typed, setTyped] = useState<Record<string, string>>({});
   const [day, setDay] = useState<AdminDay | null>(null);
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -120,14 +144,16 @@ function Builder({ api, onSaved }: { api: Api; onSaved: () => void }) {
       setLoading(true);
       setLoadError("");
       try {
-        setDay(await api<AdminDay>(`/api/admin/parlay/day?slot=${which}`));
+        const got = await api<AdminDay>(`/api/admin/parlay/day?slot=${which}${any ? "&kind=any" : ""}`);
+        // A pick we hold no price for comes as null; here that is price 0.
+        setDay(any ? { ...got, legs: got.legs.map((l) => ({ ...l, price: l.price ?? 0 })) } : got);
       } catch (e) {
         setLoadError(e instanceof Error ? e.message : "Could not load the list");
       } finally {
         setLoading(false);
       }
     },
-    [api],
+    [api, any],
   );
 
   useEffect(() => {
@@ -140,11 +166,20 @@ function Builder({ api, onSaved }: { api: Api; onSaved: () => void }) {
     setDay(null);
     setRemoved([]);
     setPinned([]);
+    setTyped({});
     setNote("");
   };
 
-  const { legs, n, most } = pickParlay(day, style, wanted, { removed, pinned });
-  const odds = legs.reduce((t, l) => t * l.price, 1);
+  // The any-market list has one order (every style carries it), so style stays put.
+  const base = pickParlay(day, style, wanted, { removed, pinned });
+  const { n, most } = base;
+  const held = new Map(base.legs.map((l) => [l.match_id, l.price]));
+  // What is in the box wins over the price we hold, also when it is cleared.
+  const legs = any
+    ? base.legs.map((l) => (l.match_id in typed ? { ...l, price: typedOdds(typed[l.match_id]) ?? 0 } : l))
+    : base.legs;
+  const missing = legs.filter((l) => !hasPrice(l)).length;
+  const odds = legs.reduce((t, l) => t * (hasPrice(l) ? l.price : 1), 1);
   const looks = legs.filter((l) => l.watch === "look").length;
   const chosen = new Set(legs.map((l) => l.match_id));
   const styleInfo = PARLAY_STYLES.find((s) => s.key === style) ?? PARLAY_STYLES[1];
@@ -210,7 +245,8 @@ function Builder({ api, onSaved }: { api: Api; onSaved: () => void }) {
     setNote("Back to the plain " + styleInfo.name.toLowerCase() + " slip.");
   };
 
-  const title = slot === "today" ? "Today's parlay" : slot === "tomorrow" ? "Tomorrow's parlay" : "Nightly parlay";
+  const what = any ? "any-market parlay" : "parlay";
+  const title = slot === "today" ? `Today's ${what}` : slot === "tomorrow" ? `Tomorrow's ${what}` : `Nightly ${what}`;
   const slotHint = SLOTS.find((s) => s.key === slot)!.hint;
 
   return (
@@ -232,11 +268,20 @@ function Builder({ api, onSaved }: { api: Api; onSaved: () => void }) {
             </span>
           </div>
         </div>
-        <p className="kit-card-body kit-sub ap-lede">
-          {slotHint} The slip starts as the public builder makes it; remove what you don't agree with, add from the legs on
-          offer, then review and post. Every leg keeps the price you see: if the list moves before you post, you're told
-          what changed.
-        </p>
+        {any ? (
+          <p className="kit-card-body kit-sub ap-lede">
+            {slotHint} Each match offers its strongest pattern, whatever the market: late goals, cards, corners, a team to
+            score, as well as the usual goals and both-teams-score picks. Where we hold a bookmaker price it is already in
+            the odds box and you can type over it; where we don't, the box is empty. The slip can be posted once every
+            leg has odds.
+          </p>
+        ) : (
+          <p className="kit-card-body kit-sub ap-lede">
+            {slotHint} The slip starts as the public builder makes it; remove what you don't agree with, add from the legs
+            on offer, then review and post. Every leg keeps the price you see: if the list moves before you post, you're
+            told what changed.
+          </p>
+        )}
       </div>
 
       <div className="ap-grid">
@@ -247,7 +292,7 @@ function Builder({ api, onSaved }: { api: Api; onSaved: () => void }) {
           {day?.status === "none" ? <p className="wl-empty">No watchlist for {longDate(day.day)}.</p> : null}
           {ready && most < PARLAY_MIN ? (
             <p className="wl-empty">
-              Not enough priced picks {slot === "nightly" ? "in the night window" : "on this day"} for a slip of {PARLAY_MIN}.
+              Not enough {any ? "picks" : "priced picks"} {slot === "nightly" ? "in the night window" : "on this day"} for a slip of {PARLAY_MIN}.
             </p>
           ) : null}
 
@@ -256,16 +301,26 @@ function Builder({ api, onSaved }: { api: Api; onSaved: () => void }) {
               <div className="wl-par-sum">
                 <div className="wl-par-big">
                   <small>{plural(legs.length, "leg")} · combined odds</small>
-                  <b>{odds.toFixed(2)}</b>
+                  <b>{missing ? "—" : odds.toFixed(2)}</b>
                 </div>
-                <p>
-                  All {legs.length} have to land. At these prices bookmakers rate that {oneIn(odds)}. Each leg shows how often it
-                  happened in the two teams' recent games.
-                  {looks ? ` ${plural(looks, "leg")} from Worth a look.` : ""}
-                </p>
+                {missing ? (
+                  <p>
+                    {missing === legs.length
+                      ? "None of the legs has odds yet."
+                      : `${plural(missing, "leg")} still ${missing === 1 ? "needs" : "need"} odds.`}{" "}
+                    Type them in the boxes: the combined odds show, and the slip can be posted, once every leg has odds
+                    above 1.00.
+                  </p>
+                ) : (
+                  <p>
+                    All {legs.length} have to land. At these prices {any ? "that is rated" : "bookmakers rate that"} {oneIn(odds)}. Each
+                    leg shows how often it happened in the two teams' recent games.
+                    {looks ? ` ${plural(looks, "leg")} from Worth a look.` : ""}
+                  </p>
+                )}
                 <div className="wl-par-big is-side">
                   <small>A 10 stake returns</small>
-                  <b>{(10 * odds).toFixed(2)}</b>
+                  <b>{missing ? "—" : (10 * odds).toFixed(2)}</b>
                 </div>
               </div>
 
@@ -292,19 +347,21 @@ function Builder({ api, onSaved }: { api: Api; onSaved: () => void }) {
                     ))}
                   </span>
                 </span>
-                <span className="wl-par-field">
-                  <label>Style</label>
-                  <span className="wl-seg" role="group" aria-label="Style">
-                    {PARLAY_STYLES.map((s) => (
-                      <button key={s.key} type="button" className={style === s.key ? "on" : ""} aria-pressed={style === s.key} onClick={() => setStyle(s.key)}>
-                        {s.name}
-                      </button>
-                    ))}
+                {any ? null : (
+                  <span className="wl-par-field">
+                    <label>Style</label>
+                    <span className="wl-seg" role="group" aria-label="Style">
+                      {PARLAY_STYLES.map((s) => (
+                        <button key={s.key} type="button" className={style === s.key ? "on" : ""} aria-pressed={style === s.key} onClick={() => setStyle(s.key)}>
+                          {s.name}
+                        </button>
+                      ))}
+                    </span>
                   </span>
-                </span>
+                )}
                 <p className="wl-par-desc">
-                  {styleInfo.desc}
-                  {most < MAX_LEGS ? ` Up to ${most} legs in this style${edited ? " with your edits" : ""}.` : ""}
+                  {any ? "Each match's strongest pattern, strong matches first, in the order the watchlist ranks them." : styleInfo.desc}
+                  {most < MAX_LEGS ? ` Up to ${most} legs ${any ? "today" : "in this style"}${edited ? " with your edits" : ""}.` : ""}
                 </p>
               </div>
 
@@ -325,7 +382,7 @@ function Builder({ api, onSaved }: { api: Api; onSaved: () => void }) {
               <ol className="wl-legs">
                 {legs.map((l, i) => (
                   <li key={l.match_id}>
-                    <div className={`wl-leg ap-leg${pinned.includes(l.match_id) ? " is-pinned" : ""}`}>
+                    <div className={`wl-leg ap-leg${any ? " is-any" : ""}${pinned.includes(l.match_id) ? " is-pinned" : ""}`}>
                       <span className="wl-leg-n">{i + 1}</span>
                       <span className="wl-leg-time">{clock(l.kickoff)}</span>
                       <span className="wl-leg-body">
@@ -340,11 +397,23 @@ function Builder({ api, onSaved }: { api: Api; onSaved: () => void }) {
                           {l.label}
                           {l.watch === "look" ? <small> · Worth a look</small> : null}
                           {pinned.includes(l.match_id) ? <small className="ap-tag"> · added by you</small> : null}
+                          {any && !((held.get(l.match_id) ?? 0) > 1) ? <small> · we hold no price</small> : null}
                         </span>
                         <span className="wl-leg-why">{l.brief}</span>
                       </span>
-                      <Record leg={l} />
-                      <span className="wl-leg-price">{l.price.toFixed(2)}</span>
+                      {l.n ? <Record leg={l} /> : <span className="wl-rec" />}
+                      {any ? (
+                        <input
+                          className={`ap-odds${hasPrice(l) ? "" : " is-need"}`}
+                          inputMode="decimal"
+                          placeholder="odds"
+                          aria-label={`Odds for ${l.home.name} v ${l.away.name}, ${l.label}`}
+                          value={typed[l.match_id] ?? ((held.get(l.match_id) ?? 0) > 1 ? held.get(l.match_id)!.toFixed(2) : "")}
+                          onChange={(e) => setTyped((t) => ({ ...t, [l.match_id]: e.target.value }))}
+                        />
+                      ) : (
+                        <span className="wl-leg-price">{l.price.toFixed(2)}</span>
+                      )}
                       <button type="button" className="ap-x" title="Remove this leg" aria-label={`Remove ${l.home.name} v ${l.away.name}`} onClick={() => remove(l.match_id)}>
                         ×
                       </button>
@@ -367,10 +436,10 @@ function Builder({ api, onSaved }: { api: Api; onSaved: () => void }) {
                           · {l.label}
                           {l.watch === "look" ? " · Worth a look" : ""}
                           {removed.includes(l.match_id) ? <small className="ap-tag"> · removed by you</small> : null}
-                          {below ? <small> · below the {styleInfo.name.toLowerCase()} bar</small> : null}
+                          {below ? <small> · {any ? "further down the list" : `below the ${styleInfo.name.toLowerCase()} bar`}</small> : null}
                         </span>
-                        <Record leg={l} />
-                        <span className="wl-leg-price">{l.price.toFixed(2)}</span>
+                        {l.n ? <Record leg={l} /> : <span className="wl-rec" />}
+                        <span className="wl-leg-price">{hasPrice(l) ? l.price.toFixed(2) : "—"}</span>
                         <button type="button" className="kit-btn" disabled={n >= MAX_LEGS} onClick={() => add(l.match_id)}>
                           Add
                         </button>
@@ -396,6 +465,7 @@ function Builder({ api, onSaved }: { api: Api; onSaved: () => void }) {
               <ClaudeRead
                 slot={slot}
                 style={style}
+                kind={kind}
                 legs={legs}
                 ready={day.claude_ready}
                 onApply={apply}
@@ -405,7 +475,7 @@ function Builder({ api, onSaved }: { api: Api; onSaved: () => void }) {
         </div>
 
         {ready && legs.length >= PARLAY_MIN ? (
-          <Review slot={slot} style={style} legs={legs} onReload={() => void load(slot)} onSaved={onSaved} />
+          <Review slot={slot} style={style} kind={kind} legs={legs} missing={missing} onReload={() => void load(slot)} onSaved={onSaved} />
         ) : null}
       </div>
     </>
@@ -430,12 +500,14 @@ function longDate(iso: string): string {
 function ClaudeRead({
   slot,
   style,
+  kind,
   legs,
   ready,
   onApply,
 }: {
   slot: Slot;
   style: ParlayStyle;
+  kind: Kind;
   legs: ParlayLeg[];
   ready: boolean;
   onApply: (s: Suggestion) => void;
@@ -450,7 +522,7 @@ function ClaudeRead({
     setBusy(true);
     setError("");
     try {
-      const res = await post("/api/admin/parlay/evaluate", { slot, style, legs: refsOf(legs) });
+      const res = await post("/api/admin/parlay/evaluate", { slot, style, kind, legs: refsOf(legs) });
       if (!res.ok) throw new Error((await problem(res)).message);
       const body = (await res.json()) as Omit<Advice, "key">;
       setRead({ ...body, key });
@@ -505,13 +577,18 @@ function ClaudeRead({
 function Review({
   slot,
   style,
+  kind,
   legs,
+  missing,
   onReload,
   onSaved,
 }: {
   slot: Slot;
   style: ParlayStyle;
+  kind: Kind;
   legs: ParlayLeg[];
+  /** Legs still waiting for odds: nothing is drawn or posted until it is 0. */
+  missing: number;
   onReload: () => void;
   onSaved: () => void;
 }) {
@@ -528,10 +605,12 @@ function Review({
 
   // The slip image follows the slip, a moment after it settles.
   useEffect(() => {
+    setConfirming(false);
+    if (missing) return;
     const timer = window.setTimeout(async () => {
       last.current = key;
       try {
-        const res = await post("/api/admin/parlay/preview", { slot, style, legs: refsOf(legs) });
+        const res = await post("/api/admin/parlay/preview", { slot, style, kind, legs: refsOf(legs) });
         if (res.ok && last.current === key) {
           const url = URL.createObjectURL(await res.blob());
           setImage((old) => {
@@ -543,18 +622,17 @@ function Review({
         /* the preview is a nicety; saving checks everything again */
       }
     }, 350);
-    setConfirming(false);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
   // So does the default text, until the admin writes their own.
   useEffect(() => {
-    if (captionEdited) return;
+    if (captionEdited || missing) return;
     let live = true;
     const timer = window.setTimeout(async () => {
       try {
-        const res = await post("/api/admin/parlay/caption", { slot, style, legs: refsOf(legs) });
+        const res = await post("/api/admin/parlay/caption", { slot, style, kind, legs: refsOf(legs) });
         if (res.ok && live) setCaption(((await res.json()) as { caption: string }).caption);
       } catch {
         /* the server writes the default again when saving an empty text */
@@ -576,6 +654,7 @@ function Review({
       const res = await post("/api/admin/parlay/slips", {
         slot,
         style,
+        kind,
         legs: refsOf(legs),
         caption,
         channels,
@@ -600,7 +679,17 @@ function Review({
         <h2>Review and post</h2>
       </div>
       <div className="kit-card-body ap-review-body">
-        <div className="ap-slip">{image ? <img src={image} alt="The slip as it will be posted" /> : <span className="kit-sub">Drawing the slip…</span>}</div>
+        <div className="ap-slip">
+          {missing ? (
+            <span className="kit-sub">
+              {plural(missing, "leg")} still {missing === 1 ? "needs" : "need"} odds. The slip is drawn once every leg has them.
+            </span>
+          ) : image ? (
+            <img src={image} alt="The slip as it will be posted" />
+          ) : (
+            <span className="kit-sub">Drawing the slip…</span>
+          )}
+        </div>
 
         <label className="ap-label" htmlFor="ap-caption">
           Post text
@@ -680,8 +769,8 @@ function Review({
             </div>
           </div>
         ) : (
-          <button type="button" className="kit-btn is-primary ap-post" disabled={!picked.length || !caption.trim()} onClick={() => setConfirming(true)}>
-            Post to {plural(picked.length, "channel")}…
+          <button type="button" className="kit-btn is-primary ap-post" disabled={!picked.length || !caption.trim() || missing > 0} onClick={() => setConfirming(true)}>
+            {missing ? "Every leg needs odds first" : `Post to ${plural(picked.length, "channel")}…`}
           </button>
         )}
       </div>
