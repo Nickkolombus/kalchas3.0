@@ -2031,8 +2031,19 @@ function GoalLine({ data }: { data: MatchResearch }) {
 
 /** The research under a match page's header: what to watch, the patterns,
  * form, goal timing, head-to-head and table. Also shown in the live board's
- * match pop-up. `footer` closes the right-hand column. */
-export function ResearchBody({ data, live, footer }: { data: MatchResearch; live?: Live; footer?: ReactNode }) {
+ * match pop-up, which has head-to-head on a tab of its own (`hideH2H`).
+ * `footer` closes the right-hand column. */
+export function ResearchBody({
+  data,
+  live,
+  footer,
+  hideH2H = false,
+}: {
+  data: MatchResearch;
+  live?: Live;
+  footer?: ReactNode;
+  hideH2H?: boolean;
+}) {
   const { home, away, form, h2h, table, result } = data;
   const formSource = (f: TeamForm) => (f.source === "all" ? "all competitions" : data.league.name.split(" - ")[0]);
   return (
@@ -2159,45 +2170,47 @@ export function ResearchBody({ data, live, footer }: { data: MatchResearch; live
       </div>
 
       <div className="wl-col">
-        <section className="wl-sec">
-          <h3>Head-to-head</h3>
-          {h2h && h2h.sample ? (
-            <>
-              <p className="wl-sub">
-                Last {h2h.sample === 1 ? "meeting" : `${h2h.sample} meetings`}
-                {h2h.avg_goals != null ? `, ${h2h.avg_goals} goals a game` : ""}.
-              </p>
-              <div className="wl-split" aria-hidden>
-                <i className="h" style={{ flex: h2h.home_wins || 0.001 }} />
-                <i className="d" style={{ flex: h2h.draws || 0.001 }} />
-                <i className="a" style={{ flex: h2h.away_wins || 0.001 }} />
-              </div>
-              <div className="wl-split-keys">
-                <span>
-                  <b>{h2h.home_wins}</b> {home.name}
-                </span>
-                <span>
-                  <b>{h2h.draws}</b> {h2h.draws === 1 ? "draw" : "draws"}
-                </span>
-                <span>
-                  <b>{h2h.away_wins}</b> {away.name}
-                </span>
-              </div>
-              {h2h.meetings.map((m) => (
-                <div key={`${m.match_date}-${m.home_team}`} className="wl-meet">
-                  <span className="d">{shortDate(m.match_date)}</span>
-                  <span className="h">{m.home_team}</span>
-                  <span className="s">
-                    {m.home_score}–{m.away_score}
-                  </span>
-                  <span>{m.away_team}</span>
+        {hideH2H ? null : (
+          <section className="wl-sec">
+            <h3>Head-to-head</h3>
+            {h2h && h2h.sample ? (
+              <>
+                <p className="wl-sub">
+                  Last {h2h.sample === 1 ? "meeting" : `${h2h.sample} meetings`}
+                  {h2h.avg_goals != null ? `, ${h2h.avg_goals} goals a game` : ""}.
+                </p>
+                <div className="wl-split" aria-hidden>
+                  <i className="h" style={{ flex: h2h.home_wins || 0.001 }} />
+                  <i className="d" style={{ flex: h2h.draws || 0.001 }} />
+                  <i className="a" style={{ flex: h2h.away_wins || 0.001 }} />
                 </div>
-              ))}
-            </>
-          ) : (
-            <p className="wl-sub">No recent meetings on record.</p>
-          )}
-        </section>
+                <div className="wl-split-keys">
+                  <span>
+                    <b>{h2h.home_wins}</b> {home.name}
+                  </span>
+                  <span>
+                    <b>{h2h.draws}</b> {h2h.draws === 1 ? "draw" : "draws"}
+                  </span>
+                  <span>
+                    <b>{h2h.away_wins}</b> {away.name}
+                  </span>
+                </div>
+                {h2h.meetings.map((m) => (
+                  <div key={`${m.match_date}-${m.home_team}`} className="wl-meet">
+                    <span className="d">{shortDate(m.match_date)}</span>
+                    <span className="h">{m.home_team}</span>
+                    <span className="s">
+                      {m.home_score}–{m.away_score}
+                    </span>
+                    <span>{m.away_team}</span>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <p className="wl-sub">No recent meetings on record.</p>
+            )}
+          </section>
+        )}
 
         {table.length ? (
           <section className="wl-sec">

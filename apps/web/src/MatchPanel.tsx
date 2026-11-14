@@ -165,12 +165,13 @@ const TIMING_SLOTS: { key: keyof H2HTiming; label: string; threshold: number }[]
   { key: "btts_first_half", label: "BTTS in 1st half", threshold: 75 },
 ];
 
-type TabId = "signals" | "stats" | "timeline" | "before" | "lineups";
+type TabId = "signals" | "stats" | "timeline" | "before" | "h2h" | "lineups";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "stats", label: "Stats" },
   { id: "timeline", label: "Timeline" },
   { id: "before", label: "Before kick-off" },
+  { id: "h2h", label: "H2H" },
   { id: "signals", label: "Signals" },
   { id: "lineups", label: "Line-ups" },
 ];
@@ -1321,12 +1322,6 @@ function H2HPane({
             {dominance ? <p className="wl-callout">{dominance}</p> : null}
           </section>
         ) : null}
-        <section className="wl-sec">
-          <p className="wl-sub">
-            This match isn&apos;t on the watchlist (there were no prices before kick-off), so only past meetings are
-            shown.
-          </p>
-        </section>
       </div>
     </div>
   );
@@ -1691,6 +1686,7 @@ export function MatchOverlay({
               <ResearchBody
                 data={research}
                 live={liveForResearch(panel)}
+                hideH2H
                 footer={
                   <>
                     <p className="wl-sub">Written before kick-off from results only.</p>
@@ -1705,16 +1701,27 @@ export function MatchOverlay({
                 }
               />
             ) : researchDone ? (
-              <H2HPane
-                matchId={panel.match_id}
-                homeTeam={panel.home_team}
-                awayTeam={panel.away_team}
-                homeTeamId={panel.home_team_id}
-                awayTeamId={panel.away_team_id}
-              />
+              <section className="wl-sec">
+                <div>
+                  <h3>Before kick-off</h3>
+                  <p className="wl-sub">
+                    This match isn&apos;t on the watchlist (there were no prices before kick-off), so there&apos;s no
+                    pre-match research. Past meetings are on the H2H tab.
+                  </p>
+                </div>
+              </section>
             ) : (
               <p className="mp-note">Loading…</p>
             )
+          ) : null}
+          {tab === "h2h" ? (
+            <H2HPane
+              matchId={panel.match_id}
+              homeTeam={panel.home_team}
+              awayTeam={panel.away_team}
+              homeTeamId={panel.home_team_id}
+              awayTeamId={panel.away_team_id}
+            />
           ) : null}
           {tab === "lineups" ? (
             <section className="wl-sec">
