@@ -911,3 +911,21 @@ def test_get_team_fixtures_rejects_a_bad_team_id() -> None:
     assert client.get_team_fixtures(0) == []
     assert client.get_team_fixtures(-5) == []
     client.close()
+
+
+def test_day_odds_also_ask_for_the_providers_previous_day(monkeypatch) -> None:
+    # get_odds dates are Berlin's; our day starts two hours earlier in winter,
+    # so 00:00-02:00 kick-offs are priced on the provider's previous date.
+    from kalchas_football.client import FootballAPIClient
+
+    client = FootballAPIClient(api_key="test-key")
+    calls: list[tuple[str, dict]] = []
+
+    def _get(action: str, params: dict) -> list:
+        calls.append((action, params))
+        return []
+
+    monkeypatch.setattr(client, "_get", _get)
+    client.get_odds_markets_on("2026-11-15")
+    assert calls == [("get_odds", {"from": "2026-11-14", "to": "2026-11-15"})]
+    client.close()

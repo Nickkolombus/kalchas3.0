@@ -1459,8 +1459,18 @@ class FootballAPIClient:
         return parse_results(data)
 
     def get_odds_markets_on(self, day: str) -> dict[str, dict[str, float]]:
-        """One ``get_odds`` call for a day: 1X2, Over/Under 2.5 and BTTS prices."""
-        data = self._get("get_odds", {"from": day, "to": day})
+        """One ``get_odds`` call for a day: 1X2, Over/Under 2.5 and BTTS prices.
+
+        ``get_odds`` dates are the provider's own (Europe/Berlin), while the
+        day's fixtures come in our offset (``+03:00``). Kick-offs between our
+        midnight and Berlin's (two hours in winter, one in summer) sit on the
+        provider's previous day, so that day is asked for too, in the same
+        call. Extra rows are harmless: the builder keeps only the day's fixtures.
+        """
+        from datetime import date, timedelta
+
+        start = date.fromisoformat(day) - timedelta(days=1)
+        data = self._get("get_odds", {"from": start.isoformat(), "to": day})
         return odds_markets_from_provider_rows(data)
 
     def get_league_fixtures(
