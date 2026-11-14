@@ -14,6 +14,7 @@ from typing import Any
 import asyncpg
 from sqlalchemy import text
 
+from kalchas_db.alerts import RESULT_STATE
 from kalchas_db.sync import sync_engine
 
 DEFAULT_CHANNELS: dict[str, bool] = {
@@ -23,16 +24,16 @@ DEFAULT_CHANNELS: dict[str, bool] = {
     "discord": True,
 }
 
-WEEK_SIGNALS = """
+WEEK_SIGNALS = f"""
 SELECT a.id, a.match_id, a.strategy_slot, a.strategy_key, a.team, a.value, a.minute,
        a.score, a.home_team, a.away_team, a.payload, a.created_at,
-       o.state, o.detail
+       {RESULT_STATE} AS state, o.detail
 FROM alerts a
 LEFT JOIN alert_outcomes o ON o.alert_id = a.id
 WHERE a.delivery_status = 'sent'
   AND a.created_at >= $1 AND a.created_at < $2
 ORDER BY a.created_at
-"""
+"""  # noqa: S608
 
 THRESHOLDS = "SELECT strategy_slot, threshold FROM strategy_thresholds"
 

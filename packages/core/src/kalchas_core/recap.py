@@ -72,9 +72,11 @@ class Signal:
 
     @property
     def result(self) -> str | None:
-        if "Confirmed" in self.states:
+        """goal, miss, or None (still open, or void: the other side scored)."""
+        states = self.states - {"Void"}
+        if "Confirmed" in states:
             return "goal"
-        if self.states == {"Expired"}:
+        if states == {"Expired"}:
             return "miss"
         return None
 

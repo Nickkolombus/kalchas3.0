@@ -157,6 +157,13 @@ def test_alerts_on_the_same_match_minute_are_one_signal():
     assert next(s for s in signals if s.match_id == "olimpia").result == "goal"
 
 
+def test_a_void_signal_is_neither_goal_nor_miss():
+    void = {**OLIMPIA, "state": "Void"}
+    assert group_signals([void])[0].result is None
+    missed_twin = {**OLIMPIA, "strategy_key": "pressure_index", "state": "Expired"}
+    assert group_signals([void, missed_twin])[0].result == "miss"
+
+
 def test_totals_leave_open_signals_out():
     data = recap()
     assert (data["total"], data["goals"], data["misses"]) == (6, 4, 2)

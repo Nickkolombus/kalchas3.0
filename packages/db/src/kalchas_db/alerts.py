@@ -11,6 +11,12 @@ from sqlalchemy import text
 
 from kalchas_db.sync import sync_engine
 
+# Result state for stats and the admin log. A counter-scored alert is stored
+# as 'Expired' (that is what the Telegram reply keys on) but it is a void, not
+# a miss: the other side scored first, so it never had a fair chance to land.
+# Reading it through `detail.kind` covers every alert settled so far as well.
+RESULT_STATE = "CASE WHEN o.detail->>'kind' = 'counter_scored' THEN 'Void' ELSE o.state END"
+
 INSERT_PENDING = """
 INSERT INTO alerts (
     match_id, strategy_slot, strategy_key, team, value, minute, score,
@@ -391,7 +397,7 @@ def list_alert_results_sync(
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """Filter alert history. `state` is Confirmed / Expired / Monitoring."""
+    """Filter alert history. `state` is Confirmed / Expired / Void / Monitoring."""
     from sqlalchemy import bindparam
 
     where = ["a.created_at >= :since", "a.created_at < :until"]
@@ -407,7 +413,7 @@ def list_alert_results_sync(
     if state == "Monitoring":
         where.append("o.state IS NULL")
     elif state:
-        where.append("o.state = :state")
+        where.append(f"{RESULT_STATE} = :state")
         params["state"] = state
     if team:
         where.append("a.team = :team")
@@ -421,7 +427,7 @@ def list_alert_results_sync(
         f"""
         SELECT a.id, a.match_id, a.strategy_slot, a.strategy_key, a.team, a.value,
                a.minute, a.score, a.home_team, a.away_team, a.created_at,
-               a.payload, o.state, o.decision, o.detail, o.evaluated_at,
+               a.payload, {RESULT_STATE} AS state, o.decision, o.detail, o.evaluated_at,
                (m.match_id IS NOT NULL) AS live
         FROM alerts a
         LEFT JOIN alert_outcomes o ON o.alert_id = a.id
@@ -435,8 +441,9 @@ def list_alert_results_sync(
         f"""
         SELECT
             count(*)::int AS total,
-            count(*) FILTER (WHERE o.state = 'Confirmed')::int AS confirmed,
-            count(*) FILTER (WHERE o.state = 'Expired')::int AS expired,
+            count(*) FILTER (WHERE {RESULT_STATE} = 'Confirmed')::int AS confirmed,
+            count(*) FILTER (WHERE {RESULT_STATE} = 'Expired')::int AS expired,
+            count(*) FILTER (WHERE {RESULT_STATE} = 'Void')::int AS void,
             count(*) FILTER (WHERE o.state IS NULL)::int AS monitoring
         FROM alerts a
         LEFT JOIN alert_outcomes o ON o.alert_id = a.id
@@ -456,21 +463,22 @@ def list_alert_results_sync(
         "total": int(summary.get("total") or 0),
         "confirmed": int(summary.get("confirmed") or 0),
         "expired": int(summary.get("expired") or 0),
+        "void": int(summary.get("void") or 0),
         "monitoring": int(summary.get("monitoring") or 0),
     }
 
 
 ALERT_RECORD_BY_LEAGUE = text(
-    """
+    f"""
     SELECT COALESCE(a.payload->>'country', '') AS country,
            COALESCE(a.payload->>'league', '') AS league,
-           count(*) FILTER (WHERE o.state = 'Confirmed')::int AS confirmed,
-           count(*) FILTER (WHERE o.state IN ('Confirmed', 'Expired'))::int AS settled
+           count(*) FILTER (WHERE {RESULT_STATE} = 'Confirmed')::int AS confirmed,
+           count(*) FILTER (WHERE {RESULT_STATE} IN ('Confirmed', 'Expired'))::int AS settled
     FROM alerts a
     JOIN alert_outcomes o ON o.alert_id = a.id
     WHERE a.created_at >= :since
     GROUP BY 1, 2
-    """
+    """  # noqa: S608
 )
 
 

@@ -140,7 +140,7 @@ def _minutes_to_goal(row: Mapping[str, Any]) -> int | None:
 
 
 def alert_stats(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
-    total = confirmed = expired = 0
+    total = confirmed = expired = void = 0
     gaps: list[int] = []
     for row in rows:
         total += 1
@@ -152,12 +152,15 @@ def alert_stats(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
                 gaps.append(gap)
         elif state == "Expired":
             expired += 1
+        elif state == "Void":
+            void += 1
     settled = confirmed + expired
     return {
         "total": total,
         "confirmed": confirmed,
         "expired": expired,
-        "open": total - settled,
+        "void": void,
+        "open": total - settled - void,
         "settled": settled,
         "hit_rate": _rate(confirmed, settled),
         "median_to_goal": median(gaps) if gaps else None,

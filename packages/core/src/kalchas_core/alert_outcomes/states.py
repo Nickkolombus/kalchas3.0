@@ -10,7 +10,9 @@ class AlertState(Enum):
     """Alert lifecycle states.
 
     Values match the strings written to `alerts_history.outcome` in 2.2.
-    `COUNTER_SCORED` is a neutral terminal: excluded from win/loss stats.
+    `COUNTER_SCORED` is a neutral terminal: excluded from win/loss stats. It is
+    stored publicly as 'Expired' (with `detail.kind = "counter_scored"`); the
+    results queries read it back as 'Void' (`kalchas_db.alerts.RESULT_STATE`).
     `CANCELLED_VAR` is transitioned by the tracker, not by this evaluator.
     """
 

@@ -634,6 +634,12 @@ export function OutcomePill({ state }: { state: string }) {
         <i>✕</i>Miss
       </span>
     );
+  if (state === "Void")
+    return (
+      <span className="kit-pill is-void" title="The other side scored first: left out of the hit rate">
+        <i>–</i>Void
+      </span>
+    );
   return (
     <span className="kit-pill is-open">
       <i>●</i>Open

@@ -779,6 +779,10 @@
   color: var(--warn);
 }
 
+.kit-pill.is-void {
+  color: var(--text-3, var(--text-2));
+}
+
 /* bar lists, legends, heatmaps */
 
 .kit-bars {

@@ -133,6 +133,21 @@ def test_alert_stats_counts_open_and_minutes_to_goal() -> None:
     assert stats["median_to_goal"] == 7
 
 
+def test_alert_stats_leaves_void_out_of_hit_rate_and_open() -> None:
+    rows = [
+        alert(TODAY, "Confirmed"),
+        alert(TODAY, "Expired"),
+        alert(TODAY, "Void"),
+        alert(TODAY, "Void"),
+    ]
+    stats = alert_stats(rows)
+    assert stats["total"] == 4
+    assert stats["void"] == 2
+    assert stats["settled"] == 2
+    assert stats["open"] == 0
+    assert stats["hit_rate"] == 0.5
+
+
 def test_results_insights_compares_periods_and_filters_strategy() -> None:
     rows = [alert(TODAY - timedelta(days=d), "Confirmed") for d in range(3)]
     rows += [alert(TODAY - timedelta(days=d), "Expired", strategy="npei") for d in range(2)]

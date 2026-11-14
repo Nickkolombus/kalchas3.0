@@ -71,6 +71,7 @@ export type AlertStats = {
   total: number;
   confirmed: number;
   expired: number;
+  void?: number;
   open: number;
   settled: number;
   hit_rate: number | null;
@@ -629,6 +630,7 @@ export function AdminResults({
                 ["", "All"],
                 ["Confirmed", "✓ Hit"],
                 ["Expired", "✕ Miss"],
+                ["Void", "– Void"],
                 ["Monitoring", "● Open"],
               ].map(([value, text]) => (
                 <button key={value} type="button" className={logState === value ? "is-on" : ""} onClick={() => setLogState(value)}>
@@ -669,7 +671,8 @@ export function AdminResults({
             <tbody>
               {[...byDay.entries()].map(([day, items]) => {
                 const confirmed = items.filter((r) => r.state === "Confirmed").length;
-                const settled = items.filter((r) => r.state !== "Monitoring").length;
+                const settled = items.filter((r) => r.state === "Confirmed" || r.state === "Expired").length;
+                const open = items.filter((r) => r.state === "Monitoring").length;
                 return (
                   <Fragment key={day}>
                     <tr className="res-day">
@@ -679,12 +682,19 @@ export function AdminResults({
                         <span className="kit-num">
                           {confirmed}/{settled} hit · {pct(settled ? confirmed / settled : null)}
                         </span>
-                        {items.length - settled ? <span className="kit-num">· {items.length - settled} open</span> : null}
+                        {open ? <span className="kit-num">· {open} open</span> : null}
                       </td>
                     </tr>
                     {items.map((row) => {
                       const f = row.factors;
-                      const tone = row.state === "Confirmed" ? "is-ok" : row.state === "Expired" ? "is-miss" : "is-open";
+                      const tone =
+                        row.state === "Confirmed"
+                          ? "is-ok"
+                          : row.state === "Expired"
+                            ? "is-miss"
+                            : row.state === "Void"
+                              ? "is-void"
+                              : "is-open";
                       const gap =
                         row.state === "Confirmed" && row.settle_minute != null ? row.settle_minute - row.minute : null;
                       return (
