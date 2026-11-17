@@ -76,6 +76,37 @@ def filter_nightly(legs: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return [dict(leg) for leg in legs if is_nightly_kickoff(str(leg.get("kickoff") or ""))]
 
 
+def nightly_window(day: date) -> tuple[datetime, datetime]:
+    """The Nightly window of ``day``: 00:00 up to 07:00 on the GMT+3 clock."""
+    start = datetime(day.year, day.month, day.day, NIGHTLY_START_HOUR, tzinfo=NIGHTLY_TZ)
+    return start, start + timedelta(hours=NIGHTLY_END_HOUR - NIGHTLY_START_HOUR)
+
+
+def filter_window(
+    legs: Sequence[Mapping[str, Any]], start: datetime, end: datetime
+) -> list[dict[str, Any]]:
+    """Legs that kick off from ``start`` up to (not including) ``end``. A leg
+    with no readable kick-off can't be placed, so it is left out."""
+    kept: list[dict[str, Any]] = []
+    for leg in legs:
+        when = _kickoff_local(str(leg.get("kickoff") or ""))
+        if when is not None and start <= when < end:
+            kept.append(dict(leg))
+    return kept
+
+
+def window_label(start: datetime, end: datetime) -> str:
+    """``14:00–23:30 GMT+3``, with the day on either end that isn't ``start``'s."""
+    s, e = start.astimezone(NIGHTLY_TZ), end.astimezone(NIGHTLY_TZ)
+    if e.date() == s.date() + timedelta(days=1) and (e.hour, e.minute) == (0, 0):
+        to = "24:00"
+    elif e.date() != s.date():
+        to = f"{e:%a %H:%M}"
+    else:
+        to = f"{e:%H:%M}"
+    return f"{s:%H:%M}–{to} {NIGHTLY_LABEL}"
+
+
 def rebuild_orders(legs: Sequence[Mapping[str, Any]]) -> dict[str, list[str]]:
     return {style: order(legs, style) for style in STYLES}
 

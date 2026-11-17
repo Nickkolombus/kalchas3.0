@@ -17,17 +17,18 @@ odds: a typed price is taken as given, and every leg needs one to be posted.
 from __future__ import annotations
 
 import os
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from kalchas_core.watchlist.parlay import MAX_LEGS, MIN_LEGS, STYLES, picks_order
 from kalchas_core.watchlist.parlay_share import (
     STAKE,
-    WINDOW_LABEL,
-    filter_nightly,
+    filter_window,
+    nightly_window,
     rebuild_orders,
     slot_day,
+    window_label,
 )
 from kalchas_core.watchlist.parlay_slips import CHOICES, marks, snapshot, verdict
 from pydantic import BaseModel, Field
@@ -46,6 +47,8 @@ Kind = Literal["priced", "any"]
 ANY_STYLE = "picks"
 ANY_NATURE = "The strongest pattern in each match, whatever the market."
 MAX_TYPED_ODDS = 1000.0
+# The longest kick-off window a slip can be built from.
+MAX_WINDOW = timedelta(days=3)
 # Claude gets the style as a fact; this tells it what is different about these legs.
 ANY_STYLE_FOR_CLAUDE = (
     "any market: each match's strongest pattern, whatever the market. A null price means "
@@ -74,6 +77,9 @@ class SlipBody(BaseModel):
     slot: Slot = "today"
     style: Style = "balanced"
     kind: Kind = "priced"
+    # The kick-off window the admin set, if any; the same one the list came with.
+    start: datetime | None = None
+    end: datetime | None = None
     legs: list[LegRef] = Field(default_factory=list)
 
 
@@ -110,43 +116,104 @@ def _dsn() -> str:
 # ---------------------------------------------------------------- the day
 
 
-def day_for(slot: Slot, kind: Kind = "priced") -> dict[str, Any]:
-    """Everything the slot can use: the public /parlay payload, Nightly-filtered.
-    For ``any`` the legs are the any-market picks (``price`` may be None) and
-    every style has the one order they come in."""
-    today = watchlist_api.board_today()
-    target = slot_day(slot, today=today)
-    iso = target.isoformat()
+def slot_window(slot: Slot, target: date) -> tuple[datetime, datetime]:
+    """The kick-offs a slot takes when the admin sets no window: the board's
+    whole day for Today and Tomorrow, 00:00–07:00 GMT+3 for Nightly."""
+    if slot == "nightly":
+        return nightly_window(target)
+    start = datetime.combine(target, time(0), tzinfo=watchlist_api.board_zone())
+    return start, start + timedelta(days=1)
+
+
+def _aware(when: datetime) -> datetime:
+    return when if when.tzinfo else when.replace(tzinfo=watchlist_api.board_zone())
+
+
+def _built(iso: str) -> dict[str, Any]:
     try:
-        built = watchlist_api._parlay_for(_dsn(), iso)
+        return watchlist_api._parlay_for(_dsn(), iso)
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"parlay unavailable: {exc}") from exc
-    legs = list(built.get("legs") or [])
+
+
+def day_for(
+    slot: Slot,
+    kind: Kind = "priced",
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> dict[str, Any]:
+    """Everything the slot can use: the public /parlay payload, cut to a window.
+
+    With no ``start``/``end`` Today and Tomorrow are exactly the public page;
+    Nightly keeps 00:00–07:00 GMT+3. Either end the admin sets replaces the
+    slot's own; the window may run past midnight (up to three days), and then
+    every day it touches is loaded. Once a window cuts the list, each style's
+    order is rebuilt from what is left. For ``any`` the legs are the any-market
+    picks (``price`` may be None) and every style has the one order they come in.
+    """
+    today = watchlist_api.board_today()
+    target = slot_day(slot, today=today)
+    iso = target.isoformat()
+    own_start, own_end = slot_window(slot, target)
+    custom = start is not None or end is not None
+    lo = _aware(start) if start is not None else own_start
+    hi = _aware(end) if end is not None else own_end
+    if hi <= lo:
+        raise HTTPException(status_code=422, detail="the window has to end after it starts")
+    if hi - lo > MAX_WINDOW:
+        raise HTTPException(status_code=422, detail="the window can be at most 3 days long")
+
+    zone = watchlist_api.board_zone()
+    first = lo.astimezone(zone).date()
+    last = (hi - timedelta(microseconds=1)).astimezone(zone).date()
+    days = (
+        [first + timedelta(days=i) for i in range((last - first).days + 1)] if custom else [target]
+    )
+    built_by_day = {d.isoformat(): _built(d.isoformat()) for d in days}
+    built = built_by_day.get(iso) or {}
+
+    def gather(key: str) -> list[dict[str, Any]]:
+        seen: dict[str, dict[str, Any]] = {}
+        for got in built_by_day.values():
+            for row in got.get(key) or []:
+                seen.setdefault(str(row["match_id"]), row)
+        return list(seen.values())
+
+    windowed = custom or slot == "nightly"
+    legs = gather("legs")
     order = {s: list((built.get("order") or {}).get(s) or []) for s in STYLES}
-    unpriced = list(built.get("unpriced") or [])
+    # Strong matches with no priced pattern carry no kick-off, so they can't be
+    # placed in a window: shown for the slot's own day only, never for Nightly.
+    unpriced = list(built.get("unpriced") or []) if slot != "nightly" else []
     if kind == "any":
-        legs = list(built.get("picks") or [])
-        if slot == "nightly":
-            legs = filter_nightly(legs)
+        legs = gather("picks")
+        if windowed:
+            legs = filter_window(legs, lo, hi)
         order = dict.fromkeys(STYLES, picks_order(legs))
         unpriced = []
-    elif slot == "nightly":
-        legs = filter_nightly(legs)
+    elif windowed:
+        legs = filter_window(legs, lo, hi)
         order = rebuild_orders(legs)
-        unpriced = []  # no kick-off on those rows, so they can't be placed in the window
-    if built:
+    if any(built_by_day.values()):
         status = "ready"
     else:
-        status = "none" if iso < today.isoformat() else "preparing"
+        status = "none" if last.isoformat() < today.isoformat() else "preparing"
     return {
         "slot": slot,
         "kind": kind,
         "day": iso,
         "today": today.isoformat(),
         "status": status,
-        "window_label": WINDOW_LABEL if slot == "nightly" else None,
+        "window_label": window_label(lo, hi) if windowed else None,
+        "window": {
+            "start": lo.isoformat(),
+            "end": hi.isoformat(),
+            "slot_start": own_start.isoformat(),
+            "slot_end": own_end.isoformat(),
+            "custom": custom,
+        },
         "legs": legs,
         "order": order,
         "unpriced": unpriced,
@@ -157,15 +224,14 @@ def day_for(slot: Slot, kind: Kind = "priced") -> dict[str, Any]:
     }
 
 
-def take(
-    slot: Slot, refs: list[LegRef], kind: Kind = "priced", *, need_odds: bool = True
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def take(body: SlipBody, *, need_odds: bool = True) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """The legs the admin picked, from today's data; 409 if any changed since.
 
     On an any-market slip the leg takes the odds the admin typed. Every leg
     needs them to be drawn or saved (``need_odds``); Claude's read does not.
     """
-    day = day_for(slot, kind)
+    kind, refs = body.kind, body.legs
+    day = day_for(body.slot, kind, body.start, body.end)
     by_id = {str(leg["match_id"]): leg for leg in day["legs"]}
     picked: list[dict[str, Any]] = []
     changed: list[str] = []
@@ -214,7 +280,13 @@ def _name(leg: dict[str, Any]) -> str:
     return f"{(leg.get('home') or {}).get('name', '')} v {(leg.get('away') or {}).get('name', '')}"
 
 
-def default_caption(slot: str, style: str, legs: list[dict[str, Any]], kind: str = "priced") -> str:
+def default_caption(
+    slot: str,
+    style: str,
+    legs: list[dict[str, Any]],
+    kind: str = "priced",
+    label: str | None = None,
+) -> str:
     combined = 1.0
     for leg in legs:
         combined *= float(leg["price"])
@@ -226,8 +298,8 @@ def default_caption(slot: str, style: str, legs: list[dict[str, Any]], kind: str
         f"{len(legs)} legs · combined {combined:.2f}",
         f"A {STAKE:.0f} stake returns {STAKE * combined:.2f}",
     ]
-    if slot == "nightly":
-        lines.append(WINDOW_LABEL)
+    if slot == "nightly" and label:
+        lines.append(label)
     lines += ["", "kalchas.live", "For research & football enthusiast purposes only"]
     return "\n".join(lines)
 
@@ -236,10 +308,17 @@ def default_caption(slot: str, style: str, legs: list[dict[str, Any]], kind: str
 
 
 @router.get("/day")
-def get_day(request: Request, slot: Slot = "today", kind: Kind = "priced") -> dict[str, Any]:
-    """Every leg the slot can use and each style's order, like GET /api/watchlist/parlay."""
+def get_day(
+    request: Request,
+    slot: Slot = "today",
+    kind: Kind = "priced",
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> dict[str, Any]:
+    """Every leg the slot can use and each style's order, like GET /api/watchlist/parlay,
+    cut to kick-offs from ``start`` up to ``end`` where the admin set them."""
     require_admin(request)
-    return day_for(slot, kind)
+    return day_for(slot, kind, start, end)
 
 
 @router.post("/preview")
@@ -248,7 +327,7 @@ def preview(body: SlipBody, request: Request) -> Response:
     require_admin(request)
     from kalchas_bot.parlay_slip import render_parlay_slip
 
-    day, legs = take(body.slot, body.legs, body.kind)
+    day, legs = take(body)
     png = render_parlay_slip(legs, slot=body.slot, style=body.style, day=day["day"])
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
 
@@ -256,8 +335,8 @@ def preview(body: SlipBody, request: Request) -> Response:
 @router.post("/caption")
 def caption(body: SlipBody, request: Request) -> dict[str, str]:
     require_admin(request)
-    _, legs = take(body.slot, body.legs, body.kind)
-    return {"caption": default_caption(body.slot, body.style, legs, body.kind)}
+    day, legs = take(body)
+    return {"caption": default_caption(body.slot, body.style, legs, body.kind, day["window_label"])}
 
 
 @router.post("/evaluate")
@@ -266,7 +345,7 @@ def evaluate_slip(body: EvaluateBody, request: Request) -> dict[str, Any]:
     require_admin(request)
     from kalchas_api.parlay_claude import evaluate
 
-    day, legs = take(body.slot, body.legs, body.kind, need_odds=False)
+    day, legs = take(body, need_odds=False)
     chosen = {str(leg["match_id"]) for leg in legs}
     rank = {mid: i for i, mid in enumerate(day["order"].get(body.style) or [])}
     unused = sorted(
@@ -289,8 +368,10 @@ def save_slip(body: SaveBody, request: Request) -> dict[str, Any]:
     channels = {key: bool(body.channels.get(key)) for key in CHANNEL_KEYS}
     if not any(channels.values()):
         raise HTTPException(status_code=422, detail="pick at least one channel")
-    day, legs = take(body.slot, body.legs, body.kind)
-    text = body.caption.strip() or default_caption(body.slot, body.style, legs, body.kind)
+    day, legs = take(body)
+    text = body.caption.strip() or default_caption(
+        body.slot, body.style, legs, body.kind, day["window_label"]
+    )
     row = insert_slip_sync(
         _dsn(),
         day=date.fromisoformat(day["day"]),

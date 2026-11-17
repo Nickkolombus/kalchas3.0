@@ -24,9 +24,13 @@ import {
 type Api = <T>(path: string, init?: RequestInit) => Promise<T>;
 type Slot = "today" | "tomorrow" | "nightly";
 
+/** The kick-offs the list holds, as the server applied them (ISO times). */
+type DayWindow = { start: string; end: string; slot_start: string; slot_end: string; custom: boolean };
+
 type AdminDay = ParlayDay & {
   slot: Slot;
   window_label: string | null;
+  window: DayWindow;
   stake: number;
   max_legs: number;
   claude_ready: boolean;
@@ -60,6 +64,38 @@ const SLOTS: { key: Slot; label: string; hint: string }[] = [
 type Kind = "priced" | "any";
 
 type LegRef = { match_id: string; market: string; price: number | null };
+
+/* The kick-off window the list was loaded with, sent again with every check
+   and save so the server judges the slip against the same list. Empty means
+   the slot's own window (and Today/Tomorrow then match the public page). */
+type Win = { start?: string; end?: string };
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** An ISO time as a datetime-local box holds it, on this browser's clock. */
+function boxValue(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** A datetime-local box's value (this browser's clock) as an ISO time. */
+function boxIso(value: string): string | null {
+  const d = new Date(value);
+  return value && !Number.isNaN(d.getTime()) ? d.toISOString() : null;
+}
+
+/** This minute, as an ISO time. */
+function nowIso(): string {
+  const d = new Date();
+  d.setSeconds(0, 0);
+  return d.toISOString();
+}
+
+function shortWhen(iso: string): string {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })} ${clock(iso)}`;
+}
 
 const hasPrice = (l: ParlayLeg) => l.price > 1;
 
@@ -138,17 +174,43 @@ function Builder({ api, kind, onSaved }: { api: Api; kind: Kind; onSaved: () => 
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState("");
+  const [win, setWin] = useState<Win>({});
+  // What is in the two boxes, applied only on Apply.
+  const [draft, setDraft] = useState({ start: "", end: "" });
+  const [winError, setWinError] = useState("");
 
+  /* "auto": the slot's own window, but from now on once it has begun, so a
+     match already under way isn't offered as a leg. */
   const load = useCallback(
-    async (which: Slot) => {
+    async (which: Slot, want: Win | "auto") => {
       setLoading(true);
       setLoadError("");
+      setWinError("");
+      const fetchDay = (w: Win) => {
+        const q = new URLSearchParams({ slot: which });
+        if (any) q.set("kind", "any");
+        if (w.start) q.set("start", w.start);
+        if (w.end) q.set("end", w.end);
+        return api<AdminDay>(`/api/admin/parlay/day?${q}`);
+      };
       try {
-        const got = await api<AdminDay>(`/api/admin/parlay/day?slot=${which}${any ? "&kind=any" : ""}`);
+        let w: Win = want === "auto" ? {} : want;
+        let got = await fetchDay(w);
+        if (want === "auto" && got.window) {
+          const now = Date.now();
+          if (now > Date.parse(got.window.slot_start) && now < Date.parse(got.window.slot_end)) {
+            w = { start: nowIso() };
+            got = await fetchDay(w);
+          }
+        }
+        setWin(w);
+        if (got.window) setDraft({ start: boxValue(got.window.start), end: boxValue(got.window.end) });
         // A pick we hold no price for comes as null; here that is price 0.
         setDay(any ? { ...got, legs: got.legs.map((l) => ({ ...l, price: l.price ?? 0 })) } : got);
       } catch (e) {
-        setLoadError(e instanceof Error ? e.message : "Could not load the list");
+        const message = e instanceof Error ? e.message : "Could not load the list";
+        if (want === "auto") setLoadError(message);
+        else setWinError(message);
       } finally {
         setLoading(false);
       }
@@ -157,18 +219,42 @@ function Builder({ api, kind, onSaved }: { api: Api; kind: Kind; onSaved: () => 
   );
 
   useEffect(() => {
-    void load(slot);
+    void load(slot, "auto");
   }, [load, slot]);
 
   const pickSlot = (s: Slot) => {
     if (s === slot) return;
     setSlot(s);
     setDay(null);
+    setWin({});
     setRemoved([]);
     setPinned([]);
     setTyped({});
     setNote("");
   };
+
+  const applyWindow = (w: Win) => {
+    if (w.start && w.end && Date.parse(w.end) <= Date.parse(w.start)) {
+      setWinError("The window has to end after it starts.");
+      return;
+    }
+    void load(slot, w);
+  };
+
+  const applyDraft = () => {
+    const start = boxIso(draft.start);
+    const end = boxIso(draft.end);
+    if (!start || !end) {
+      setWinError("Fill in both the start and the end.");
+      return;
+    }
+    applyWindow({ start, end });
+  };
+
+  const shown = day?.window;
+  const fromNow = () => applyWindow({ start: nowIso(), end: win.end });
+  const wholeSlot = () => applyWindow({});
+  const draftChanged = !!shown && (draft.start !== boxValue(shown.start) || draft.end !== boxValue(shown.end));
 
   // The any-market list has one order (every style carries it), so style stays put.
   const base = pickParlay(day, style, wanted, { removed, pinned });
@@ -256,7 +342,7 @@ function Builder({ api, kind, onSaved }: { api: Api; kind: Kind; onSaved: () => 
           <h2>{title}</h2>
           <span className="kit-sub">
             {day ? longDate(day.day) : ""}
-            {day?.window_label ? ` · ${day.window_label}` : ""}
+            {day?.window_label && !day.window?.custom ? ` · ${day.window_label}` : ""}
           </span>
           <div className="kit-card-right">
             <span className="wl-seg" role="group" aria-label="Slot">
@@ -282,6 +368,54 @@ function Builder({ api, kind, onSaved }: { api: Api; kind: Kind; onSaved: () => 
             told what changed.
           </p>
         )}
+        <form
+          className="kit-card-body ap-window"
+          onSubmit={(e) => {
+            e.preventDefault();
+            applyDraft();
+          }}
+        >
+          <label>
+            <span>Kick-offs from</span>
+            <input
+              type="datetime-local"
+              value={draft.start}
+              disabled={!shown}
+              onChange={(e) => setDraft((d) => ({ ...d, start: e.target.value }))}
+            />
+          </label>
+          <label>
+            <span>to</span>
+            <input
+              type="datetime-local"
+              value={draft.end}
+              disabled={!shown}
+              onChange={(e) => setDraft((d) => ({ ...d, end: e.target.value }))}
+            />
+          </label>
+          <button type="submit" className="kit-btn" disabled={!draftChanged || loading}>
+            Apply
+          </button>
+          <span className="wl-seg" role="group" aria-label="Quick windows">
+            <button type="button" disabled={!shown || loading} onClick={fromNow}>
+              From now
+            </button>
+            <button type="button" className={shown && !shown.custom ? "on" : ""} disabled={!shown || loading} onClick={wholeSlot}>
+              {slot === "nightly" ? "Whole night" : "Whole day"}
+            </button>
+          </span>
+          <span className="kit-sub ap-window-note">
+            {winError ? (
+              <span className="kit-error">{winError}</span>
+            ) : shown ? (
+              shown.custom ? (
+                `Only matches kicking off ${shortWhen(shown.start)} – ${shortWhen(shown.end)} (your clock). A window can run past midnight, up to 3 days.`
+              ) : (
+                `The slot's own window: ${shortWhen(shown.start)} – ${shortWhen(shown.end)} (your clock).`
+              )
+            ) : null}
+          </span>
+        </form>
       </div>
 
       <div className="ap-grid">
@@ -292,7 +426,9 @@ function Builder({ api, kind, onSaved }: { api: Api; kind: Kind; onSaved: () => 
           {day?.status === "none" ? <p className="wl-empty">No watchlist for {longDate(day.day)}.</p> : null}
           {ready && most < PARLAY_MIN ? (
             <p className="wl-empty">
-              Not enough {any ? "picks" : "priced picks"} {slot === "nightly" ? "in the night window" : "on this day"} for a slip of {PARLAY_MIN}.
+              Not enough {any ? "picks" : "priced picks"}{" "}
+              {day.window?.custom ? "in this kick-off window" : slot === "nightly" ? "in the night window" : "on this day"} for a slip of{" "}
+              {PARLAY_MIN}.{day.window?.custom ? " Widen the window above." : ""}
             </p>
           ) : null}
 
@@ -464,6 +600,7 @@ function Builder({ api, kind, onSaved }: { api: Api; kind: Kind; onSaved: () => 
 
               <ClaudeRead
                 slot={slot}
+                win={win}
                 style={style}
                 kind={kind}
                 legs={legs}
@@ -475,7 +612,16 @@ function Builder({ api, kind, onSaved }: { api: Api; kind: Kind; onSaved: () => 
         </div>
 
         {ready && legs.length >= PARLAY_MIN ? (
-          <Review slot={slot} style={style} kind={kind} legs={legs} missing={missing} onReload={() => void load(slot)} onSaved={onSaved} />
+          <Review
+            slot={slot}
+            win={win}
+            style={style}
+            kind={kind}
+            legs={legs}
+            missing={missing}
+            onReload={() => void load(slot, win)}
+            onSaved={onSaved}
+          />
         ) : null}
       </div>
     </>
@@ -499,6 +645,7 @@ function longDate(iso: string): string {
 
 function ClaudeRead({
   slot,
+  win,
   style,
   kind,
   legs,
@@ -506,6 +653,7 @@ function ClaudeRead({
   onApply,
 }: {
   slot: Slot;
+  win: Win;
   style: ParlayStyle;
   kind: Kind;
   legs: ParlayLeg[];
@@ -515,14 +663,14 @@ function ClaudeRead({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [read, setRead] = useState<Advice | null>(null);
-  const key = `${slot}|${style}|${legs.map((l) => `${l.match_id}@${l.price}`).join(",")}`;
+  const key = `${slot}|${win.start}|${win.end}|${style}|${legs.map((l) => `${l.match_id}@${l.price}`).join(",")}`;
   const stale = read !== null && read.key !== key;
 
   const ask = async () => {
     setBusy(true);
     setError("");
     try {
-      const res = await post("/api/admin/parlay/evaluate", { slot, style, kind, legs: refsOf(legs) });
+      const res = await post("/api/admin/parlay/evaluate", { slot, ...win, style, kind, legs: refsOf(legs) });
       if (!res.ok) throw new Error((await problem(res)).message);
       const body = (await res.json()) as Omit<Advice, "key">;
       setRead({ ...body, key });
@@ -576,6 +724,7 @@ function ClaudeRead({
 
 function Review({
   slot,
+  win,
   style,
   kind,
   legs,
@@ -584,6 +733,7 @@ function Review({
   onSaved,
 }: {
   slot: Slot;
+  win: Win;
   style: ParlayStyle;
   kind: Kind;
   legs: ParlayLeg[];
@@ -600,7 +750,7 @@ function Review({
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; changes: string[] } | null>(null);
-  const key = `${slot}|${style}|${legs.map((l) => `${l.match_id}@${l.price}`).join(",")}`;
+  const key = `${slot}|${win.start}|${win.end}|${style}|${legs.map((l) => `${l.match_id}@${l.price}`).join(",")}`;
   const last = useRef("");
 
   // The slip image follows the slip, a moment after it settles.
@@ -610,7 +760,7 @@ function Review({
     const timer = window.setTimeout(async () => {
       last.current = key;
       try {
-        const res = await post("/api/admin/parlay/preview", { slot, style, kind, legs: refsOf(legs) });
+        const res = await post("/api/admin/parlay/preview", { slot, ...win, style, kind, legs: refsOf(legs) });
         if (res.ok && last.current === key) {
           const url = URL.createObjectURL(await res.blob());
           setImage((old) => {
@@ -632,7 +782,7 @@ function Review({
     let live = true;
     const timer = window.setTimeout(async () => {
       try {
-        const res = await post("/api/admin/parlay/caption", { slot, style, kind, legs: refsOf(legs) });
+        const res = await post("/api/admin/parlay/caption", { slot, ...win, style, kind, legs: refsOf(legs) });
         if (res.ok && live) setCaption(((await res.json()) as { caption: string }).caption);
       } catch {
         /* the server writes the default again when saving an empty text */
@@ -653,6 +803,7 @@ function Review({
     try {
       const res = await post("/api/admin/parlay/slips", {
         slot,
+        ...win,
         style,
         kind,
         legs: refsOf(legs),

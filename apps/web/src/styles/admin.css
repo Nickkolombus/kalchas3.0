@@ -3197,3 +3197,40 @@
   color: var(--text);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
+
+/* Admin parlay: the kick-off window under the slot buttons. */
+.ap-window {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+  padding-top: 0;
+}
+
+.ap-window label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--text-2);
+}
+
+.ap-window input[type="datetime-local"] {
+  background: var(--surface-3, var(--wl-surface-2));
+  color: var(--text);
+  border: 1px solid var(--border-2, var(--border));
+  border-radius: 8px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 0.8rem;
+  color-scheme: dark;
+}
+
+.ap-window input[type="datetime-local"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ap-window-note {
+  flex-basis: 100%;
+  font-size: 0.75rem;
+}

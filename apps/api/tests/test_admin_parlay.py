@@ -443,3 +443,66 @@ def test_claude_reads_an_any_market_slip_before_the_odds_are_typed(
     assert res.status_code == 200
     assert [leg["price"] for leg in seen["selected"]] == [None, 1.9, None]
     assert len(seen["unused"]) == 4
+
+
+def test_window_drops_kickoffs_before_start(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages())
+    body = client.get(
+        "/api/admin/parlay/day", params={"slot": "today", "start": "2026-11-07T14:00:00+03:00"}
+    ).json()
+    assert [leg["match_id"] for leg in body["legs"]] == ["4", "5", "6", "7"]
+    assert set(body["order"]["balanced"]) <= {"4", "5", "6", "7"}
+    assert body["window"]["custom"] is True
+    assert body["window"]["end"] == "2026-11-08T00:00:00+03:00"
+    assert body["window_label"] == "14:00–24:00 GMT+3"
+
+
+def test_window_past_midnight_loads_both_days(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    by_day = {
+        "2026-11-07": [
+            page("1", "2026-11-07T21:00:00+03:00"),
+            page("2", "2026-11-07T10:00:00+03:00"),
+        ],
+        "2026-11-08": [
+            page("3", "2026-11-08T01:00:00+03:00"),
+            page("4", "2026-11-08T12:00:00+03:00"),
+        ],
+    }
+    monkeypatch.setattr(
+        "kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: by_day.get(day, [])
+    )
+    body = client.get(
+        "/api/admin/parlay/day",
+        params={"start": "2026-11-07T20:00:00+03:00", "end": "2026-11-08T03:00:00+03:00"},
+    ).json()
+    assert {leg["match_id"] for leg in body["legs"]} == {"1", "3"}
+    assert body["window_label"] == "20:00–Sun 03:00 GMT+3"
+
+
+def test_window_must_be_sane(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages())
+    backwards = {"start": "2026-11-07T18:00:00+03:00", "end": "2026-11-07T12:00:00+03:00"}
+    assert client.get("/api/admin/parlay/day", params=backwards).status_code == 422
+    long = {"start": "2026-11-07T00:00:00+03:00", "end": "2026-11-11T00:00:00+03:00"}
+    assert client.get("/api/admin/parlay/day", params=long).status_code == 422
+
+
+def test_saving_checks_legs_against_the_same_window(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("kalchas_db.watchlist.load_watchlist_matches_on", lambda dsn, day: pages())
+    day = client.get("/api/admin/parlay/day").json()
+    res = client.post(
+        "/api/admin/parlay/preview",
+        json={
+            "slot": "today",
+            "start": "2026-11-07T14:00:00+03:00",
+            "legs": refs(day, ["1", "4", "6"]),
+        },
+    )
+    assert res.status_code == 409
+    assert "no longer on the list" in json.dumps(res.json())
