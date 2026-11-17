@@ -35,6 +35,8 @@ type ResultFactors = {
   tslg?: string | null;
   odds_home?: number | null;
   odds_away?: number | null;
+  live_home?: number | null;
+  live_away?: number | null;
   trigger_odds?: number | null;
   d5?: SidePair;
   d10?: SidePair;
@@ -124,10 +126,16 @@ function sideVal(pair: SidePair | undefined, team: string | null, digits = 0): s
   return digits ? Number(raw).toFixed(digits) : String(Math.round(Number(raw)));
 }
 
-function triggerOdds(row: ResultItem): string {
+// Live match-winner price of the alerted team when the alert fired. Falls back to
+// the kickoff price, marked "KO", when no fresh live line was stored.
+function alertOdds(row: ResultItem): { live: string | null; kickoff: string | null } {
   const f = row.factors;
-  const raw = f?.trigger_odds ?? (row.team === "away" ? f?.odds_away : f?.odds_home);
-  return raw == null ? "–" : Number(raw).toFixed(2);
+  const fmt = (v?: number | null) => (v == null || Number.isNaN(Number(v)) ? null : Number(v).toFixed(2));
+  const away = row.team === "away";
+  return {
+    live: fmt(away ? f?.live_away : f?.live_home),
+    kickoff: fmt(f?.trigger_odds ?? (away ? f?.odds_away : f?.odds_home)),
+  };
 }
 
 type HeatColumn = { label: string; group?: string };
@@ -663,7 +671,7 @@ export function AdminResults({
                 <th>Strategy</th>
                 <th>At fire</th>
                 <th>Board at fire</th>
-                <th className="r">Odds</th>
+                <th className="r" title="Live match-winner price of the alerted team when the alert fired">Live odds</th>
                 <th>Settled</th>
                 <th>Outcome</th>
               </tr>
@@ -744,7 +752,21 @@ export function AdminResults({
                                 </span>
                               </span>
                             </td>
-                            <td className="r kit-num">{triggerOdds(row)}</td>
+                            {(() => {
+                              const o = alertOdds(row);
+                              if (o.live)
+                                return (
+                                  <td className="r kit-num" title={o.kickoff ? `Live at fire. Kickoff ${o.kickoff}` : "Live at fire"}>
+                                    {o.live}
+                                    {o.kickoff ? <small>KO {o.kickoff}</small> : null}
+                                  </td>
+                                );
+                              return (
+                                <td className="r kit-num kit-muted" title="No live price stored for this alert; kickoff price shown">
+                                  {o.kickoff ? <>KO {o.kickoff}</> : "–"}
+                                </td>
+                              );
+                            })()}
                             <td className="kit-num">
                               {row.settle_score ? `${row.settle_score}${row.settle_minute != null ? ` ${row.settle_minute}′` : ""}` : "–"}
                             </td>
