@@ -87,7 +87,10 @@ async def test_each_place_gets_its_own_template(monkeypatch: pytest.MonkeyPatch)
         unlimited_until=None,
         discord_bot_token="tok",
         discord_settings=DISCORD_SETTINGS,
-        templates={("free", "alert"): "FREE {home}", ("discord", "alert"): "DC {away}"},
+        templates={
+            ("default", "free", "alert"): "FREE {home}",
+            ("default", "discord", "alert"): "DC {away}",
+        },
     )
 
     paid_caption = dict(telegram)["paid"]
@@ -101,14 +104,14 @@ async def test_rejected_template_is_resent_with_built_in_text() -> None:
     bot = Mock()
     sent = Mock(message_id=12)
     bot.send_photo = AsyncMock(side_effect=[BadRequest("Can't parse entities"), sent])
-    rejected: list[tuple[str, str, str]] = []
+    rejected: list[tuple[str, str, str, str]] = []
     retry = delivery._Retry("BUILT", "BUILT+score", "paid", "alert", rejected)
 
     message_id = await _send_alert(bot, "-1", b"png", "MINE", "MINE+score", retry=retry)
 
     assert message_id == 12
     assert bot.send_photo.await_args_list[1].kwargs["caption"] == "BUILT"
-    assert rejected and rejected[0][:2] == ("paid", "alert")
+    assert rejected and rejected[0][:3] == ("default", "paid", "alert")
 
 
 @pytest.mark.asyncio
@@ -124,11 +127,18 @@ async def test_fallbacks_are_recorded_once_per_template(monkeypatch: pytest.Monk
     record = AsyncMock()
     monkeypatch.setattr("kalchas_db.alert_templates.record_fallback", record)
     await delivery._record_fallbacks(
-        FakePool(), [("paid", "alert", "a"), ("paid", "alert", "b"), ("free", "goal", "c")]
+        FakePool(),
+        [
+            ("default", "paid", "alert", "a"),
+            ("default", "paid", "alert", "b"),
+            ("kscore", "paid", "alert", "c"),
+            ("default", "free", "goal", "d"),
+        ],
     )
-    assert [call.args[1:3] for call in record.await_args_list] == [
-        ("paid", "alert"),
-        ("free", "goal"),
+    assert [call.args[1:4] for call in record.await_args_list] == [
+        ("default", "paid", "alert"),
+        ("kscore", "paid", "alert"),
+        ("default", "free", "goal"),
     ]
 
 
@@ -137,7 +147,7 @@ async def test_recording_a_fallback_never_breaks_delivery(monkeypatch: pytest.Mo
     monkeypatch.setattr(
         "kalchas_db.alert_templates.record_fallback", AsyncMock(side_effect=RuntimeError("db"))
     )
-    await delivery._record_fallbacks(FakePool(), [("paid", "alert", "a")])
+    await delivery._record_fallbacks(FakePool(), [("default", "paid", "alert", "a")])
 
 
 @pytest.mark.asyncio
@@ -166,7 +176,7 @@ async def test_goal_reply_uses_the_free_template_on_free_only(
         "paid",
         [row],
         free_chat_id="free",
-        templates={("free", "goal"): "Goal for {home} at {goal_minute}"},
+        templates={("default", "free", "goal"): "Goal for {home} at {goal_minute}"},
     )
 
     texts = {

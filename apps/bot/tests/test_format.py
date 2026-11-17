@@ -6,7 +6,8 @@ from kalchas_bot.format import (
     format_alert_html,
     format_joint_html,
     format_outcome_html,
-    joint_window_span,
+    lead_key,
+    stat_parts,
 )
 
 
@@ -390,7 +391,8 @@ def test_joint_sustained_pressure_and_urg_uses_last_10_minutes():
             },
         ]
     )
-    assert text.index("<b>UrG</b>") < text.index("<b>Δ10′</b>")
+    # Δ10′ outranks UrG, so it is listed first and its 10-minute stats are used.
+    assert text.index("<b>Δ10′</b>") < text.index("<b>UrG</b>")
     assert "Bolivar vs <b>Mineros</b> · 82′" in text
     assert text.count("Copa Venezuela") == 1
     assert "<b>Last 10 mins (72′-82′):</b>" in text
@@ -401,7 +403,9 @@ def test_joint_sustained_pressure_and_urg_uses_last_10_minutes():
 
 
 def test_joint_delta5_and_urg_uses_last_5_minutes():
-    assert joint_window_span(["delta_5min", "rule_of_three"]) == 5
+    assert lead_key([{"strategy_key": "rule_of_three"}, {"strategy_key": "delta_5min"}]) == (
+        "delta_5min"
+    )
     text = format_joint_html(
         [
             {
@@ -434,8 +438,61 @@ def test_joint_delta5_and_urg_uses_last_5_minutes():
     assert "SOT: <b>3</b> - 0" in text
 
 
-def test_joint_with_a_third_strategy_stays_on_10_minutes():
-    assert joint_window_span(["delta_5min", "rule_of_three", "kscore"]) == 10
+def test_joint_lead_follows_the_hierarchy():
+    rows = [{"strategy_key": key} for key in ("kscore", "rule_of_three", "delta_goal")]
+    assert lead_key(rows) == "delta_goal"
+    rows.append({"strategy_key": "pressure_index"})
+    assert lead_key(rows) == "pressure_index"
+    rows.append({"strategy_key": "delta_5min"})
+    assert lead_key(rows) == "delta_5min"
+
+
+def test_joint_k_and_delta5_uses_delta5_stats():
+    base = {"home_team": "Home", "away_team": "Away", "minute": 36}
+    text = format_joint_html(
+        [
+            {
+                **base,
+                "id": 1,
+                "strategy_slot": 7,
+                "strategy_key": "kscore",
+                "team": "home",
+                "value": 72,
+                "payload": {
+                    "sot": {"home": 9, "away": 1},
+                    "last_10min": _window(26, 36, (1, 1)),
+                },
+            },
+            {
+                **base,
+                "id": 2,
+                "strategy_slot": 4,
+                "strategy_key": "delta_5min",
+                "team": "home",
+                "value": 8.0,
+                "payload": {"last_5min": _window(31, 36, (2, 0))},
+            },
+        ]
+    )
+    assert text.index("<b>Δ5′</b>") < text.index("<b>K</b>")
+    assert "<b>Last 5 mins (31′-36′):</b>" in text
+    assert "SOT: <b>2</b> - 0" in text
+    assert "Last 10 mins" not in text
+
+
+def test_stat_parts_split_lines():
+    parts = stat_parts("delta_5min", {"last_5min": _window(31, 36, (2, 0))}, 36)
+    assert parts["heading"] == "<b>Last 5 mins (31′-36′):</b>"
+    assert parts["sot"] == "SOT: <b>2</b> - 0"
+    assert parts["note"] == ""
+    bar = stat_parts(
+        "delta_goal",
+        {"form_bar": {"note": "0 of 2 expected"}, "corners": {"home": 3, "away": 4}},
+        79,
+    )
+    assert bar["heading"] == ""
+    assert bar["note"] == "0 of 2 expected"
+    assert bar["corners"] == "Corners: 3 - <b>4</b>"
 
 
 def test_form_bar_shows_goals_behind_pace_and_the_reading():

@@ -24,14 +24,18 @@ class _Conn:
 
 
 @pytest.mark.asyncio
-async def test_active_templates_keyed_by_channel_and_kind() -> None:
+async def test_active_templates_keyed_by_strategy_channel_and_kind() -> None:
     conn = _Conn(
         [
-            {"channel": "paid", "kind": "alert", "body": "{home}"},
-            {"channel": "free", "kind": "goal", "body": "   "},
+            {"strategy": "default", "channel": "paid", "kind": "alert", "body": "{home}"},
+            {"strategy": "delta_5min", "channel": "x", "kind": "miss", "body": "{team}"},
+            {"strategy": "default", "channel": "free", "kind": "goal", "body": "   "},
         ]
     )
-    assert await fetch_active_templates(conn) == {("paid", "alert"): "{home}"}  # type: ignore[arg-type]
+    assert await fetch_active_templates(conn) == {  # type: ignore[arg-type]
+        ("default", "paid", "alert"): "{home}",
+        ("delta_5min", "x", "miss"): "{team}",
+    }
 
 
 @pytest.mark.asyncio
@@ -42,6 +46,6 @@ async def test_missing_table_means_no_templates() -> None:
 @pytest.mark.asyncio
 async def test_fallback_reason_is_capped() -> None:
     conn = _Conn()
-    await record_fallback(conn, "paid", "alert", "x" * 900)  # type: ignore[arg-type]
-    assert conn.executed[0][:2] == ("paid", "alert")
-    assert len(conn.executed[0][2]) == 500
+    await record_fallback(conn, "kscore", "paid", "alert", "x" * 900)  # type: ignore[arg-type]
+    assert conn.executed[0][:3] == ("kscore", "paid", "alert")
+    assert len(conn.executed[0][3]) == 500

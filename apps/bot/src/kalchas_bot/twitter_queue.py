@@ -34,12 +34,11 @@ class TwitterQueue:
         self,
         *,
         alert_ids: Sequence[int],
-        caption: str,
-        match_id: object,
+        text: str,
         photo_bytes: bytes | None,
     ) -> None:
         ids = [int(alert_id) for alert_id in alert_ids]
-        self._put(lambda: self._post_alert(ids, caption, match_id, photo_bytes), "alert tweet")
+        self._put(lambda: self._post_alert(ids, text, photo_bytes), "alert tweet")
 
     def submit_outcome(self, *, alert_ids: Sequence[int], text: str) -> None:
         ids = [int(alert_id) for alert_id in alert_ids]
@@ -54,15 +53,12 @@ class TwitterQueue:
     async def _post_alert(
         self,
         alert_ids: list[int],
-        caption: str,
-        match_id: object,
+        text: str,
         photo_bytes: bytes | None,
     ) -> None:
         from kalchas_db.alerts import mark_twitter_sent
 
-        tweet_id = await post_alert_tweet(
-            self.creds, caption=caption, match_id=match_id, photo_bytes=photo_bytes
-        )
+        tweet_id = await post_alert_tweet(self.creds, text=text, photo_bytes=photo_bytes)
         if tweet_id is None:
             return
         async with self.pool.acquire() as conn:

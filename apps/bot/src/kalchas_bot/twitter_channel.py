@@ -1,9 +1,10 @@
 """X/Twitter cross-post of free-channel fires, ported from 2.2's twitter_poster.
 
 Same mechanics as 2.2: OAuth 1.0a user context (Bearer tokens are read-only),
-the banner uploaded as media on the first tweet, a thread when the text runs
-past 280, and the outcome posted as a reply under the original tweet. Only
-fires that reach the free Telegram channel come here.
+the banner uploaded as media on the tweet and the outcome posted as a reply
+under it. An alert is always one tweet: past 280, lines are dropped from the
+bottom (the link stays). Only fires that reach the free Telegram channel
+come here.
 
 Every call is best effort: logged and swallowed, never allowed to break
 Telegram delivery.
@@ -114,6 +115,38 @@ def thread_chunks(text: str, *, link: str | None = None, limit: int = TWEET_LIMI
     if rest or not chunks:
         chunks.append(rest + (tail if not chunks else ""))
     return [_hard_clip(chunk.strip(), limit) for chunk in chunks if chunk.strip()]
+
+
+def alert_tweet_text(caption: str, match_id: object) -> str:
+    """Built-in X alert: the free-channel caption as plain text, then the match link."""
+    return f"{html_to_tweet(caption)}\n\n↳ {match_link(match_id)}"
+
+
+def fit_tweet(text: str, limit: int = TWEET_LIMIT) -> tuple[str, list[str]]:
+    """One tweet, never a thread: drop lines from the bottom until it fits.
+
+    Lines with a link are kept. Returns the tweet and the lines that were dropped
+    (top to bottom), so admin can show them.
+    """
+    lines = text.split("\n")
+    dropped: list[str] = []
+
+    def joined() -> str:
+        return _BLANKS.sub("\n\n", "\n".join(lines)).strip()
+
+    while tweet_weight(joined()) > limit:
+        index = next(
+            (
+                i
+                for i in range(len(lines) - 1, -1, -1)
+                if lines[i].strip() and not _URL.search(lines[i])
+            ),
+            None,
+        )
+        if index is None:
+            break
+        dropped.insert(0, lines.pop(index))
+    return _hard_clip(joined(), limit), dropped
 
 
 def _hard_clip(text: str, limit: int) -> str:
@@ -260,14 +293,15 @@ async def post_thread(
 async def post_alert_tweet(
     creds: TwitterCredentials,
     *,
-    caption: str,
-    match_id: object,
+    text: str,
     photo_bytes: bytes | None,
     client: httpx.AsyncClient | None = None,
 ) -> str | None:
-    """The free-channel caption as a tweet (thread if long) with a link to the match."""
-    chunks = thread_chunks(html_to_tweet(caption), link=match_link(match_id))
-    return await post_thread(creds, chunks, photo_bytes=photo_bytes, client=client)
+    """An alert as one tweet with the banner. Too long drops lines from the bottom."""
+    tweet, dropped = fit_tweet(text)
+    if dropped:
+        logger.info("alert tweet over %s, dropped %d line(s)", TWEET_LIMIT, len(dropped))
+    return await post_thread(creds, [tweet], photo_bytes=photo_bytes, client=client)
 
 
 async def post_album_tweet(

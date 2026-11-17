@@ -96,7 +96,7 @@ async def test_free_fire_tweets_once_and_marks_every_row(monkeypatch: pytest.Mon
     assert tweets == []  # queued, not posted inline
     await queue.drain()
     assert len(tweets) == 1
-    assert tweets[0]["match_id"] == "555"
+    assert str(tweets[0]["text"]).endswith("?match=555")
     assert tweets[0]["photo_bytes"] == b"png"
     assert [call.args[1:] for call in mark_twitter.await_args_list] == [(1, "t1"), (2, "t1")]
 
@@ -265,7 +265,7 @@ async def test_outcome_reply_waits_for_its_alert_tweet(monkeypatch: pytest.Monke
     monkeypatch.setattr("kalchas_db.alerts.mark_twitter_sent", fake_mark)
     monkeypatch.setattr("kalchas_db.alerts.find_tweet_id", fake_find)
     queue = _queue()
-    queue.submit_alert(alert_ids=[1], caption="c", match_id="555", photo_bytes=None)
+    queue.submit_alert(alert_ids=[1], text="c", photo_bytes=None)
     queue.submit_outcome(alert_ids=[1], text="✅ goal")
     await queue.drain()
     assert order == ["alert", "reply:t9"]
@@ -276,16 +276,16 @@ async def test_a_failing_job_does_not_stop_the_queue(monkeypatch: pytest.MonkeyP
     calls: list[str] = []
 
     async def flaky_tweet(creds: TwitterCredentials, **kwargs: object) -> str:
-        calls.append(str(kwargs["match_id"]))
-        if kwargs["match_id"] == "a":
+        calls.append(str(kwargs["text"]))
+        if kwargs["text"] == "a":
             raise RuntimeError("boom")
         return "t2"
 
     monkeypatch.setattr("kalchas_bot.twitter_queue.post_alert_tweet", flaky_tweet)
     monkeypatch.setattr("kalchas_db.alerts.mark_twitter_sent", AsyncMock())
     queue = _queue()
-    queue.submit_alert(alert_ids=[1], caption="c", match_id="a", photo_bytes=None)
-    queue.submit_alert(alert_ids=[2], caption="c", match_id="b", photo_bytes=None)
+    queue.submit_alert(alert_ids=[1], text="a", photo_bytes=None)
+    queue.submit_alert(alert_ids=[2], text="b", photo_bytes=None)
     await queue.drain()
     assert calls == ["a", "b"]
 

@@ -25,8 +25,24 @@ ALERT_NAMES: dict[str, str] = {
     "kscore": "K-Score",
 }
 
-# Joint posts use one window. Δ5′ + UrG is the only pair that stays on 5 minutes.
-_JOINT_FIVE_MINUTE = frozenset({"delta_5min", "rule_of_three"})
+# Joint posts: strategies listed in this order, and the first one (the lead)
+# picks the stats underneath. Δ5′ > Δ10′ > Form Bar > UrG > K.
+STRATEGY_ORDER: tuple[str, ...] = (
+    "delta_5min",
+    "pressure_index",
+    "delta_goal",
+    "rule_of_three",
+    "kscore",
+    "npei",
+)
+
+STAT_KEYS: tuple[tuple[str, str, bool], ...] = (
+    ("sot", "SOT", False),
+    ("sofft", "SOFFT", False),
+    ("da", "DA", False),
+    ("corners", "Corners", False),
+    ("possession", "Possession", True),
+)
 
 # Ceiling is a display cap (x / cap). None means show the number only.
 ALERT_CEILING: dict[str, tuple[float | None, int, str]] = {
@@ -75,12 +91,24 @@ def format_alert_html(
     return "\n".join(lines)
 
 
-def joint_window_span(keys: Sequence[str]) -> int:
-    """10-minute delta for a joint post. 5 minutes only for exactly Δ5′ and UrG."""
-    present = {str(key) for key in keys if key}
-    if present == _JOINT_FIVE_MINUTE:
-        return 5
-    return 10
+def strategy_rank(key: str) -> int:
+    """Place in the joint-post order; unknown strategies go last."""
+    try:
+        return STRATEGY_ORDER.index(key)
+    except ValueError:
+        return len(STRATEGY_ORDER)
+
+
+def ordered_rows(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Rows in joint-post order: Δ5′, Δ10′, Form Bar, UrG, K."""
+    return sorted(rows, key=_strategy_sort_key)
+
+
+def lead_key(rows: Sequence[Mapping[str, Any]]) -> str:
+    """The strategy that leads a message: its text and its stats are used."""
+    if not rows:
+        return ""
+    return str(ordered_rows(rows)[0].get("strategy_key") or "")
 
 
 def format_joint_html(
@@ -123,9 +151,7 @@ def format_joint_html(
         trigger = _trigger_name(side, home, away)
         lines.append(_title_line(short, name, row, key, row_payload, trigger=trigger))
 
-    span = joint_window_span([str(row.get("strategy_key") or "") for row in ordered])
-    window_key = "last_5min" if span == 5 else "last_10min"
-    stats = _window_stat_lines(payload.get(window_key), first.get("minute"), span=span)
+    stats = _stat_block(lead_key(ordered), payload, first.get("minute"))
     if stats:
         lines.append("")
         lines.extend(stats)
@@ -138,13 +164,7 @@ def format_outcome_html(row: Mapping[str, Any]) -> str:
     payload = _payload(row.get("payload"))
     if not payload.get("league") and detail.get("league"):
         payload = {**payload, "league": detail.get("league")}
-    home = _esc(row.get("home_team") or detail.get("home_team"))
-    away = _esc(row.get("away_team") or detail.get("away_team"))
     key = str(row.get("strategy_key") or "")
-    # The board's "Bar" means nothing on its own in a Telegram reply.
-    short = _esc("Form Bar" if key == "delta_goal" else short_label_for(key))
-    side = str(row.get("team") or detail.get("team") or "").lower()
-    trigger = _trigger_name(side if side in ("home", "away") else "", home, away)
     state = str(row.get("state") or "")
     fire = _score(detail.get("fire_score"))
     settle = _score(detail.get("settle_score"))
@@ -173,14 +193,27 @@ def format_outcome_html(row: Mapping[str, Any]) -> str:
             compact=True,
         )
         return f"{lede}\n\n⚽ {head}"
+    miss = miss_blocks(row)
+    return f"{miss['miss_line']}\n{miss['miss_strategy']}"
+
+
+def miss_blocks(row: Mapping[str, Any]) -> dict[str, str]:
+    """Pieces of a no-goal reply (X only): ``miss_line`` and ``miss_strategy``."""
+    detail = _payload(row.get("detail"))
+    home = _esc(row.get("home_team") or detail.get("home_team"))
+    away = _esc(row.get("away_team") or detail.get("away_team"))
+    key = str(row.get("strategy_key") or "")
+    # The board's "Bar" means nothing on its own in a reply.
+    short = _esc("Form Bar" if key == "delta_goal" else short_label_for(key))
+    side = str(row.get("team") or detail.get("team") or "").lower()
+    trigger = _trigger_name(side if side in ("home", "away") else "", home, away)
     window = _success_window(row, detail)
     if window is None:
         head = "No goal arrived"
     else:
         head = f"No goal arrived within {_plain_minute(window)}"
-    if trigger:
-        return f"{head}\n<b>{short}</b> for <b>{trigger}</b>"
-    return f"{head}\n<b>{short}</b>"
+    strategy = f"<b>{short}</b> for <b>{trigger}</b>" if trigger else f"<b>{short}</b>"
+    return {"miss_line": head, "miss_strategy": strategy}
 
 
 def alert_blocks(
@@ -233,8 +266,6 @@ def alert_blocks(
         name = _esc(ALERT_NAMES.get(key) or short)
         trigger = _trigger_name(_trigger_side(row, row_payload), home, away)
         titles.append(_title_line(short, name, row, key, row_payload, trigger=trigger))
-    span = joint_window_span([str(row.get("strategy_key") or "") for row in ordered])
-    window_key = "last_5min" if span == 5 else "last_10min"
     return {
         "versus": _versus_line(
             "",
@@ -246,9 +277,7 @@ def alert_blocks(
             bold_sides=sides,
         ),
         "strategy_lines": "\n".join(titles),
-        "stats": "\n".join(
-            _window_stat_lines(merged.get(window_key), first.get("minute"), span=span)
-        ),
+        "stats": "\n".join(_stat_block(lead_key(ordered), merged, first.get("minute"))),
     }
 
 
@@ -362,7 +391,8 @@ def _form_bar_title(raw: object, *, trigger: str) -> str:
     return f"<b>Form Bar</b>: <b>{trigger}</b> recent form expects {goals} more {noun} (+{gap:.1f})"
 
 
-def _strategy_sort_key(row: Mapping[str, Any]) -> tuple[int, int]:
+def _strategy_sort_key(row: Mapping[str, Any]) -> tuple[int, int, int]:
+    rank = strategy_rank(str(row.get("strategy_key") or ""))
     try:
         slot = int(row.get("strategy_slot") or 0)
     except (TypeError, ValueError):
@@ -371,7 +401,7 @@ def _strategy_sort_key(row: Mapping[str, Any]) -> tuple[int, int]:
         alert_id = int(row.get("id") or 0)
     except (TypeError, ValueError):
         alert_id = 0
-    return slot, alert_id
+    return rank, slot, alert_id
 
 
 def _merged_payload(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -379,7 +409,8 @@ def _merged_payload(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     for row in rows:
         payload = _payload(row.get("payload"))
         for key, value in payload.items():
-            if value not in (None, "", {}, []):
+            # First one wins: rows come lead first, so the lead's numbers are used.
+            if value not in (None, "", {}, []) and key not in merged:
                 merged[key] = value
     return merged
 
@@ -407,49 +438,49 @@ def _versus_line(
     return " · ".join(parts)
 
 
-def _stat_block(key: str, payload: Mapping[str, Any], minute: object) -> list[str]:
+def stat_parts(key: str, payload: Mapping[str, Any], minute: object) -> dict[str, str]:
+    """The stat lines under an alert, one by one, as HTML.
+
+    ``heading`` (Last 5/10 mins, Δ5′ and Δ10′ only), ``note`` (Form Bar's note)
+    and one line per stat in ``STAT_KEYS``, empty when it's 0 - 0 or missing.
+    Δ5′ uses the last 5 minutes, Δ10′ the last 10 (whole match if that window
+    is missing), every other strategy the whole match so far.
+    """
+    parts = {"heading": "", "note": "", **{stat: "" for stat, _, _ in STAT_KEYS}}
+    source: Mapping[str, Any] | None = payload
+    span = 0
     if key == "delta_5min":
-        return _window_stat_lines(payload.get("last_5min"), minute, span=5)
-    if key == "pressure_index":
-        windowed = _window_stat_lines(payload.get("last_10min"), minute, span=10)
-        if windowed or isinstance(payload.get("last_10min"), Mapping):
-            return windowed
-    if key == "delta_goal":
+        window = payload.get("last_5min")
+        source, span = (window, 5) if isinstance(window, Mapping) else (None, 0)
+    elif key == "pressure_index" and isinstance(payload.get("last_10min"), Mapping):
+        source, span = payload["last_10min"], 10
+    elif key == "delta_goal":
         form_bar = payload.get("form_bar")
         note = form_bar.get("note") if isinstance(form_bar, Mapping) else None
-        if note:
-            return [_esc(note), *_stat_rows(payload)]
-    return _stat_rows(payload)
+        parts["note"] = _esc(note) if note else ""
+    if source is None:
+        return parts
+    for stat, label, percent in STAT_KEYS:
+        parts[stat] = _pair_line(source.get(stat), label, percent=percent)
+    if span and any(parts[stat] for stat, _, _ in STAT_KEYS):
+        parts["heading"] = _window_heading(source, minute, span=span)
+    return parts
 
 
-def _window_stat_lines(window: object, minute: object, *, span: int) -> list[str]:
-    if not isinstance(window, Mapping):
-        return []
+def _stat_block(key: str, payload: Mapping[str, Any], minute: object) -> list[str]:
+    parts = stat_parts(key, payload, minute)
+    order = ("heading", "note", *(stat for stat, _, _ in STAT_KEYS))
+    return [parts[name] for name in order if parts[name]]
+
+
+def _window_heading(window: Mapping[str, Any], minute: object, *, span: int) -> str:
     start = _minute_int(window.get("start"))
     end = _minute_int(window.get("end"))
     if end is None:
         end = _minute_int(minute)
     if start is not None and end is not None:
-        heading = f"<b>Last {span} mins ({start}′-{end}′):</b>"
-    else:
-        heading = f"<b>Last {span} mins:</b>"
-    rows = _stat_rows(window)
-    return [heading, *rows] if rows else []
-
-
-def _stat_rows(block: Mapping[str, Any]) -> list[str]:
-    rows: list[str] = []
-    for key, label, percent in (
-        ("sot", "SOT", False),
-        ("sofft", "SOFFT", False),
-        ("da", "DA", False),
-        ("corners", "Corners", False),
-        ("possession", "Possession", True),
-    ):
-        line = _pair_line(block.get(key), label, percent=percent)
-        if line:
-            rows.append(line)
-    return rows
+        return f"<b>Last {span} mins ({start}′-{end}′):</b>"
+    return f"<b>Last {span} mins:</b>"
 
 
 def _pair_line(raw: object, label: str, *, percent: bool) -> str:

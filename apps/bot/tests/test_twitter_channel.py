@@ -8,6 +8,7 @@ import httpx
 import pytest
 from kalchas_bot.twitter_channel import (
     TwitterCredentials,
+    alert_tweet_text,
     html_to_tweet,
     match_link,
     oauth1_header,
@@ -110,8 +111,7 @@ class TestPosting:
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             tweet_id = await post_alert_tweet(
                 CREDS,
-                caption="<b>A</b> vs B · 67′",
-                match_id="55",
+                text=alert_tweet_text("<b>A</b> vs B · 67′", "55"),
                 photo_bytes=b"png",
                 client=client,
             )
@@ -135,7 +135,7 @@ class TestPosting:
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             tweet_id = await post_alert_tweet(
-                CREDS, caption="A vs B", match_id="1", photo_bytes=b"png", client=client
+                CREDS, text="A vs B", photo_bytes=b"png", client=client
             )
         assert tweet_id == "t1"
         assert "media" not in bodies[0]
@@ -147,11 +147,41 @@ class TestPosting:
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             assert (
-                await post_alert_tweet(
-                    CREDS, caption="A vs B", match_id="1", photo_bytes=None, client=client
-                )
+                await post_alert_tweet(CREDS, text="A vs B", photo_bytes=None, client=client)
                 is None
             )
+
+    @pytest.mark.asyncio
+    async def test_long_alert_is_one_tweet_with_lines_dropped_from_the_bottom(self) -> None:
+        bodies: list[dict[str, object]] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            bodies.append(json.loads(request.content))
+            return httpx.Response(201, json={"data": {"id": "t1"}})
+
+        # The Sweden U19 v Portugal U19 alert that came to 299 and threaded its
+        # possession line as a reply.
+        caption = (
+            "Sweden U19 vs Portugal U19 · 79′\n"
+            "UEFA U19 Championship Qualification - Qualification - Round 2 - League A\n"
+            "Form Bar: Portugal U19 recent form expects 2 more goals (+1.8)\n\n"
+            "0 of 2 expected · 1.8 by 79′\nSOT: 3 - 2\nSOFFT: 3 - 5\nDA: 33 - 47\n"
+            "Corners: 3 - 4\nPossession: 43% - 57%"
+        )
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            tweet_id = await post_alert_tweet(
+                CREDS,
+                text=alert_tweet_text(caption, "788154"),
+                photo_bytes=None,
+                client=client,
+            )
+        assert tweet_id == "t1"
+        assert len(bodies) == 1  # never a thread
+        text = str(bodies[0]["text"])
+        assert tweet_weight(text) <= 280
+        assert "Possession" not in text
+        assert "Corners: 3 - 4" in text
+        assert text.endswith("Corners: 3 - 4\n\n↳ https://kalchas.live/?match=788154")
 
     @pytest.mark.asyncio
     async def test_reply_threads_under_the_alert_tweet(self) -> None:

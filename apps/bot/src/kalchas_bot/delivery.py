@@ -28,6 +28,8 @@ from kalchas_bot.templates import (
     Templates,
     alert_texts,
     goal_texts,
+    miss_tweet,
+    owner_of,
 )
 from kalchas_bot.twitter_channel import TwitterCredentials
 from kalchas_bot.twitter_queue import TwitterQueue
@@ -312,8 +314,7 @@ async def _deliver_group_texts(
     # Last step, and non-blocking: the queue posts it and records the tweet id.
     twitter.submit_alert(
         alert_ids=[int(row["id"]) for row in group],
-        caption=free.caption,
-        match_id=first.get("match_id"),
+        text=texts.x,
         photo_bytes=photo_bytes,
     )
 
@@ -397,12 +398,15 @@ async def _deliver_outcome_batches(
                 confirmed = [row for row in batch if str(row.get("state") or "") == "Confirmed"]
                 goals = goal_texts(confirmed, templates)
                 rejected.extend(goals.fallbacks)
+                owner = owner_of(
+                    templates, str(confirmed[0].get("strategy_key") or ""), "paid", "goal"
+                )
                 await _reply_outcome(
                     bot,
                     chat_id,
                     goals.paid,
                     message_id,
-                    retry=_goal_retry(goals.paid, goals.builtin, "paid", rejected),
+                    retry=_goal_retry(goals.paid, goals.builtin, "paid", rejected, owner),
                 )
                 await _react_on_fire(bot, chat_id, message_id, _GOAL_REACTIONS)
                 await _discord_reply_and_react(
@@ -421,7 +425,7 @@ async def _deliver_outcome_batches(
                         free_chat_id,
                         goals.free,
                         free_reply,
-                        retry=_goal_retry(goals.free, goals.builtin, "free", rejected),
+                        retry=_goal_retry(goals.free, goals.builtin, "free", rejected, owner),
                     )
                     await _react_on_fire(bot, free_chat_id, free_reply, _GOAL_REACTIONS)
                 await _discord_reply_and_react(
@@ -432,7 +436,7 @@ async def _deliver_outcome_batches(
                     goals.discord_free,
                     _DISCORD_GOAL_EMOJI,
                 )
-                tweet_text = f"✅ {goals.free}"
+                tweet_text = goals.x
             elif action == "miss":
                 await _react_on_fire(bot, chat_id, message_id, _MISS_REACTIONS)
                 await _discord_react(
@@ -454,8 +458,8 @@ async def _deliver_outcome_batches(
                     _DISCORD_MISS_EMOJI,
                 )
                 # X has no reactions, so the miss is a reply, like 2.2's "Window closed".
-                missed = "\n\n".join(format_outcome_html(row) for row in batch)
-                tweet_text = f"❌ {missed}"
+                tweet_text, missed_fallbacks = miss_tweet(batch, templates)
+                rejected.extend(missed_fallbacks)
             async with pool.acquire() as conn:
                 for row in batch:
                     await mark_outcome_sent(conn, int(row["alert_id"]))
@@ -490,46 +494,52 @@ class _Retry:
     channel: str
     kind: str
     rejected: list[Fallback]
+    strategy: str = "default"
 
     def note(self, error: TelegramError) -> None:
         logger.warning(
-            "Telegram rejected the %s %s template, sent built-in text: %s",
+            "Telegram rejected the %s %s %s template, sent built-in text: %s",
+            self.strategy,
             self.channel,
             self.kind,
             error,
         )
-        self.rejected.append((self.channel, self.kind, f"Telegram rejected it: {error}"))
+        self.rejected.append(
+            (self.strategy, self.channel, self.kind, f"Telegram rejected it: {error}")
+        )
 
 
 def _retry_plan(text: ChannelText, channel: str, rejected: list[Fallback]) -> _Retry | None:
     if not text.templated:
         return None
     caption, fallback = text.builtin
-    return _Retry(caption, fallback, channel, "alert", rejected)
+    return _Retry(caption, fallback, channel, "alert", rejected, text.owner)
 
 
-def _goal_retry(text: str, builtin: str, channel: str, rejected: list[Fallback]) -> _Retry | None:
+def _goal_retry(
+    text: str, builtin: str, channel: str, rejected: list[Fallback], owner: str = "default"
+) -> _Retry | None:
     if text == builtin:
         return None
-    return _Retry(builtin, builtin, channel, "goal", rejected)
+    return _Retry(builtin, builtin, channel, "goal", rejected, owner)
 
 
 async def _record_fallbacks(pool: Any, items: Sequence[Fallback]) -> None:
     """Count each template that could not be used, for admin. Never raises."""
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
     unique: list[Fallback] = []
-    for channel, kind, reason in items:
-        if (channel, kind) in seen:
+    for strategy, channel, kind, reason in items:
+        if (strategy, channel, kind) in seen:
             continue
-        seen.add((channel, kind))
-        unique.append((channel, kind, reason))
-        logger.warning("%s %s template not used: %s", channel, kind, reason)
+        seen.add((strategy, channel, kind))
+        unique.append((strategy, channel, kind, reason))
+        logger.warning("%s %s %s template not used: %s", strategy, channel, kind, reason)
     try:
         from kalchas_db.alert_templates import record_fallback
 
         async with pool.acquire() as conn:
-            for channel, kind, reason in unique:
-                await record_fallback(conn, channel, kind, reason)
+            for strategy, channel, kind, reason in unique:
+                await record_fallback(conn, strategy, channel, kind, reason)
     except Exception:
         logger.exception("could not record template fallbacks")
 

@@ -98,9 +98,13 @@ def test_default_goal_template_matches_built_in() -> None:
 def test_values_cover_every_tag() -> None:
     alert = t.alert_values([_row()])
     goal = t.goal_values(_row(state="Confirmed", detail={"goal_minute": 72}))
+    miss = t.miss_values(_row(state="Expired", detail={"success_window_minutes": 15}))
     for tag in t.TAGS:
-        source = goal if "alert" not in tag.kinds else alert
+        source = alert if "alert" in tag.kinds else goal if "goal" in tag.kinds else miss
         assert tag.name in source, tag.name
+    assert miss["miss_line"] == "No goal arrived within 15′"
+    assert miss["miss_strategy"] == "<b>Δ5′</b> for <b>Arsenal</b>"
+    assert miss["goal_line"] == ""
     assert alert["sot_home"] == "6"
     assert alert["possession_away"] == "38%"
     assert alert["favourite"] == "Arsenal"
@@ -146,7 +150,10 @@ def test_joint_values_join_strategies_and_blank_team_when_both_sides() -> None:
     values = t.alert_values(rows)
     assert values["strategy_short"].count("+") == 1
     assert values["team"] == ""
-    assert values["value"] == "2.1 · 8.4 / 12.0"
+    # Δ5′ leads (Δ5′ > Δ10′ > Form Bar > UrG > K), so its reading comes first.
+    assert values["value"] == "8.4 / 12.0 · 2.1"
+    assert values["stats_heading"] == "<b>Last 5 mins (62′-67′):</b>"
+    assert values["stat_sot"] == "SOT: <b>3</b> - 0"
 
 
 def test_everything_typed_and_every_value_is_escaped() -> None:
@@ -212,24 +219,29 @@ def test_no_templates_means_built_in_everywhere() -> None:
     assert texts.fallbacks == []
 
 
+D = t.DEFAULT_STRATEGY
+
+
 def test_free_template_only_changes_free_and_its_discord() -> None:
     row = _row()
     caption, fallback = t.builtin_alert([row])
     texts = t.alert_texts(
-        [row], {("free", "alert"): "Free: {home}\nJoin paid"}, caption=caption, fallback=fallback
+        [row], {(D, "free", "alert"): "Free: {home}\nJoin paid"}, caption=caption, fallback=fallback
     )
     assert texts.free.caption == "Free: Arsenal\nJoin paid"
     assert texts.free.templated
     assert texts.paid.caption == caption
     assert texts.discord_free == texts.free.caption
     assert texts.discord_paid == caption
+    # X follows the free text when it has no template of its own.
+    assert texts.x == "Free: Arsenal\nJoin paid\n\n↳ https://kalchas.live/?match=555"
 
 
 def test_discord_template_covers_both_discord_channels() -> None:
     row = _row()
     caption, fallback = t.builtin_alert([row])
     texts = t.alert_texts(
-        [row], {("discord", "alert"): "**{home}** {minute}"}, caption=caption, fallback=fallback
+        [row], {(D, "discord", "alert"): "**{home}** {minute}"}, caption=caption, fallback=fallback
     )
     assert texts.discord_paid == texts.discord_free == "<b>Arsenal</b> 67′"
     assert texts.paid.caption == caption
@@ -240,12 +252,12 @@ def test_template_that_breaks_falls_back_and_is_reported() -> None:
     caption, fallback = t.builtin_alert([row])
     texts = t.alert_texts(
         [row],
-        {("paid", "alert"): "{nope}", ("free", "alert"): "{league}"},
+        {(D, "paid", "alert"): "{nope}", (D, "free", "alert"): "{league}"},
         caption=caption,
         fallback=fallback,
     )
     assert texts.paid.caption == caption
-    assert ("paid", "alert") in {(ch, kd) for ch, kd, _ in texts.fallbacks}
+    assert (D, "paid", "alert") in {(st, ch, kd) for st, ch, kd, _ in texts.fallbacks}
     assert texts.free.caption == "Premier League"
 
 
@@ -253,32 +265,108 @@ def test_template_empty_for_this_alert_falls_back() -> None:
     row = _row(payload={})
     caption, fallback = t.builtin_alert([row])
     texts = t.alert_texts(
-        [row], {("paid", "alert"): "{league}"}, caption=caption, fallback=fallback
+        [row], {(D, "paid", "alert"): "{league}"}, caption=caption, fallback=fallback
     )
     assert texts.paid.caption == caption
-    assert "empty" in texts.fallbacks[0][2]
+    assert "empty" in texts.fallbacks[0][3]
 
 
 def test_too_long_for_a_caption_falls_back() -> None:
     row = _row()
     caption, fallback = t.builtin_alert([row])
     texts = t.alert_texts(
-        [row], {("paid", "alert"): "x" * 1100}, caption=caption, fallback=fallback
+        [row], {(D, "paid", "alert"): "x" * 1100}, caption=caption, fallback=fallback
     )
     assert texts.paid.caption == caption
-    assert "1,024" in texts.fallbacks[0][2]
+    assert "1,024" in texts.fallbacks[0][3]
+
+
+def test_strategy_template_beats_default_and_others_keep_default() -> None:
+    templates = {
+        (D, "paid", "alert"): "Default {home}",
+        ("kscore", "paid", "alert"): "K {home}",
+    }
+    for key, expected in (("kscore", "K Arsenal"), ("delta_5min", "Default Arsenal")):
+        row = _row(strategy_key=key)
+        caption, fallback = t.builtin_alert([row])
+        texts = t.alert_texts([row], templates, caption=caption, fallback=fallback)
+        assert texts.paid.caption == expected
+    assert t.owner_of(templates, "kscore", "paid", "alert") == "kscore"
+    assert t.owner_of(templates, "delta_5min", "paid", "alert") == D
+
+
+def test_joint_post_uses_the_lead_strategys_template() -> None:
+    rows = [
+        _row(id=11, strategy_slot=7, strategy_key="kscore", value=70),
+        _row(),  # Δ5′ outranks K, so it leads
+    ]
+    templates = {
+        ("kscore", "paid", "alert"): "K {strategy_short}",
+        ("delta_5min", "paid", "alert"): "D5 {strategy_short}\n{stats_heading}",
+    }
+    caption, fallback = t.builtin_alert(rows)
+    texts = t.alert_texts(rows, templates, caption=caption, fallback=fallback)
+    assert texts.paid.caption == "D5 Δ5′ + K\n<b>Last 5 mins (62′-67′):</b>"
+
+
+def test_x_template_is_its_own_and_built_in_x_matches_default() -> None:
+    row = _row()
+    caption, fallback = t.builtin_alert([row])
+    plain = t.alert_texts([row], {}, caption=caption, fallback=fallback)
+    templated = t.alert_texts(
+        [row],
+        {(D, "x", "alert"): t.default_template("x", "alert")},
+        caption=caption,
+        fallback=fallback,
+    )
+    assert templated.x == plain.x
+    assert plain.x.endswith("\n\n↳ https://kalchas.live/?match=555")
+    short = t.alert_texts(
+        [row], {(D, "x", "alert"): "**{home}** {match_link}"}, caption=caption, fallback=fallback
+    )
+    assert short.x == "Arsenal https://kalchas.live/?match=555"
+    assert short.free.caption == caption
 
 
 def test_goal_texts_per_channel() -> None:
     row = _row(
         state="Confirmed", detail={"goal_minute": 72, "fire_score": "1-0", "settle_score": "2-0"}
     )
-    goals = t.goal_texts([row, row], {("free", "goal"): "⚽ {home} at {goal_minute}"})
+    goals = t.goal_texts([row, row], {(D, "free", "goal"): "⚽ {home} at {goal_minute}"})
     built_in = format_outcome_html(row)
     assert goals.paid == f"{built_in}\n\n{built_in}"
     assert goals.free == "⚽ Arsenal at 72′\n\n⚽ Arsenal at 72′"
     assert goals.discord_free == goals.free
     assert goals.discord_paid == goals.paid
+    assert goals.x == f"✅ {goals.free}"
+
+
+def test_goal_replies_keep_each_alerts_own_strategy_text() -> None:
+    detail = {"goal_minute": 72, "fire_score": "1-0", "settle_score": "2-0"}
+    d5 = _row(state="Confirmed", detail=detail)
+    k = _row(id=11, strategy_key="kscore", state="Confirmed", detail=detail)
+    goals = t.goal_texts(
+        [d5, k],
+        {("kscore", "paid", "goal"): "K goal {goal_minute}", (D, "x", "goal"): "X {home}"},
+    )
+    assert goals.paid == f"{format_outcome_html(d5)}\n\nK goal 72′"
+    assert goals.x == "X Arsenal\n\nX Arsenal"
+
+
+def test_default_x_goal_and_miss_templates_match_built_in() -> None:
+    goal = _row(
+        state="Confirmed", detail={"goal_minute": 72, "fire_score": "1-0", "settle_score": "2-0"}
+    )
+    plain = t.goal_texts([goal], {})
+    templated = t.goal_texts([goal], {(D, "x", "goal"): t.default_template("x", "goal")})
+    assert templated.x == plain.x
+    miss = _row(state="Expired", detail={"success_window_minutes": 15})
+    built_in, _ = t.miss_tweet([miss], {})
+    assert built_in == f"❌ {format_outcome_html(miss)}"
+    made, problems = t.miss_tweet([miss], {(D, "x", "miss"): t.default_template("x", "miss")})
+    assert made == built_in and problems == []
+    custom, _ = t.miss_tweet([miss], {("delta_5min", "x", "miss"): "😢 {team}"})
+    assert custom == "😢 Arsenal"
 
 
 @pytest.mark.parametrize(
@@ -313,18 +401,19 @@ def test_visible_length_counts_what_telegram_counts() -> None:
 
 
 def test_preview_free_alert_shows_telegram_discord_and_x() -> None:
-    out = t.preview("free", "alert", "**{home}** vs {away}", [_row()])
+    out = t.preview(D, "free", "alert", "**{home}** vs {away}", [_row()])
     assert out["problems"] == []
     assert out["telegram"] == "<b>Arsenal</b> vs Chelsea"
     assert out["discord"] == "**Arsenal** vs Chelsea"
-    assert out["x"] == "Arsenal vs Chelsea"
+    assert out["x"] == "Arsenal vs Chelsea\n\n↳ https://kalchas.live/?match=555"
     assert out["discord_follows"] is True
+    assert out["x_follows"] is True
     assert out["fell_back"] is None
     assert out["limit"] == 1024
 
 
 def test_preview_reports_problems_and_fallback() -> None:
-    out = t.preview("paid", "alert", "{nope}", [_row()])
+    out = t.preview(D, "paid", "alert", "{nope}", [_row()])
     assert out["problems"]
     assert out["fell_back"]
     assert out["telegram"] == format_alert_html(_row())
@@ -332,7 +421,31 @@ def test_preview_reports_problems_and_fallback() -> None:
 
 def test_preview_discord_goal() -> None:
     row = _row(state="Confirmed", detail={"goal_minute": 72})
-    out = t.preview("discord", "goal", "GOAL {goal_minute}", [row])
+    out = t.preview(D, "discord", "goal", "GOAL {goal_minute}", [row])
     assert out["discord"] == "GOAL 72′"
     assert out["telegram"] == ""
     assert out["limit"] == 2000
+
+
+def test_preview_renders_any_sample_as_the_tabs_strategy() -> None:
+    out = t.preview("kscore", "paid", "alert", "K: {home}", [_row()])  # a Δ5′ alert
+    assert out["telegram"] == "K: Arsenal"
+
+
+def test_preview_x_alert_drops_lines_from_the_bottom_to_fit() -> None:
+    body = "{home}\n" + "\n".join(f"Line {i} " + "x" * 40 for i in range(8)) + "\n{match_link}"
+    out = t.preview(D, "x", "alert", body, [_row()])
+    assert out["problems"] == []  # X never blocks saving for length
+    assert out["limit"] == 280
+    assert out["length"] > 280
+    assert out["x"].startswith("Arsenal\nLine 0")
+    assert out["x"].endswith("https://kalchas.live/?match=555")
+    assert out["x_dropped"] and out["x_dropped"][-1].startswith("Line 7")
+    assert out["telegram"] == "" and out["discord"] == ""
+
+
+def test_preview_x_miss() -> None:
+    row = _row(state="Expired", detail={"success_window_minutes": 15})
+    out = t.preview("delta_5min", "x", "miss", "😢 {miss_line}", [row])
+    assert out["x"] == "😢 No goal arrived within 15′"
+    assert t.check("{miss_line}", "goal")  # no-goal reply only
