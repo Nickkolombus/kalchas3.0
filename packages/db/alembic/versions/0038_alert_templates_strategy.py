@@ -4,7 +4,7 @@ Each template now belongs to a strategy: ``default`` (every strategy without its
 own text; the rows saved so far) or a strategy key such as ``delta_5min``.
 X gets its own templates (alert, goal reply and the no-goal reply X posts).
 
-Revision ID: 0038_alert_templates_per_strategy
+Revision ID: 0038_alert_templates_strategy
 Revises: 0037_parlay_slips
 Create Date: 2026-11-17
 """
@@ -15,7 +15,7 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0038_alert_templates_per_strategy"
+revision: str = "0038_alert_templates_strategy"
 down_revision: str | None = "0037_parlay_slips"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
