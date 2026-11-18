@@ -116,7 +116,15 @@ const PIECES: Piece[] = [
   { key: "country", label: "Country", group: "Match", line: "{country}", kinds: ALL },
   { key: "score", label: "Score at the signal", group: "Match", line: "Score: {score}", kinds: ALL },
   { key: "tslg", label: "Minutes since each team scored", group: "Match", line: "Since last goal: {time_since_goal}", kinds: ALL },
+  { key: "home", label: "Home team", group: "Match", line: "{home}", kinds: ALL },
+  { key: "away", label: "Away team", group: "Match", line: "{away}", kinds: ALL },
+  { key: "minute", label: "Minute of the signal", group: "Match", line: "{minute}", kinds: ALL },
   { key: "strategy_lines", label: "Strategy line(s) with reading", group: "Signal", line: "{strategy_lines}", kinds: ["alert"] },
+  { key: "strategy", label: "Strategy name", group: "Signal", line: "{strategy}", kinds: ALL },
+  { key: "strategy_short", label: "Strategy short name", group: "Signal", line: "{strategy_short}", kinds: ALL },
+  { key: "value", label: "Strategy reading", group: "Signal", line: "{value}", kinds: ALL },
+  { key: "team", label: "Team the signal is for", group: "Signal", line: "{team}", kinds: ALL },
+  { key: "side", label: "Home or away", group: "Signal", line: "{side}", kinds: ALL },
   { key: "chance", label: "Scoring chance", group: "Signal", line: "Chance to score: {chance}", kinds: ALL },
   { key: "chance_odds", label: "Chance from odds alone", group: "Signal", line: "Odds alone: {chance_odds_only}", kinds: ALL },
   { key: "form_note", label: "Form Bar note", group: "Signal", line: "{form_note}", kinds: ["alert"] },
@@ -338,7 +346,7 @@ export function AdminAlertText({ api }: { api: Api }) {
   }, [data, activeKind]);
 
   const lines = useMemo(() => body.replace(/\r\n?/g, "\n").split("\n"), [body]);
-  const used = useMemo(() => new Set(lines), [lines]);
+  const used = useMemo(() => new Set(lines.map((l) => l.trim())), [lines]);
   const pieceGroups = useMemo(() => {
     const groups: { name: string; pieces: Piece[] }[] = [];
     for (const piece of PIECES) {
@@ -568,7 +576,7 @@ export function AdminAlertText({ api }: { api: Api }) {
             {mode === "blocks" ? (
               <ol className={`at-blocks${problems.length ? " is-bad" : ""}`} aria-label="Message lines, top to bottom">
                 {lines.map((line, i) => {
-                  const piece = PIECE_BY_LINE.get(line);
+                  const piece = PIECE_BY_LINE.get(line.trim());
                   const blank = line.trim() === "";
                   return (
                     <li
