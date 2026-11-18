@@ -776,6 +776,143 @@ def odds_1x2_from_live_comments(payload: Any) -> dict[str, dict[str, Any]]:
     return out
 
 
+_NTH_GOAL_MARKET = re.compile(r"which team will score the (\d+)(?:st|nd|rd|th) goal")
+_NTH_GOAL_LEGS = {"1": "home", "2": "away", "no goal": "none"}
+
+
+def _half_goal_line(value: Any) -> str | None:
+    """``"1.5"`` for an x.5 goals line; whole or quarter (Asian) lines are skipped."""
+    try:
+        line = float(str(value or "").strip())
+    except ValueError:
+        return None
+    if line < 0 or (line * 2) % 2 != 1:
+        return None
+    return f"{line:.1f}"
+
+
+def _goal_market_key(name: str) -> tuple[str, str | None] | None:
+    """Which stored block a live market feeds, plus its goal number for Nth-goal."""
+    text = " ".join(name.lower().split())
+    if text == "match goals":
+        return "ft", None
+    if text == "over/under (1st half)":
+        return "h1", None
+    if text == "both teams to score":
+        return "btts", None
+    found = _NTH_GOAL_MARKET.search(text)
+    if found:
+        return "next_goal", found.group(1)
+    return None
+
+
+def _goal_leg(block: str, item: dict[str, Any]) -> tuple[str, str] | None:
+    """(line or "", leg name) for one feed item, or None when it is not usable."""
+    kind = " ".join(str(item.get("type") or "").lower().split())
+    if block in ("ft", "h1"):
+        line = _half_goal_line(item.get("handicap"))
+        if line is None or kind not in ("over", "under"):
+            return None
+        return line, kind
+    if block == "btts":
+        return ("", kind) if kind in ("yes", "no") else None
+    leg = _NTH_GOAL_LEGS.get(kind)
+    return ("", leg) if leg else None
+
+
+_GOAL_MARKET_LEGS = {
+    "ft": {"over", "under"},
+    "h1": {"over", "under"},
+    "btts": {"yes", "no"},
+    "next_goal": {"home", "none", "away"},
+}
+
+
+def _goal_markets_from_live_odds_list(live_odds: Any) -> dict[str, Any]:
+    """Full-time and first-half x.5 goal lines, Nth-goal and BTTS from one feed row.
+
+    The feed keeps older prices of a line beside the current one, so each
+    line keeps only its newest complete update. Suspended legs, and lines
+    whose provider ``upd`` trails the row's freshest market by more than
+    ``LIVE_MARKET_MAX_LAG_SEC`` (closed or settled lines), are dropped.
+    """
+    if not isinstance(live_odds, list):
+        return {}
+    # (block, sub-key) -> upd text -> legs
+    groups: dict[tuple[str, str], dict[str, dict[str, float]]] = {}
+    newest: datetime | None = None
+    for item in live_odds:
+        if not isinstance(item, dict):
+            continue
+        upd = _provider_upd(item.get("upd"))
+        if upd is not None and (newest is None or upd > newest):
+            newest = upd
+        key = _goal_market_key(str(item.get("odd_name") or ""))
+        if key is None:
+            continue
+        if str(item.get("suspended") or "").strip().lower() in {"yes", "true", "1"}:
+            continue
+        block, goal_no = key
+        leg = _goal_leg(block, item)
+        value = _odd_float(item.get("value"))
+        if leg is None or value is None:
+            continue
+        sub, name = leg
+        stamp = str(item.get("upd") or "").strip()
+        groups.setdefault((block, goal_no or sub), {}).setdefault(stamp, {})[name] = value
+    out: dict[str, Any] = {}
+    for (block, sub), by_upd in groups.items():
+        need = _GOAL_MARKET_LEGS[block]
+        complete = [(stamp, legs) for stamp, legs in by_upd.items() if need <= legs.keys()]
+        if not complete:
+            continue
+        stamp, legs = max(complete, key=lambda pair: _provider_upd(pair[0]) or datetime.min)
+        upd = _provider_upd(stamp)
+        if upd is not None and newest is not None:
+            if (newest - upd).total_seconds() > LIVE_MARKET_MAX_LAG_SEC:
+                continue
+        line: dict[str, Any] = {name: legs[name] for name in sorted(need)}
+        if stamp:
+            line["updated_at"] = stamp
+        if block == "btts":
+            out["btts"] = line
+        else:
+            out.setdefault(block, {})[sub] = line
+    return out
+
+
+def goal_markets_from_live_comments(payload: Any) -> dict[str, dict[str, Any]]:
+    """Index ``match_id`` → live goal markets from ``action=get_live_odds_commnets``.
+
+    Shape per match (each block only when the feed priced it)::
+
+        {"ft": {"1.5": {"over": 1.44, "under": 2.62, "updated_at": "..."}},
+         "h1": {"0.5": {...}},
+         "next_goal": {"2": {"home": 1.6, "none": 2.6, "away": 9.5, ...}},
+         "btts": {"yes": 1.9, "no": 1.8, ...}}
+
+    ``next_goal`` is keyed by goal number ("2" = the match's second goal).
+    """
+    rows: list[Any]
+    if isinstance(payload, dict):
+        rows = list(payload.values())
+    elif isinstance(payload, list):
+        rows = payload
+    else:
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        match_id = str(row.get("match_id") or "")
+        if not match_id or match_id in out:
+            continue
+        markets = _goal_markets_from_live_odds_list(row.get("live_odds"))
+        if markets:
+            out[match_id] = markets
+    return out
+
+
 def parse_standings_positions(data: Any) -> dict[int, int]:
     """Map ``team_id`` → ``overall_league_position`` from ``get_standings``."""
     rows: list[Any] = []
@@ -1339,23 +1476,24 @@ class FootballAPIClient:
 
     def get_live_odds_comments_bundle(
         self,
-    ) -> tuple[dict[str, dict[str, float]], dict[str, int], set[str]]:
-        """One ``get_live_odds_commnets`` call: 1X2, comment clocks, full-time ids."""
+    ) -> tuple[dict[str, dict[str, float]], dict[str, int], set[str], dict[str, dict[str, Any]]]:
+        """One ``get_live_odds_commnets`` call: 1X2, comment clocks, full-time ids,
+        and the goal markets (x.5 lines, Nth goal, BTTS)."""
         try:
             data = self._get("get_live_odds_commnets")
         except RateLimitBudgetExceeded:
             logger.warning("skipping get_live_odds_commnets; hourly HTTP budget exhausted")
-            return {}, {}, set()
+            return {}, {}, set(), {}
         return (
             odds_1x2_from_live_comments(data),
             comment_elapsed_from_live_comments(data),
             full_time_match_ids_from_live_comments(data),
+            goal_markets_from_live_comments(data),
         )
 
     def get_live_odds_1x2(self) -> dict[str, dict[str, float]]:
         """One ``get_live_odds_commnets`` call; keep only full-time 1X2 lines."""
-        odds, _clocks, _ended = self.get_live_odds_comments_bundle()
-        return odds
+        return self.get_live_odds_comments_bundle()[0]
 
     def get_standings(self, league_id: int) -> dict[int, int]:
         """``action=get_standings`` → team_id to table position."""

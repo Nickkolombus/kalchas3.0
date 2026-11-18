@@ -929,3 +929,75 @@ def test_day_odds_also_ask_for_the_providers_previous_day(monkeypatch) -> None:
     client.get_odds_markets_on("2026-11-15")
     assert calls == [("get_odds", {"from": "2026-11-14", "to": "2026-11-15"})]
     client.close()
+
+
+def _goal_item(name: str, kind: str, value: str, handicap: str = "", upd: str = "", **extra):
+    item = {
+        "odd_name": name,
+        "type": kind,
+        "value": value,
+        "handicap": handicap,
+        "suspended": "No",
+        "upd": upd,
+    }
+    item.update(extra)
+    return item
+
+
+def test_goal_markets_keep_newest_x5_lines_next_goal_and_btts() -> None:
+    from kalchas_football import goal_markets_from_live_comments
+
+    new, old = "2026-11-18 22:34:47", "2026-11-18 22:30:10"
+    payload = [
+        {
+            "match_id": "774966",
+            "live_odds": [
+                # Older price of the same line stays in the feed beside the new one.
+                _goal_item("Match Goals", "Over", "1.7", "1.5", old),
+                _goal_item("Match Goals", "Under", "2.1", "1.5", old),
+                _goal_item("Match Goals", "Over", "1.444", "1.5", new),
+                _goal_item("Match Goals", "Under", "2.625", "1.5", new),
+                _goal_item("Match Goals", "Over", "3.4", "2.5", new),
+                _goal_item("Match Goals", "Under", "1.3", "2.5", new),
+                # Asian / quarter lines are not x.5 goal lines.
+                _goal_item("Over/Under Line", "Over", "1.9", "1.75", new),
+                _goal_item("Over/Under Line (1st Half)", "Over", "5.25", "1.5", new),
+                _goal_item("Over/Under (1st Half)", "Over", "11", "1.5", new),
+                _goal_item("Over/Under (1st Half)", "Under", "1.05", "1.5", new),
+                _goal_item("Which team will score the 2nd goal?", "1", "1.615", "", new),
+                _goal_item("Which team will score the 2nd goal?", "No goal", "2.625", "", new),
+                _goal_item("Which team will score the 2nd goal?", "2", "9.5", "", new),
+                _goal_item("Both Teams to Score", "Yes", "2.2", "", new),
+                _goal_item("Both Teams to Score", "No", "1.6", "", new),
+                _goal_item("Both Teams To Score (1st Half)", "Yes", "8", "", new),
+            ],
+        }
+    ]
+    out = goal_markets_from_live_comments(payload)["774966"]
+    assert out["ft"] == {
+        "1.5": {"over": 1.444, "under": 2.625, "updated_at": new},
+        "2.5": {"over": 3.4, "under": 1.3, "updated_at": new},
+    }
+    assert out["h1"] == {"1.5": {"over": 11.0, "under": 1.05, "updated_at": new}}
+    assert out["next_goal"] == {"2": {"home": 1.615, "none": 2.625, "away": 9.5, "updated_at": new}}
+    assert out["btts"] == {"yes": 2.2, "no": 1.6, "updated_at": new}
+
+
+def test_goal_markets_drop_suspended_half_lines_and_frozen_lines() -> None:
+    from kalchas_football import goal_markets_from_live_comments
+
+    new = "2026-11-18 22:34:47"
+    frozen = "2026-11-18 22:00:00"  # 34 minutes behind the row's freshest market
+    payload = {
+        "1": {
+            "match_id": "9",
+            "live_odds": [
+                _goal_item("Match Goals", "Over", "1.8", "0.5", new, suspended="Yes"),
+                _goal_item("Match Goals", "Under", "2.0", "0.5", new),
+                _goal_item("Match Goals", "Over", "7.5", "1.5", frozen),
+                _goal_item("Match Goals", "Under", "1.07", "1.5", frozen),
+                _goal_item("Fulltime Result", "Home", "2.0", "", new),
+            ],
+        }
+    }
+    assert goal_markets_from_live_comments(payload) == {}

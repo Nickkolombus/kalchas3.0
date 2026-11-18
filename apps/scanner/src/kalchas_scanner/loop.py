@@ -187,6 +187,10 @@ class Scanner:
     stamped ``fetched_at`` (UTC ISO) and, when the feed has a clock, ``minute``.
     Replaced on every fetch, so a match that drops out of the feed (market
     closed or suspended) loses its line instead of keeping an old price."""
+    _live_goal_odds_by_match: dict[str, dict] = field(default_factory=dict)
+    """match id -> live goal markets (``goal_markets_from_live_comments``) from
+    the same feed snapshot as the 1X2, stamped ``fetched_at``; replaced the
+    same way."""
     _live_odds_fetched_at: float = 0.0
     _comment_elapsed_by_match: dict[str, int] = field(default_factory=dict)
     _full_time_match_ids: set[str] = field(default_factory=set)
@@ -251,10 +255,12 @@ class Scanner:
         if callable(bundle) or callable(fetch):
             try:
                 clocks: dict[str, int] = {}
+                goal_markets: dict = {}
                 if callable(bundle):
                     packed = bundle() or ({}, {})
                     fresh, clocks = packed[0] or {}, packed[1] or {}
                     ended = packed[2] if len(packed) > 2 else set()
+                    goal_markets = (packed[3] if len(packed) > 3 else None) or {}
                 else:
                     fresh = fetch() or {}
                     ended = set()
@@ -270,6 +276,11 @@ class Scanner:
                     stamped[key] = line
                 dropped = len(self._live_odds_by_match.keys() - stamped.keys())
                 self._live_odds_by_match = stamped
+                self._live_goal_odds_by_match = {
+                    str(match_id): {**markets, "fetched_at": fetched_at}
+                    for match_id, markets in goal_markets.items()
+                    if isinstance(markets, dict)
+                }
                 logger.info(
                     "live odds cache: %s matches (%s dropped from feed)",
                     len(stamped),
@@ -359,6 +370,31 @@ class Scanner:
         if live is not None and fresh_live_line({"live": live}) is None:
             live = None
         return compose_odds_record(kickoff=self._odds_by_match.get(match_id), live=live)
+
+    def _live_goal_odds(
+        self, match_id: str, *, home_goals: int, away_goals: int, first_half: bool
+    ) -> dict | None:
+        """Live goal-market prices at alert time, for judging alerts at real prices.
+
+        Only while fresh (same age limit as the live 1X2). Keeps every full-time
+        x.5 line, the first-half lines while the first half is on, the market
+        on the next goal (goal number = goals so far + 1) and BTTS.
+        """
+        markets = self._live_goal_odds_by_match.get(match_id)
+        if not markets or fresh_live_line({"live": markets}) is None:
+            return None
+        out: dict = {"fetched_at": markets["fetched_at"]}
+        if markets.get("ft"):
+            out["ft"] = markets["ft"]
+        if first_half and markets.get("h1"):
+            out["h1"] = markets["h1"]
+        next_no = str(int(home_goals) + int(away_goals) + 1)
+        nxt = (markets.get("next_goal") or {}).get(next_no)
+        if nxt:
+            out["next_goal"] = {"goal": int(next_no), **nxt}
+        if markets.get("btts"):
+            out["btts"] = markets["btts"]
+        return out if len(out) > 1 else None
 
     def _h2h_for_alert(self, match: LiveMatch) -> dict | None:
         """Goals-per-meeting and W/D/L for the Telegram banner. Cache first.
@@ -727,7 +763,14 @@ class Scanner:
                 continue
             pending.append((cand, team, decision))
         board = None
+        goal_odds = None
         if pending:
+            goal_odds = self._live_goal_odds(
+                match.match_id,
+                home_goals=match.home_score,
+                away_goals=match.away_score,
+                first_half=first_half,
+            )
             board = compact_board(
                 board_snapshot(
                     timeline,
@@ -787,6 +830,8 @@ class Scanner:
                     windows=self.sweet_spot,
                 ),
             }
+            if goal_odds:
+                payload["live_goal_odds"] = goal_odds
             if cand.strategy_key == "delta_goal":
                 payload["form_bar"] = detail
             if cand.side is not None:

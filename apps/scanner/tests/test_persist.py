@@ -982,3 +982,63 @@ def test_run_once_processes_every_live_match(monkeypatch) -> None:
     scanner.run_once()
     assert set(persist.matches) == {"0", "1", "2"}
     assert persist.matches["2"]["minute"] == 12
+
+
+class _GoalOddsFeed(_LiveOddsFeed):
+    def __init__(self, odds: dict, goals: dict) -> None:
+        super().__init__(odds)
+        self.goals = goals
+
+    def get_live_odds_comments_bundle(self):
+        return self.odds, self.clocks, set(), self.goals
+
+
+def test_live_goal_odds_pick_next_goal_and_first_half_lines() -> None:
+    line = {"over": 1.44, "under": 2.62, "updated_at": "2026-11-18 22:34:47"}
+    feed = _GoalOddsFeed(
+        {"7": {"home": 3.1, "draw": 2.05, "away": 4.75}},
+        {
+            "7": {
+                "ft": {"1.5": line},
+                "h1": {"1.5": line},
+                "next_goal": {
+                    "1": {"home": 1.8, "none": 10.0, "away": 2.2},
+                    "2": {"home": 1.6, "none": 2.6, "away": 9.5},
+                },
+                "btts": {"yes": 2.2, "no": 1.6},
+            }
+        },
+    )
+    scanner = _scanner_on(feed)
+    scanner._refresh_live_odds_cache()
+    second_half = scanner._live_goal_odds("7", home_goals=0, away_goals=1, first_half=False)
+    assert second_half is not None
+    assert second_half["ft"] == {"1.5": line}
+    assert "h1" not in second_half
+    assert second_half["next_goal"] == {"goal": 2, "home": 1.6, "none": 2.6, "away": 9.5}
+    assert second_half["btts"] == {"yes": 2.2, "no": 1.6}
+    assert second_half["fetched_at"]
+    first_half = scanner._live_goal_odds("7", home_goals=0, away_goals=0, first_half=True)
+    assert first_half["h1"] == {"1.5": line}
+    assert first_half["next_goal"]["goal"] == 1
+    assert scanner._live_goal_odds("8", home_goals=0, away_goals=0, first_half=False) is None
+
+
+def test_live_goal_odds_age_out_and_leave_with_the_feed() -> None:
+    feed = _GoalOddsFeed({}, {"7": {"ft": {"0.5": {"over": 1.5, "under": 2.5}}}})
+    scanner = _scanner_on(feed)
+    scanner._refresh_live_odds_cache()
+    assert scanner._live_goal_odds("7", home_goals=0, away_goals=0, first_half=False)
+    scanner._live_goal_odds_by_match["7"]["fetched_at"] = "2026-11-03T20:00:00+00:00"
+    assert scanner._live_goal_odds("7", home_goals=0, away_goals=0, first_half=False) is None
+    feed.goals = {}
+    scanner._refresh_live_odds_cache()
+    assert scanner._live_goal_odds_by_match == {}
+
+
+def test_three_part_bundle_still_works_without_goal_markets() -> None:
+    feed = _LiveOddsFeed({"7": {"home": 3.1, "draw": 2.05, "away": 4.75}})
+    scanner = _scanner_on(feed)
+    scanner._refresh_live_odds_cache()
+    assert scanner._odds_payload("7") is not None
+    assert scanner._live_goal_odds("7", home_goals=0, away_goals=0, first_half=False) is None
