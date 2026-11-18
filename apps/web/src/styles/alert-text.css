@@ -499,3 +499,68 @@
     height: 30px;
   }
 }
+
+/* Which stretch of the match a stat block covers: one colour per span, the
+   same on the palette headings and on the blocks in the message. */
+.at-span {
+  --span: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 6px;
+  color: var(--span);
+  font-weight: 700;
+}
+
+.at-span::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--span);
+}
+
+.at-span-l5 { --span: var(--s1); }
+.at-span-l10 { --span: var(--s2); }
+.at-span-match { --span: var(--s3); }
+
+.at-tag-group h3.at-span {
+  margin-right: 0;
+}
+
+.at-group-note {
+  margin: -2px 0 6px;
+  font-size: 0.74rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.at-follows summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.at-follows summary::-webkit-details-marker {
+  display: none;
+}
+
+.at-follows summary h3 {
+  display: inline;
+}
+
+.at-follows summary h3::after {
+  content: " ▸";
+}
+
+.at-follows[open] summary h3::after {
+  content: " ▾";
+}
+
+.at-follows[open] summary {
+  margin-bottom: 6px;
+}
+
+.at-piece.is-empty {
+  border-style: dashed;
+  color: var(--muted);
+}

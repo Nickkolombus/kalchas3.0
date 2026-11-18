@@ -467,6 +467,50 @@ def stat_parts(key: str, payload: Mapping[str, Any], minute: object) -> dict[str
     return parts
 
 
+MATCH_STAT_KEYS: tuple[tuple[str, str, bool], ...] = (
+    *STAT_KEYS,
+    ("attacks", "Attacks", False),
+    ("yc", "Yellow cards", False),
+    ("rc", "Red cards", False),
+)
+"""Whole-match stat lines: the five under every alert plus attacks and cards."""
+
+_TAG_NAME = {"yc": "yellow", "rc": "red"}
+
+
+def fixed_stat_parts(payload: Mapping[str, Any], minute: object) -> dict[str, str]:
+    """Stat lines for one fixed span each, whatever strategy fired, as HTML.
+
+    Keys are ``l5_*`` (last 5 minutes), ``l10_*`` (last 10) and ``match_*``
+    (whole match so far): ``*_heading``, one line per stat (empty when it's
+    0 - 0 or missing) and ``*_stats`` (heading plus the five usual lines).
+    A heading is empty when none of its five lines has anything to show.
+    """
+    parts: dict[str, str] = {}
+    spans: tuple[tuple[str, object, int, tuple[tuple[str, str, bool], ...]], ...] = (
+        ("l5", payload.get("last_5min"), 5, STAT_KEYS),
+        ("l10", payload.get("last_10min"), 10, STAT_KEYS),
+        ("match", payload, 0, MATCH_STAT_KEYS),
+    )
+    for prefix, raw, span, keys in spans:
+        source = raw if isinstance(raw, Mapping) else {}
+        for stat, label, percent in keys:
+            name = _TAG_NAME.get(stat, stat)
+            parts[f"{prefix}_{name}"] = _pair_line(source.get(stat), label, percent=percent)
+        five = [parts[f"{prefix}_{stat}"] for stat, _, _ in STAT_KEYS]
+        heading = ""
+        if any(five):
+            heading = _window_heading(source, minute, span=span) if span else _match_heading(minute)
+        parts[f"{prefix}_heading"] = heading
+        parts[f"{prefix}_stats"] = "\n".join(line for line in (heading, *five) if line)
+    return parts
+
+
+def _match_heading(minute: object) -> str:
+    end = _minute_int(minute)
+    return f"<b>Whole match (0′-{end}′):</b>" if end is not None else "<b>Whole match:</b>"
+
+
 def _stat_block(key: str, payload: Mapping[str, Any], minute: object) -> list[str]:
     parts = stat_parts(key, payload, minute)
     order = ("heading", "note", *(stat for stat, _, _ in STAT_KEYS))

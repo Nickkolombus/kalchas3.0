@@ -33,6 +33,7 @@ from kalchas_bot.format import (
     ALERT_NAMES,
     STRATEGY_ORDER,
     alert_blocks,
+    fixed_stat_parts,
     format_alert_html,
     format_joint_html,
     format_outcome_html,
@@ -123,10 +124,51 @@ class Tag:
 
 
 def _pair_tags(key: str, label: str, example: tuple[str, str]) -> tuple[Tag, Tag]:
-    group = "Stats so far (whole match)"
+    group = "Whole match, one team's number"
     return (
         Tag(f"{key}_home", f"{label}, home team", group, example[0]),
         Tag(f"{key}_away", f"{label}, away team", group, example[1]),
+    )
+
+
+_FOLLOWS = "Stats: follows the strategy"
+
+_FIVE: tuple[tuple[str, str, str], ...] = (
+    ("sot", "Shots on target", "SOT: **3** - 0"),
+    ("sofft", "Shots off target", "SOFFT: **2** - 1"),
+    ("da", "Dangerous attacks", "DA: **9** - 4"),
+    ("corners", "Corners", "Corners: **2** - 0"),
+    ("possession", "Possession", "Possession: **62%** - 38%"),
+)
+
+
+def _span_tags(prefix: str, group: str, heading: str, span: str) -> tuple[Tag, ...]:
+    """Heading, the five stat lines and all-at-once for one fixed span (any strategy)."""
+    return (
+        Tag(
+            f"{prefix}_heading",
+            f"Heading for the {span} (empty when it has no stats)",
+            group,
+            f"**{heading}:**",
+            block=True,
+        ),
+        *(
+            Tag(
+                f"{prefix}_{key}",
+                f"{label} line, {span}, bigger number in bold",
+                group,
+                example,
+                block=True,
+            )
+            for key, label, example in _FIVE
+        ),
+        Tag(
+            f"{prefix}_stats",
+            f"Heading and the five stat lines, {span}",
+            group,
+            f"**{heading}:**\nSOT: **3** - 0",
+            block=True,
+        ),
     )
 
 
@@ -156,7 +198,7 @@ TAGS: tuple[Tag, ...] = (
     Tag(
         "form_note",
         "Form Bar's note (when Form Bar leads the message)",
-        "Stats under the alert",
+        "Signal",
         "0 of 2 expected · 1.8 by 79′",
     ),
     Tag(
@@ -185,35 +227,46 @@ TAGS: tuple[Tag, ...] = (
         "**Δ5′** (5-minute pressure): 8.4 / 12.0 for **Arsenal**",
         block=True,
     ),
+    *_span_tags("l5", "Stats: last 5 minutes", "Last 5 mins (62′-67′)", "last 5 minutes"),
+    *_span_tags("l10", "Stats: last 10 minutes", "Last 10 mins (57′-67′)", "last 10 minutes"),
+    *_span_tags("match", "Stats: whole match", "Whole match (0′-67′)", "whole match so far"),
+    *(
+        Tag(
+            f"match_{key}",
+            f"{label} line, whole match so far, bigger number in bold",
+            "Stats: whole match",
+            example,
+            block=True,
+        )
+        for key, label, example in (
+            ("attacks", "Attacks", "Attacks: **88** - 54"),
+            ("yellow", "Yellow cards", "Yellow cards: 1 - **3**"),
+            ("red", "Red cards", "Red cards: **1** - 0"),
+        )
+    ),
     Tag(
         "stats",
-        "All the stat lines at once (heading or Form Bar note, SOT … possession)",
-        "Ready-made lines",
+        "Heading or Form Bar note, then SOT … possession, for the strategy that fired",
+        _FOLLOWS,
         "**Last 5 mins (62′-67′):**\nSOT: **3** - 0",
         block=True,
     ),
     Tag(
         "stats_heading",
-        "Last 5 / 10 mins heading (Δ5′ and Δ10′ only)",
-        "Stats under the alert",
+        "Last 5 mins heading for Δ5′, last 10 for Δ10′, nothing for the rest",
+        _FOLLOWS,
         "**Last 5 mins (62′-67′):**",
         block=True,
     ),
     *(
         Tag(
             f"stat_{key}",
-            f"{label} line, bigger number in bold",
-            "Stats under the alert",
+            f"{label} line: last 5 mins for Δ5′, last 10 for Δ10′, whole match for the rest",
+            _FOLLOWS,
             example,
             block=True,
         )
-        for key, label, example in (
-            ("sot", "Shots on target", "SOT: **3** - 0"),
-            ("sofft", "Shots off target", "SOFFT: **2** - 1"),
-            ("da", "Dangerous attacks", "DA: **9** - 4"),
-            ("corners", "Corners", "Corners: **2** - 0"),
-            ("possession", "Possession", "Possession: **62%** - 38%"),
-        )
+        for key, label, example in _FIVE
     ),
     *_pair_tags("sot", "Shots on target", ("6", "2")),
     *_pair_tags("shots_off", "Shots off target", ("5", "3")),
@@ -520,6 +573,7 @@ def alert_values(rows: Sequence[Mapping[str, Any]], *, with_score: bool = False)
         "form_note": stats["note"],
         "stats_heading": stats["heading"],
         **{f"stat_{name}": line for name, line in stats.items() if name not in ("note", "heading")},
+        **fixed_stat_parts(payload, first.get("minute")),
         **alert_blocks(ordered, with_score=with_score),
     }
     for name, key, suffix in _PAIR_KEYS:
@@ -1104,9 +1158,17 @@ def preview(
         "fell_back": None,
         "discord_follows": pick(templates, strategy, "discord", kind) is None,
         "x_follows": pick(templates, strategy, "x", kind) is None,
+        "values": {},
     }
     if not rows:
         return result
+    # Each tag's value for this sample, so admin can show what a block would say.
+    if kind == "alert":
+        result["values"] = alert_values(rows)
+    elif kind == "goal":
+        result["values"] = goal_values(rows[0])
+    else:
+        result["values"] = miss_values(rows[0])
     fallbacks: list[Fallback]
     telegram = discord = x_text = ""
     if kind == "alert":

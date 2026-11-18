@@ -51,6 +51,8 @@ type Preview = {
   discord_follows: boolean;
   x_follows: boolean;
   example: boolean;
+  /** Each tag's value for the previewed alert (Telegram HTML). */
+  values?: Record<string, string>;
 };
 
 const DEFAULT = "default";
@@ -68,10 +70,45 @@ const KINDS: { key: Kind; label: string; note: string }[] = [
   { key: "miss", label: "No-goal reply", note: "X only: X has no reactions, so a miss is a reply. Telegram and Discord get a 😢 reaction instead." },
 ];
 
-/** One line of a template, and the block it shows as. */
-type Piece = { key: string; label: string; group: string; line: string; kinds: Kind[] };
+/** Which stretch of the match a stat block covers. "auto" follows the strategy that fired. */
+type Span = "l5" | "l10" | "match" | "auto";
+
+const SPANS: Record<Span, { short: string; group: string; note: string }> = {
+  l5: { short: "Last 5", group: "Last 5 minutes", note: "Same numbers whichever strategy fired." },
+  l10: { short: "Last 10", group: "Last 10 minutes", note: "Same numbers whichever strategy fired." },
+  match: { short: "Match", group: "Whole match so far", note: "From kickoff to the signal." },
+  auto: {
+    short: "Follows strategy",
+    group: "Follows the strategy",
+    note: "What Default uses: last 5 mins on Δ5′, last 10 on Δ10′, whole match on every other strategy (no heading).",
+  },
+};
+
+/** One line of a template, and the block it shows as. ``hidden`` ones only label old saved lines. */
+type Piece = { key: string; label: string; group: string; line: string; kinds: Kind[]; span?: Span; hidden?: boolean };
 
 const ALL: Kind[] = ["alert", "goal", "miss"];
+
+const FIVE: [string, string][] = [
+  ["sot", "SOT"],
+  ["sofft", "SOFFT"],
+  ["da", "DA"],
+  ["corners", "Corners"],
+  ["possession", "Possession"],
+];
+
+function spanPieces(span: "l5" | "l10" | "match"): Piece[] {
+  const group = SPANS[span].group;
+  const extra: [string, string][] = span === "match" ? [["attacks", "Attacks"], ["yellow", "Yellow cards"], ["red", "Red cards"]] : [];
+  return [
+    { key: `${span}_heading`, label: "Heading", group, line: `{${span}_heading}`, kinds: ALL, span },
+    ...[...FIVE, ...extra].map(([stat, label]) => ({ key: `${span}_${stat}`, label, group, line: `{${span}_${stat}}`, kinds: ALL, span })),
+    { key: `${span}_stats`, label: "Heading + all five", group, line: `{${span}_stats}`, kinds: ALL, span },
+  ];
+}
+
+const AUTO = SPANS.auto.group;
+const OLD_MATCH = "Whole match (old style)";
 
 const PIECES: Piece[] = [
   { key: "versus", label: "Match line", group: "Match", line: "{versus}", kinds: ["alert"] },
@@ -82,22 +119,22 @@ const PIECES: Piece[] = [
   { key: "strategy_lines", label: "Strategy line(s) with reading", group: "Signal", line: "{strategy_lines}", kinds: ["alert"] },
   { key: "chance", label: "Scoring chance", group: "Signal", line: "Chance to score: {chance}", kinds: ALL },
   { key: "chance_odds", label: "Chance from odds alone", group: "Signal", line: "Odds alone: {chance_odds_only}", kinds: ALL },
-  { key: "stats_heading", label: "Last 5 / 10 mins heading", group: "Stats under the alert", line: "{stats_heading}", kinds: ["alert"] },
-  { key: "form_note", label: "Form Bar note", group: "Stats under the alert", line: "{form_note}", kinds: ["alert"] },
-  { key: "stat_sot", label: "SOT", group: "Stats under the alert", line: "{stat_sot}", kinds: ["alert"] },
-  { key: "stat_sofft", label: "SOFFT", group: "Stats under the alert", line: "{stat_sofft}", kinds: ["alert"] },
-  { key: "stat_da", label: "DA", group: "Stats under the alert", line: "{stat_da}", kinds: ["alert"] },
-  { key: "stat_corners", label: "Corners", group: "Stats under the alert", line: "{stat_corners}", kinds: ["alert"] },
-  { key: "stat_possession", label: "Possession", group: "Stats under the alert", line: "{stat_possession}", kinds: ["alert"] },
-  { key: "stats", label: "All stat lines at once", group: "Stats under the alert", line: "{stats}", kinds: ["alert"] },
-  { key: "m_sot", label: "SOT", group: "Whole match so far", line: "SOT: {sot_home} - {sot_away}", kinds: ALL },
-  { key: "m_sofft", label: "SOFFT", group: "Whole match so far", line: "SOFFT: {shots_off_home} - {shots_off_away}", kinds: ALL },
-  { key: "m_da", label: "DA", group: "Whole match so far", line: "DA: {dangerous_attacks_home} - {dangerous_attacks_away}", kinds: ALL },
-  { key: "m_attacks", label: "Attacks", group: "Whole match so far", line: "Attacks: {attacks_home} - {attacks_away}", kinds: ALL },
-  { key: "m_corners", label: "Corners", group: "Whole match so far", line: "Corners: {corners_home} - {corners_away}", kinds: ALL },
-  { key: "m_possession", label: "Possession", group: "Whole match so far", line: "Possession: {possession_home} - {possession_away}", kinds: ALL },
-  { key: "m_cards", label: "Yellow cards", group: "Whole match so far", line: "Yellow cards: {yellow_home} - {yellow_away}", kinds: ALL },
-  { key: "m_red", label: "Red cards", group: "Whole match so far", line: "Red cards: {red_home} - {red_away}", kinds: ALL },
+  { key: "form_note", label: "Form Bar note", group: "Signal", line: "{form_note}", kinds: ["alert"] },
+  ...spanPieces("l5"),
+  ...spanPieces("l10"),
+  ...spanPieces("match"),
+  // Whole-match lines saved before the span groups existed: plain numbers, shown even at 0 - 0.
+  { key: "m_sot", label: "SOT", group: OLD_MATCH, line: "SOT: {sot_home} - {sot_away}", kinds: ALL, span: "match", hidden: true },
+  { key: "m_sofft", label: "SOFFT", group: OLD_MATCH, line: "SOFFT: {shots_off_home} - {shots_off_away}", kinds: ALL, span: "match", hidden: true },
+  { key: "m_da", label: "DA", group: OLD_MATCH, line: "DA: {dangerous_attacks_home} - {dangerous_attacks_away}", kinds: ALL, span: "match", hidden: true },
+  { key: "m_attacks", label: "Attacks", group: OLD_MATCH, line: "Attacks: {attacks_home} - {attacks_away}", kinds: ALL, span: "match", hidden: true },
+  { key: "m_corners", label: "Corners", group: OLD_MATCH, line: "Corners: {corners_home} - {corners_away}", kinds: ALL, span: "match", hidden: true },
+  { key: "m_possession", label: "Possession", group: OLD_MATCH, line: "Possession: {possession_home} - {possession_away}", kinds: ALL, span: "match", hidden: true },
+  { key: "m_cards", label: "Yellow cards", group: OLD_MATCH, line: "Yellow cards: {yellow_home} - {yellow_away}", kinds: ALL, span: "match", hidden: true },
+  { key: "m_red", label: "Red cards", group: OLD_MATCH, line: "Red cards: {red_home} - {red_away}", kinds: ALL, span: "match", hidden: true },
+  { key: "stats_heading", label: "Heading (Δ5′ / Δ10′ only)", group: AUTO, line: "{stats_heading}", kinds: ["alert"], span: "auto" },
+  ...FIVE.map(([stat, label]) => ({ key: `stat_${stat}`, label, group: AUTO, line: `{stat_${stat}}`, kinds: ["alert"] as Kind[], span: "auto" as Span })),
+  { key: "stats", label: "Heading or Form Bar note + all five", group: AUTO, line: "{stats}", kinds: ["alert"], span: "auto" },
   { key: "odds", label: "Kickoff odds 1 / X / 2", group: "Odds and head to head", line: "Odds: {odds_home} / {odds_draw} / {odds_away}", kinds: ALL },
   { key: "favourite", label: "Favourite at kickoff", group: "Odds and head to head", line: "Favourite: {favourite}", kinds: ALL },
   { key: "team_odds", label: "Odds of the signal's team", group: "Odds and head to head", line: "{team} at kickoff: {team_odds}", kinds: ALL },
@@ -112,6 +149,21 @@ const PIECES: Piece[] = [
 ];
 
 const PIECE_BY_LINE = new Map(PIECES.map((p) => [p.line, p]));
+
+/** What a one-line block says for the previewed alert, as plain text.
+ *  "" when every tag in it is empty (the bot leaves that line out); null when unknown. */
+function lineValue(line: string, values: Record<string, string> | undefined): string | null {
+  if (!values) return null;
+  const tags = [...line.matchAll(/\{([a-z0-9_]+)\}/g)].map((m) => m[1]);
+  if (!tags.length) return null;
+  if (tags.every((t) => !values[t])) return "";
+  const filled = line.replace(/\{([a-z0-9_]+)\}/g, (_, t: string) => values[t] ?? "");
+  return decode(filled.replace(/<[^>]+>/g, "")).replace(/\*\*/g, "").replace(/^_|_$/g, "");
+}
+
+function SpanLabel({ span }: { span: Span }) {
+  return <span className={`at-span at-span-${span}`}>{SPANS[span].short}</span>;
+}
 
 function slotKey(strategy: string, channel: Channel, kind: Kind): string {
   return `${strategy}/${channel}/${kind}`;
@@ -290,7 +342,7 @@ export function AdminAlertText({ api }: { api: Api }) {
   const pieceGroups = useMemo(() => {
     const groups: { name: string; pieces: Piece[] }[] = [];
     for (const piece of PIECES) {
-      if (!piece.kinds.includes(activeKind)) continue;
+      if (piece.hidden || !piece.kinds.includes(activeKind)) continue;
       let group = groups.find((g) => g.name === piece.group);
       if (!group) {
         group = { name: piece.group, pieces: [] };
@@ -537,7 +589,18 @@ export function AdminAlertText({ api }: { api: Api }) {
                     >
                       <span className="at-grip" aria-hidden="true">⋮⋮</span>
                       <div className="at-block-main">
-                        <span className="at-block-name">{blank ? "Blank line" : piece ? piece.label : "Your line"}</span>
+                        <span className="at-block-name">
+                          {blank ? (
+                            "Blank line"
+                          ) : piece ? (
+                            <>
+                              {piece.span ? <SpanLabel span={piece.span} /> : null}
+                              {piece.label}
+                            </>
+                          ) : (
+                            "Your line"
+                          )}
+                        </span>
                         {blank ? null : (
                           <input
                             className="at-block-line"
@@ -704,20 +767,58 @@ export function AdminAlertText({ api }: { api: Api }) {
           <div className="kit-card-body">
             {mode === "blocks" ? (
               <>
-                {pieceGroups.map((group) => (
-                  <div key={group.name} className="at-tag-group">
-                    <h3>{group.name}</h3>
+                {pieceGroups.map((group) => {
+                  const span = group.pieces[0]?.span;
+                  const chips = (
                     <ul className="at-pieces">
-                      {group.pieces.map((piece) => (
-                        <li key={piece.key}>
-                          <button type="button" className={`at-piece${used.has(piece.line) ? " is-used" : ""}`} onClick={() => addLine(piece.line)} title={piece.line}>
-                            <span>+</span> {piece.label}
-                          </button>
-                        </li>
-                      ))}
+                      {group.pieces.map((piece) => {
+                        const value = lineValue(piece.line, preview?.values);
+                        const empty = value === "";
+                        const title = empty
+                          ? `${piece.line}\nEmpty on this alert (missing${piece.span ? " or 0 - 0" : ""}), so the line would be left out.`
+                          : value
+                            ? `${piece.line}\nOn this alert:\n${value}`
+                            : piece.line;
+                        return (
+                          <li key={piece.key}>
+                            <button
+                              type="button"
+                              className={`at-piece${used.has(piece.line) ? " is-used" : ""}${empty ? " is-empty" : ""}`}
+                              onClick={() => addLine(piece.line)}
+                              title={title}
+                            >
+                              <span>+</span> {piece.label}
+                            </button>
+                          </li>
+                        );
+                      })}
                     </ul>
-                  </div>
-                ))}
+                  );
+                  if (span === "auto") {
+                    return (
+                      <details key={group.name} className="at-tag-group at-follows">
+                        <summary>
+                          <h3>{group.name}</h3>
+                        </summary>
+                        <p className="at-group-note">{SPANS.auto.note}</p>
+                        {chips}
+                      </details>
+                    );
+                  }
+                  return (
+                    <div key={group.name} className="at-tag-group">
+                      {span ? (
+                        <>
+                          <h3 className={`at-span at-span-${span}`}>{group.name}</h3>
+                          <p className="at-group-note">{SPANS[span].note}</p>
+                        </>
+                      ) : (
+                        <h3>{group.name}</h3>
+                      )}
+                      {chips}
+                    </div>
+                  );
+                })}
                 <div className="at-tag-group">
                   <h3>Layout</h3>
                   <ul className="at-pieces">
@@ -733,7 +834,9 @@ export function AdminAlertText({ api }: { api: Api }) {
                     </li>
                   </ul>
                 </div>
-                <p className="kit-muted at-small">Each block is one line. Edit its text to add words, emoji or **bold**; any tag from the Text view works in it.</p>
+                <p className="kit-muted at-small">
+                  Hover a block to see what it says on the previewed alert; dashed ones have nothing to show there. Each block is one line. Edit its text to add words, emoji or **bold**; any tag from the Text view works in it.
+                </p>
               </>
             ) : (
               <>

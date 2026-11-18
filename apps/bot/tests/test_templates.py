@@ -449,3 +449,45 @@ def test_preview_x_miss() -> None:
     out = t.preview("delta_5min", "x", "miss", "😢 {miss_line}", [row])
     assert out["x"] == "😢 No goal arrived within 15′"
     assert t.check("{miss_line}", "goal")  # no-goal reply only
+
+
+@pytest.mark.parametrize("key", ["delta_5min", "pressure_index", "kscore"])
+def test_span_tags_do_not_depend_on_the_strategy(key: str) -> None:
+    values = t.alert_values([_row(strategy_key=key)])
+    assert values["l5_heading"] == "<b>Last 5 mins (62′-67′):</b>"
+    assert values["l5_sot"] == "SOT: <b>3</b> - 0"
+    assert values["l5_corners"] == ""  # missing in the window: line left out
+    assert values["l10_heading"] == "<b>Last 10 mins (57′-67′):</b>"
+    assert values["l10_sot"] == "SOT: <b>4</b> - 1"
+    assert values["l10_da"] == ""
+    assert values["match_heading"] == "<b>Whole match (0′-67′):</b>"
+    assert values["match_sot"] == "SOT: <b>6</b> - 2"
+    assert values["match_yellow"] == "Yellow cards: 1 - <b>3</b>"
+    assert values["match_red"] == ""  # 0 - 0
+    assert values["l5_stats"] == (
+        "<b>Last 5 mins (62′-67′):</b>\nSOT: <b>3</b> - 0\nDA: <b>9</b> - 2"
+    )
+
+
+def test_span_heading_is_empty_without_stats() -> None:
+    row = _row()
+    row["payload"] = {k: v for k, v in row["payload"].items() if k != "last_10min"}
+    values = t.alert_values([row])
+    assert values["l10_heading"] == ""
+    assert values["l10_stats"] == ""
+    text = t.render("{l10_heading}\n{l10_sot}\n{versus}", values)
+    assert "Last 10" not in text
+
+
+def test_span_tags_render_in_a_template() -> None:
+    text = t.render("{l5_stats}\n\n{l10_heading}\n{l10_sot}", t.alert_values([_row()]))
+    assert text == (
+        "<b>Last 5 mins (62′-67′):</b>\nSOT: <b>3</b> - 0\nDA: <b>9</b> - 2\n\n"
+        "<b>Last 10 mins (57′-67′):</b>\nSOT: <b>4</b> - 1"
+    )
+    assert t.check("{l5_sot}\n{match_red}", "goal") == []
+
+
+def test_preview_returns_tag_values() -> None:
+    out = t.preview("default", "paid", "alert", t.DEFAULT_TEMPLATES["alert"], [_row()])
+    assert out["values"]["l10_sot"] == "SOT: <b>4</b> - 1"
