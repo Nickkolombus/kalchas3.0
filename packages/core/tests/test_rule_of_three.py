@@ -24,7 +24,6 @@ from kalchas_core.strategies.rule_of_three import (
     odds_difficulty_factor,
     possession_adjustment,
     shot_quality_factor,
-    time_of_match_multiplier,
 )
 from kalchas_core.weights import WeightSet
 
@@ -74,17 +73,13 @@ class TestGameState:
         assert game_state_modifier(2, 0, minute) == pytest.approx(0.75)
 
 
-class TestTimeMultiplier:
-    @pytest.mark.parametrize(
-        ("minute", "expected"),
-        [(15, 0.90), (30, 0.90), (31, 1.00), (60, 1.00), (61, 1.10), (75, 1.10), (76, 1.20)],
-    )
-    def test_bands(self, minute: int, expected: float) -> None:
-        assert time_of_match_multiplier(minute, DEFAULTS) == pytest.approx(expected)
-
-    @pytest.mark.parametrize("minute", [None, 0, -5])
-    def test_unknown_or_impossible_minute_is_neutral(self, minute: int | None) -> None:
-        assert time_of_match_multiplier(minute, DEFAULTS) == 1.0
+class TestNoClockBoost:
+    def test_the_same_stats_read_the_same_early_and_late(self) -> None:
+        """The time-of-match multiplier was removed: only the score state moves the reading."""
+        home = profile(shots_on_target=6, shots_off_target=4)
+        early = evaluate(home, profile(), minute=20)
+        late = evaluate(home, profile(), minute=80)
+        assert early.home.unrealised_goals == pytest.approx(late.home.unrealised_goals)
 
 
 class TestPossessionAdjustment:
@@ -172,7 +167,6 @@ class TestEvaluate:
         assert result.home.shot_quality > 1.0
         assert result.home.possession_adjustment < 0
         assert result.home.odds_factor > 1.0
-        assert result.home.time_multiplier == pytest.approx(1.20)
 
     def test_team_lookup_by_side(self) -> None:
         result = evaluate(profile(shots_on_target=5), profile(), minute=60)

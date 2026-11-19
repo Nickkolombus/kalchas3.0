@@ -133,7 +133,8 @@ class TestPresets:
         assert weights.get("pressure_index", "sofft_points") == 16.0
         assert weights.get("pressure_index", "corner_points") == 10.0
         assert weights.get("pressure_index", "da_points") == 4.0
-        assert weights.get("pressure_index", "time_mult_0_30") == 0.85
+        # A retired coefficient still saved in the database is ignored.
+        assert "time_mult_0_30" not in weights.overrides.get("pressure_index", {})
 
     def test_custom_pressure_index_points_are_kept(self) -> None:
         weights = WeightSet.from_overrides(

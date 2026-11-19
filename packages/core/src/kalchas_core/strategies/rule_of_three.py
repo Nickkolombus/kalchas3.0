@@ -5,7 +5,11 @@ rate without the goals to match is overdue, and this measures by how much.
 
     quality  = quality_base + quality_slope × SOT/(SOT + SOFFT)
     UG_base  = SOT × sot_weight × quality + SOFFT × sofft_weight − goals
-    UG       = UG_base × (1 + possession_adj) × odds × game_state × time
+    UG       = UG_base × (1 + possession_adj) × odds × game_state
+
+There is no time-of-match multiplier any more (removed 2026-11-20): it boosted
+late readings, where the market already prices the clock, and on 5-18 Nov the
+61-75' alerts it pushed over the threshold hit 48% against 59% for the rest.
 
 Ported from Kalchas 2.2 `utils/rule_of_three.py` and
 `strategies/strategy_001_rule_of_three/formula.py`. The arithmetic is
@@ -31,9 +35,8 @@ STRATEGY_KEY = "rule_of_three"
 SHOTS_OFF_TARGET_DISCOUNT = 6.0
 SHOTS_PER_EXPECTED_GOAL = 3.0
 
-# Minute assumed when the caller does not supply one. Carried over from 2.2,
-# where the game-state modifier defaulted to mid-match while the time
-# multiplier defaulted to neutral instead -- see `evaluate`.
+# Minute the game-state modifier assumes when the caller does not supply one.
+# Carried over from 2.2.
 ASSUMED_MINUTE = 45
 
 
@@ -91,7 +94,6 @@ class TeamUnrealised:
     possession_adjustment: float
     odds_factor: float
     game_state_modifier: float
-    time_multiplier: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,19 +172,6 @@ def game_state_modifier(team_goals: int, opponent_goals: int, minute: int) -> fl
     return 0.95 - 0.10 * time_factor
 
 
-def time_of_match_multiplier(minute: int | None, weights: WeightSet) -> float:
-    """Goals cluster late, so late pressure is worth more."""
-    if not minute or minute <= 0:
-        return 1.0
-    if minute <= 30:
-        return weights.get(STRATEGY_KEY, "time_mult_0_30")
-    if minute <= 60:
-        return weights.get(STRATEGY_KEY, "time_mult_31_60")
-    if minute <= 75:
-        return weights.get(STRATEGY_KEY, "time_mult_61_75")
-    return weights.get(STRATEGY_KEY, "time_mult_75_plus")
-
-
 def possession_adjustment(possession: float | None, weights: WeightSet) -> float:
     """Penalty for teams seeing little of the ball. No bonus above 50%."""
     if possession is None:
@@ -252,14 +241,12 @@ def _evaluate_team(
 
     possession_adj = possession_adjustment(team.possession, weights)
     odds = odds_difficulty_factor(team.kickoff_odds, opponent.kickoff_odds)
-    # 2.2 assumed mid-match here when the minute was unknown, but neutral in
-    # the time multiplier below. Preserved: changing it would move every
-    # historical value computed without a minute.
+    # 2.2 assumed mid-match here when the minute was unknown. Preserved:
+    # changing it would move every historical value computed without a minute.
     state = game_state_modifier(team.goals, opponent.goals, minute or ASSUMED_MINUTE)
-    time_mult = time_of_match_multiplier(minute, weights)
 
     return TeamUnrealised(
-        unrealised_goals=base * (1 + possession_adj) * odds * state * time_mult,
+        unrealised_goals=base * (1 + possession_adj) * odds * state,
         effective_shots_on_target=team.effective_shots_on_target,
         expected_goals=team.expected_goals,
         goals=team.goals,
@@ -267,7 +254,6 @@ def _evaluate_team(
         possession_adjustment=possession_adj,
         odds_factor=odds,
         game_state_modifier=state,
-        time_multiplier=time_mult,
     )
 
 

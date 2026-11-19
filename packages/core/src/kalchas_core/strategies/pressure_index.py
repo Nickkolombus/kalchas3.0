@@ -2,7 +2,11 @@
 
     PI = √ΔSOT·sot_points + √ΔSOFFT·sofft_points
        + √ΔCorners·corner_points + √ΔDA·da_points
-    PI × game_state × time_multiplier, clamped to 0-100
+    PI × game_state, clamped to 0-100
+
+There is no time-of-match multiplier any more (removed 2026-11-20): it pushed
+the top readings late (52% after 75'), where the odds already expect the goal,
+and at equal alert counts the boosted index picked no more goals than the odds.
 
 Counting events over a window and square-rooting them gives diminishing
 returns, so a team that takes eight shots in ten minutes reads as busier than
@@ -58,7 +62,6 @@ class TeamPressure:
     burst: float
     deltas: TeamDeltas
     game_state_modifier: float
-    time_multiplier: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,19 +112,6 @@ def game_state_modifier(team_goals: int, opponent_goals: int) -> float:
     return 1.10
 
 
-def time_multiplier(minute: int | None, weights: WeightSet) -> float:
-    """Late pressure is worth more, because late goals are more frequent."""
-    if not minute or minute <= 0:
-        return 1.0
-    if minute <= 30:
-        return weights.get(STRATEGY_KEY, "time_mult_0_30")
-    if minute <= 60:
-        return weights.get(STRATEGY_KEY, "time_mult_31_60")
-    if minute <= 75:
-        return weights.get(STRATEGY_KEY, "time_mult_61_75")
-    return weights.get(STRATEGY_KEY, "time_mult_75_plus")
-
-
 def raw_pressure(deltas: TeamDeltas, weights: WeightSet) -> float:
     """Square-root-scaled event count, clamped to 0-100.
 
@@ -145,19 +135,17 @@ def _team_pressure(
     *,
     goals: int,
     opponent_goals: int,
-    minute: int,
     weights: WeightSet,
 ) -> TeamPressure:
     deltas = window.deltas(side)
     raw = raw_pressure(deltas, weights)
 
     state = game_state_modifier(goals, opponent_goals)
-    time_mult = time_multiplier(minute, weights)
 
     # Clamped twice, as in 2.2: once inside raw_pressure and again after the
-    # modifiers, so a maxed-out raw score multiplied by a chasing team's 1.15
+    # modifier, so a maxed-out raw score multiplied by a chasing team's 1.15
     # still lands at 100 rather than 115.
-    pressure = min(MAX_PRESSURE, max(MIN_PRESSURE, raw * state * time_mult))
+    pressure = min(MAX_PRESSURE, max(MIN_PRESSURE, raw * state))
 
     burst = raw_pressure(burst_window.deltas(side), weights) if burst_window else 0.0
 
@@ -167,7 +155,6 @@ def _team_pressure(
         burst=burst,
         deltas=deltas,
         game_state_modifier=state,
-        time_multiplier=time_mult,
     )
 
 
@@ -210,7 +197,6 @@ def evaluate(
         require_full_span=False,
     )
     w = weights or WeightSet.defaults()
-    minute = timeline.current_minute
 
     return PressureIndexResult(
         home=_team_pressure(
@@ -219,7 +205,6 @@ def evaluate(
             Side.HOME,
             goals=home_goals,
             opponent_goals=away_goals,
-            minute=minute,
             weights=w,
         ),
         away=_team_pressure(
@@ -228,7 +213,6 @@ def evaluate(
             Side.AWAY,
             goals=away_goals,
             opponent_goals=home_goals,
-            minute=minute,
             weights=w,
         ),
         window_start_minute=window.start_minute,

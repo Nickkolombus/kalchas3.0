@@ -25,7 +25,6 @@ from kalchas_core.strategies.pressure_index import (
     game_state_modifier,
     last_10min_block,
     raw_pressure,
-    time_multiplier,
 )
 from kalchas_core.weights import WeightSet
 
@@ -90,7 +89,6 @@ class TestRawPressure:
             math.sqrt(2) * 26.0 + math.sqrt(1) * 16.0 + math.sqrt(2) * 10.0 + math.sqrt(8) * 4.0
         )
         assert raw == pytest.approx(expected)
-        assert raw * time_multiplier(28, DEFAULTS) == pytest.approx(70.4, abs=0.2)
 
     def test_shots_off_target_are_derived_from_the_shot_totals(self) -> None:
         assert raw_pressure(deltas(shots=5, shots_on_target=2), DEFAULTS) == pytest.approx(
@@ -122,19 +120,6 @@ class TestGameState:
     def test_two_down_is_worth_slightly_less_than_one_down(self) -> None:
         """Two behind is a bigger hill, so the signal is trusted marginally less."""
         assert game_state_modifier(0, 2) < game_state_modifier(0, 1)
-
-
-class TestTimeMultiplier:
-    @pytest.mark.parametrize(
-        ("minute", "expected"),
-        [(30, 0.90), (31, 1.00), (60, 1.00), (61, 1.10), (75, 1.10), (76, 1.20)],
-    )
-    def test_bands(self, minute: int, expected: float) -> None:
-        assert time_multiplier(minute, DEFAULTS) == pytest.approx(expected)
-
-    @pytest.mark.parametrize("minute", [None, 0])
-    def test_unknown_minute_is_neutral(self, minute: int | None) -> None:
-        assert time_multiplier(minute, DEFAULTS) == 1.0
 
 
 class TestEvaluate:
@@ -177,8 +162,15 @@ class TestEvaluate:
         )
         assert result is not None
         assert result.home.game_state_modifier == pytest.approx(1.15)
-        assert result.home.time_multiplier == pytest.approx(1.20)
         assert result.home.deltas.shots_on_target == 3
+
+    def test_no_clock_boost(self) -> None:
+        """The time-of-match multiplier was removed: the same window reads the same late."""
+        early = evaluate(busy_timeline(start_minute=30, end_minute=40, home={"shots_on_target": 3}))
+        late = evaluate(busy_timeline(start_minute=70, end_minute=80, home={"shots_on_target": 3}))
+        assert early is not None and late is not None
+        assert early.home.pressure > 0
+        assert early.home.pressure == pytest.approx(late.home.pressure)
 
     def test_pressure_is_capped_after_the_modifiers(self) -> None:
         """A maxed raw score times a chasing team's 1.15 must still land at 100."""
