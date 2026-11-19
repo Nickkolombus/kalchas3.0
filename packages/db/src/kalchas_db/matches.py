@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from sqlalchemy import bindparam, text
+from sqlalchemy.exc import SQLAlchemyError
 
 from kalchas_db.sync import sync_engine
+
+logger = logging.getLogger(__name__)
 
 UPSERT_MATCH = text(
     """
@@ -128,6 +132,85 @@ DELETE_STALE_MATCHES = text(
     """
     DELETE FROM matches
     WHERE updated_at < NOW() - make_interval(mins => :max_age_minutes)
+    """
+)
+
+# Runs in the same transaction as DELETE_STALE_MATCHES, so NOW() and therefore
+# the cutoff are the same in both: every match deleted was archived first.
+# Matches with no recorded minutes are skipped (nothing to backtest).
+ARCHIVE_STALE_MATCHES = text(
+    """
+    INSERT INTO match_history (
+        match_id, home_team, away_team, home_team_id, away_team_id,
+        league_name, league_id, country_name, status_short,
+        home_score, away_score, last_minute, kickoff_at, last_seen_at,
+        odds, minutes, events, archived_at
+    )
+    SELECT
+        m.match_id, m.home_team, m.away_team, m.home_team_id, m.away_team_id,
+        m.league_name, m.league_id, m.country_name, m.status_short,
+        m.home_score, m.away_score, m.minute, m.kickoff_at, m.updated_at,
+        COALESCE(m.odds, '{}'::jsonb),
+        mins.minutes,
+        COALESCE(evs.events, '[]'::jsonb),
+        NOW()
+    FROM matches m
+    JOIN LATERAL (
+        SELECT jsonb_agg(
+            jsonb_build_object(
+                'minute', mm.minute,
+                'home', mm.home_stats,
+                'away', mm.away_stats,
+                'home_goals', mm.home_goals,
+                'away_goals', mm.away_goals
+            )
+            ORDER BY mm.minute
+        ) AS minutes
+        FROM match_minutes mm
+        WHERE mm.match_id = m.match_id
+    ) mins ON mins.minutes IS NOT NULL
+    LEFT JOIN LATERAL (
+        SELECT jsonb_agg(
+            jsonb_build_object(
+                'type', e.event_type,
+                'minute', e.minute,
+                'side', e.side,
+                'team', e.team,
+                'player', e.player_name,
+                'detail', e.detail,
+                'payload', e.payload
+            )
+            ORDER BY e.minute, e.event_type, e.event_key
+        ) AS events
+        FROM match_events e
+        WHERE e.match_id = m.match_id
+    ) evs ON TRUE
+    WHERE m.updated_at < NOW() - make_interval(mins => :max_age_minutes)
+    ON CONFLICT (match_id) DO UPDATE SET
+        home_team = EXCLUDED.home_team,
+        away_team = EXCLUDED.away_team,
+        home_team_id = EXCLUDED.home_team_id,
+        away_team_id = EXCLUDED.away_team_id,
+        league_name = EXCLUDED.league_name,
+        league_id = EXCLUDED.league_id,
+        country_name = EXCLUDED.country_name,
+        status_short = EXCLUDED.status_short,
+        home_score = EXCLUDED.home_score,
+        away_score = EXCLUDED.away_score,
+        last_minute = EXCLUDED.last_minute,
+        kickoff_at = EXCLUDED.kickoff_at,
+        last_seen_at = EXCLUDED.last_seen_at,
+        odds = EXCLUDED.odds,
+        minutes = EXCLUDED.minutes,
+        events = EXCLUDED.events,
+        archived_at = EXCLUDED.archived_at
+    """
+)
+
+PRUNE_MATCH_HISTORY = text(
+    """
+    DELETE FROM match_history
+    WHERE archived_at < NOW() - make_interval(days => :history_days)
     """
 )
 
@@ -465,9 +548,26 @@ def get_matches_sync(dsn: str, match_ids: list[str]) -> dict[str, dict[str, Any]
     return {str(row["match_id"]): dict(row) for row in rows}
 
 
-def delete_stale_matches_sync(dsn: str, *, max_age_minutes: int = 360) -> int:
-    """Drop finished/abandoned matches (and cascaded minutes) past the retention window."""
+def delete_stale_matches_sync(
+    dsn: str, *, max_age_minutes: int = 360, history_days: int = 60
+) -> int:
+    """Drop finished/abandoned matches (and cascaded minutes) past the retention window.
+
+    Each one is first copied into `match_history` with its minutes and events,
+    in the same transaction, and history older than `history_days` is pruned.
+    `history_days <= 0` keeps no history (the old behaviour).
+    """
+    age = {"max_age_minutes": int(max_age_minutes)}
     eng = sync_engine(dsn)
     with eng.begin() as conn:
-        result = conn.execute(DELETE_STALE_MATCHES, {"max_age_minutes": int(max_age_minutes)})
+        if history_days > 0:
+            # A savepoint, so a missing table (scanner deployed before the API
+            # ran migration 0039) still lets the live tables be cleaned.
+            try:
+                with conn.begin_nested():
+                    conn.execute(ARCHIVE_STALE_MATCHES, age)
+                    conn.execute(PRUNE_MATCH_HISTORY, {"history_days": int(history_days)})
+            except SQLAlchemyError:
+                logger.exception("match history archive failed; cleaning without it")
+        result = conn.execute(DELETE_STALE_MATCHES, age)
         return int(result.rowcount or 0)

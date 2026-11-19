@@ -159,6 +159,8 @@ class ScannerConfig:
     max_matches_per_cycle: int = 400
     max_stats_http_per_cycle: int = 15
     stale_cleanup_minutes: int = 360
+    match_history_days: int = 60
+    """Days a cleaned-up match's minute-by-minute stats stay in `match_history`."""
     cleanup_every_cycles: int = 30
     odds_refresh_sec: int = 600
     live_odds_refresh_sec: int = 45
@@ -997,7 +999,9 @@ class Scanner:
             from kalchas_db.matches import delete_stale_matches_sync
 
             deleted = delete_stale_matches_sync(
-                dsn, max_age_minutes=self.config.stale_cleanup_minutes
+                dsn,
+                max_age_minutes=self.config.stale_cleanup_minutes,
+                history_days=self.config.match_history_days,
             )
             if deleted:
                 logger.info("cleaned %s stale matches", deleted)
