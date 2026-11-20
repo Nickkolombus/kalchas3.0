@@ -385,6 +385,35 @@ def insert_alert_outcome_sync(
         )
 
 
+def _results_filter(
+    *,
+    since: datetime,
+    until: datetime,
+    strategies: list[str] | None,
+    state: str | None,
+    team: str | None,
+    league: str | None,
+) -> tuple[str, dict[str, Any]]:
+    """WHERE clause and params shared by the results list and its summaries."""
+    where = ["a.created_at >= :since", "a.created_at < :until"]
+    params: dict[str, Any] = {"since": since, "until": until}
+    if strategies:
+        where.append("a.strategy_key IN :strategies")
+        params["strategies"] = list(strategies)
+    if state == "Monitoring":
+        where.append("o.state IS NULL")
+    elif state:
+        where.append(f"{RESULT_STATE} = :state")
+        params["state"] = state
+    if team:
+        where.append("a.team = :team")
+        params["team"] = team
+    if league:
+        where.append("COALESCE(a.payload->>'league', '') ILIKE :league")
+        params["league"] = f"%{league.strip()}%"
+    return " AND ".join(where), params
+
+
 def list_alert_results_sync(
     dsn: str,
     *,
@@ -400,38 +429,26 @@ def list_alert_results_sync(
     """Filter alert history. `state` is Confirmed / Expired / Void / Monitoring."""
     from sqlalchemy import bindparam
 
-    where = ["a.created_at >= :since", "a.created_at < :until"]
-    params: dict[str, Any] = {
-        "since": since,
-        "until": until,
-        "limit": int(limit),
-        "offset": int(offset),
-    }
-    if strategies:
-        where.append("a.strategy_key IN :strategies")
-        params["strategies"] = list(strategies)
-    if state == "Monitoring":
-        where.append("o.state IS NULL")
-    elif state:
-        where.append(f"{RESULT_STATE} = :state")
-        params["state"] = state
-    if team:
-        where.append("a.team = :team")
-        params["team"] = team
-    if league:
-        where.append("COALESCE(a.payload->>'league', '') ILIKE :league")
-        params["league"] = f"%{league.strip()}%"
-
-    clause = " AND ".join(where)
+    clause, params = _results_filter(
+        since=since,
+        until=until,
+        strategies=strategies,
+        state=state,
+        team=team,
+        league=league,
+    )
+    params.update({"limit": int(limit), "offset": int(offset)})
     list_sql = text(
         f"""
         SELECT a.id, a.match_id, a.strategy_slot, a.strategy_key, a.team, a.value,
                a.minute, a.score, a.home_team, a.away_team, a.created_at,
                a.payload, {RESULT_STATE} AS state, o.decision, o.detail, o.evaluated_at,
-               (m.match_id IS NOT NULL) AS live
+               (m.match_id IS NOT NULL) AS live,
+               ob.primary_variant AS over_primary, ob.bets AS over_bets
         FROM alerts a
         LEFT JOIN alert_outcomes o ON o.alert_id = a.id
         LEFT JOIN matches m ON m.match_id = a.match_id
+        LEFT JOIN alert_over_bets ob ON ob.alert_id = a.id
         WHERE {clause}
         ORDER BY a.created_at DESC
         LIMIT :limit OFFSET :offset

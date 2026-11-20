@@ -38,6 +38,7 @@ from kalchas_core.h2h import (
     orient_h2h_payload,
 )
 from kalchas_core.odds import fresh_live_line
+from kalchas_core.over_bet import DEFAULT_FIRST_HALF_MODE, over_bets_for_alert
 from kalchas_core.runner import (
     DEFAULT_THRESHOLDS,
     board_snapshot,
@@ -76,6 +77,8 @@ from kalchas_scanner.store import MinuteStore
 logger = logging.getLogger("kalchas.scanner")
 
 TERMINAL_STATUS = frozenset({"FT", "AET", "PEN", "CANC", "PST", "AWD"})
+GRADED_STATUS = frozenset({"FT", "AET", "PEN"})
+"""Finished on the pitch: Over bets are graded. Cancelled or awarded ones are not."""
 
 TEAM_FORM_CACHE_HOURS = 12
 """A team's form only changes when it plays a new finished fixture, so this
@@ -196,6 +199,8 @@ class Scanner:
     _live_odds_fetched_at: float = 0.0
     _comment_elapsed_by_match: dict[str, int] = field(default_factory=dict)
     _full_time_match_ids: set[str] = field(default_factory=set)
+    over_first_half_mode: str = DEFAULT_FIRST_HALF_MODE
+    """Which Over bet a first-half alert shows (admin `over_bet_settings`)."""
     _status_by_match: dict[str, str] = field(default_factory=dict)
     _stats_http_used: int = 0
     _stats_http_window_at: float = 0.0
@@ -646,6 +651,7 @@ class Scanner:
                 away_team=match.away_team,
             )
             self._settle_open_alerts(ended, events)
+            self._grade_over_bets(ended)
             return []
         # Live get_events / WS rows already carry statistics, lineup, substitutions,
         # goalscorer, cards, and country. Extra get_statistics / get_lineups /
@@ -834,6 +840,14 @@ class Scanner:
             }
             if goal_odds:
                 payload["live_goal_odds"] = goal_odds
+            over_bet = over_bets_for_alert(
+                score=payload["score"],
+                first_half=first_half,
+                goal_odds=goal_odds,
+                first_half_mode=self.over_first_half_mode,
+            )
+            if over_bet:
+                payload["over_bet"] = over_bet
             if cand.strategy_key == "delta_goal":
                 payload["form_bar"] = detail
             if cand.side is not None:
@@ -926,6 +940,12 @@ class Scanner:
                 self.sweet_spot = SweetSpotWindows.from_mapping(get_board_settings(dsn))
             except Exception:
                 logger.exception("failed loading sweet-spot windows")
+            try:
+                from kalchas_db.over_bets import get_settings_sync as get_over_bet_settings
+
+                self.over_first_half_mode = get_over_bet_settings(dsn)["first_half_mode"]
+            except Exception:
+                logger.exception("failed loading over-bet settings")
             stored_w = bundle.get("weights") or {}
             if stored_w:
                 self.weights = WeightSet.from_overrides(stored_w)
@@ -990,6 +1010,18 @@ class Scanner:
             )
         except Exception:
             logger.exception("failed settling alerts for %s", match.match_id)
+
+    def _grade_over_bets(self, match: LiveMatch) -> None:
+        """Grade each alert's Over bets once the match is over (90-minute score)."""
+        dsn = getattr(self.persist, "dsn", None)
+        if not dsn or (match.status_short or "").strip().upper() not in GRADED_STATUS:
+            return
+        try:
+            from kalchas_scanner.settle import persist_graded_over_bets
+
+            persist_graded_over_bets(dsn, match)
+        except Exception:
+            logger.exception("failed grading over bets for %s", match.match_id)
 
     def _maybe_cleanup(self) -> None:
         dsn = getattr(self.persist, "dsn", None)

@@ -146,6 +146,7 @@ const PIECES: Piece[] = [
   { key: "odds", label: "Kickoff odds 1 / X / 2", group: "Odds and head to head", line: "Odds: {odds_home} / {odds_draw} / {odds_away}", kinds: ALL },
   { key: "favourite", label: "Favourite at kickoff", group: "Odds and head to head", line: "Favourite: {favourite}", kinds: ALL },
   { key: "team_odds", label: "Odds of the signal's team", group: "Odds and head to head", line: "{team} at kickoff: {team_odds}", kinds: ALL },
+  { key: "over_bet", label: "Over bet + live price (paid adds it on its own)", group: "Odds and head to head", line: "{over_bet}", kinds: ["alert"] },
   { key: "h2h", label: "Head to head", group: "Odds and head to head", line: "H2H: {h2h_home_wins}-{h2h_draws}-{h2h_away_wins} in {h2h_meetings}", kinds: ALL },
   { key: "lede", label: "The alert's first lines", group: "Reply", line: "{lede}", kinds: ["goal", "miss"] },
   { key: "lede_tick", label: "✅ + the alert's first lines", group: "Reply", line: "✅ {lede}", kinds: ["goal"] },

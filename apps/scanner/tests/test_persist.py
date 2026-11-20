@@ -1042,3 +1042,57 @@ def test_three_part_bundle_still_works_without_goal_markets() -> None:
     scanner._refresh_live_odds_cache()
     assert scanner._odds_payload("7") is not None
     assert scanner._live_goal_odds("7", home_goals=0, away_goals=0, first_half=False) is None
+
+
+def test_match_end_totals_read_half_time_and_ninety_minutes() -> None:
+    from types import SimpleNamespace
+
+    from kalchas_scanner.settle import match_end_totals
+
+    raw = {
+        "match_id": "9",
+        "match_status": "After ET",
+        "match_hometeam_score": "3",
+        "match_awayteam_score": "2",
+        "match_hometeam_ft_score": "2",
+        "match_awayteam_ft_score": "2",
+        "match_hometeam_halftime_score": "1",
+        "match_awayteam_halftime_score": "0",
+    }
+    match = SimpleNamespace(raw=raw, status_short="AET", home_score=3, away_score=2)
+    assert match_end_totals(match) == (1, 4)
+    bare = SimpleNamespace(raw=None, status_short="FT", home_score=2, away_score=1)
+    assert match_end_totals(bare) == (None, 3)
+    extra_time = SimpleNamespace(raw=None, status_short="AET", home_score=3, away_score=2)
+    assert match_end_totals(extra_time) == (None, None)
+
+
+def test_graded_rows_use_the_stamped_bet_or_rebuild_it_from_stored_prices() -> None:
+    from kalchas_core.over_bet import over_bets_for_alert
+    from kalchas_scanner.settle import graded_over_bet_rows
+
+    odds = {"ft": {"1.5": {"over": 1.7, "under": 2.1}, "0.5": {"over": 1.2, "under": 4.0}}}
+    stamped = over_bets_for_alert(
+        score="0-0", first_half=True, goal_odds=odds, first_half_mode="ht_o05"
+    )
+    rows = graded_over_bet_rows(
+        [
+            {"id": 1, "minute": 30, "score": "0-0", "over_bet": stamped},
+            {"id": 2, "minute": 70, "score": "1-0", "over_bet": None, "live_goal_odds": odds},
+        ],
+        ht_total=0,
+        ft_total=2,
+    )
+    first, second = rows
+    assert first["primary_variant"] == "ht_o05"
+    assert first["bets"]["ht_o05"]["won"] is False
+    assert first["bets"]["ft_o15"]["won"] is True
+    assert (first["ht_goals"], first["ft_goals"]) == (0, 2)
+    assert second["primary_variant"] == "ft_o05"
+    assert second["bets"]["ft_o05"] == {
+        "period": "ft",
+        "line": 1.5,
+        "label": "Over 1.5 FT",
+        "price": 1.7,
+        "won": True,
+    }

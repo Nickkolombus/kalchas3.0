@@ -97,6 +97,79 @@ def outcome_snapshot(
     }
 
 
+def match_end_totals(match: Any) -> tuple[int | None, int | None]:
+    """(half-time goals, 90-minute goals) of a finished match, None where unknown.
+
+    Read from the provider row (``match_*_halftime_score`` / ``match_*_ft_score``)
+    so extra-time goals never count; a plain FT row falls back to its score.
+    """
+    from kalchas_football import parse_results
+
+    raw = getattr(match, "raw", None)
+    parsed = parse_results([raw]) if isinstance(raw, dict) and raw.get("match_id") else []
+    status = (getattr(match, "status_short", "") or "").strip().upper()
+    ht = ft = None
+    if parsed:
+        row = parsed[0]
+        if row.get("home_ht") is not None and row.get("away_ht") is not None:
+            ht = int(row["home_ht"]) + int(row["away_ht"])
+        if row.get("home_90") is not None and row.get("away_90") is not None:
+            ft = int(row["home_90"]) + int(row["away_90"])
+    if ft is None and status == "FT":
+        ft = int(getattr(match, "home_score", 0) or 0) + int(getattr(match, "away_score", 0) or 0)
+    return ht, ft
+
+
+def graded_over_bet_rows(
+    alerts: list[dict[str, Any]], *, ht_total: int | None, ft_total: int | None
+) -> list[dict[str, Any]]:
+    """One write-once row per alert. Alerts fired before ``over_bet`` was stamped
+    get their bets rebuilt from the stored ``live_goal_odds`` (first-half alerts
+    then show the default bet)."""
+    from kalchas_core.over_bet import grade_over_bets, over_bets_for_alert
+
+    rows: list[dict[str, Any]] = []
+    for alert in alerts:
+        over_bet = alert.get("over_bet")
+        if not isinstance(over_bet, dict):
+            over_bet = over_bets_for_alert(
+                score=alert.get("score"),
+                first_half=int(alert.get("minute") or 0) <= 45,
+                goal_odds=alert.get("live_goal_odds"),
+            )
+        graded = grade_over_bets(over_bet, ht_total=ht_total, ft_total=ft_total)
+        if not graded or not graded["bets"]:
+            continue
+        rows.append(
+            {
+                "alert_id": int(alert["id"]),
+                "primary_variant": str(graded["primary"]),
+                "bets": graded["bets"],
+                "ht_goals": ht_total,
+                "ft_goals": ft_total,
+            }
+        )
+    return rows
+
+
+def persist_graded_over_bets(dsn: str, match: Any) -> int:
+    """Grade every not-yet-graded alert of a finished match. Needs the 90-minute total."""
+    from kalchas_db.over_bets import (
+        insert_graded_over_bets_sync,
+        list_ungraded_alerts_for_match_sync,
+    )
+
+    ht_total, ft_total = match_end_totals(match)
+    if ft_total is None:
+        return 0
+    alerts = list_ungraded_alerts_for_match_sync(dsn, str(match.match_id))
+    if not alerts:
+        return 0
+    return insert_graded_over_bets_sync(
+        dsn, graded_over_bet_rows(alerts, ht_total=ht_total, ft_total=ft_total)
+    )
+
+
 def persist_settled_alerts(
     dsn: str,
     *,

@@ -30,6 +30,11 @@ from kalchas_api.admin_auth import (
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+logger = logging.getLogger("kalchas.api.admin")
+
+
+class OverBetSettingsIn(BaseModel):
+    first_half_mode: str = Field(pattern="^(ft_o15|ht_o05)$")
 
 
 class LoginIn(BaseModel):
@@ -585,6 +590,7 @@ def _result_item(row: dict[str, Any]) -> dict[str, Any]:
         "settle_score": detail.get("settle_score"),
         "settle_minute": detail.get("settle_minute"),
         "live": bool(row.get("live")),
+        "over_bet": _over_item(row, payload),
         "factors": factors_from_payload(
             payload,
             strategy=str(row["strategy_key"]),
@@ -593,6 +599,72 @@ def _result_item(row: dict[str, Any]) -> dict[str, Any]:
             score=str(row["score"]) if row.get("score") else None,
         ),
     }
+
+
+def _over_item(row: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any] | None:
+    """The alert's Over bets: graded at full time when ``alert_over_bets`` has the
+    row, else as stamped at fire (``won`` None). ``return`` is a 1-unit stake at
+    the stored price, no commission."""
+    from kalchas_core.over_bet import VARIANT_LABELS, bet_return
+
+    graded = _json_object(row.get("over_bets"))
+    stamped = _json_object(payload.get("over_bet"))
+    if graded:
+        bets, primary = graded, row.get("over_primary") or stamped.get("primary")
+    elif stamped:
+        bets, primary = _json_object(stamped.get("bets")), stamped.get("primary")
+    else:
+        return None
+    out: dict[str, dict[str, Any]] = {}
+    for variant, bet in bets.items():
+        if not isinstance(bet, dict):
+            continue
+        out[str(variant)] = {
+            "name": VARIANT_LABELS.get(str(variant), str(variant)),
+            "label": bet.get("label"),
+            "price": bet.get("price"),
+            "won": bet.get("won"),
+            "return": bet_return(bet.get("price"), bet.get("won")),
+        }
+    chosen = out.get(str(primary)) or {}
+    return {"primary": primary, "graded": bool(graded), **chosen, "bets": out}
+
+
+def _over_summary(**filters: Any) -> list[dict[str, Any]]:
+    """Per bet variant over the filtered alerts; empty if the table is not there yet."""
+    from kalchas_core.over_bet import VARIANT_LABELS
+    from kalchas_db.over_bets import over_bet_summary_sync
+
+    try:
+        rows = over_bet_summary_sync(_dsn(), **filters)
+    except Exception:
+        logger.exception("over-bet summary failed")
+        return []
+    for row in rows:
+        row["name"] = VARIANT_LABELS.get(row["variant"], row["variant"])
+        row["hit_rate"] = row["won"] / row["graded"] if row["graded"] else None
+        row["roi"] = row["profit"] / row["priced"] if row["priced"] else None
+    return rows
+
+
+@router.get("/over-bet/settings")
+def get_over_bet_settings(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    from kalchas_db.over_bets import get_settings_sync
+
+    try:
+        return get_settings_sync(_dsn())
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"settings unavailable: {exc}") from exc
+
+
+@router.put("/over-bet/settings")
+def put_over_bet_settings(request: Request, body: OverBetSettingsIn) -> dict[str, Any]:
+    """Which Over bet first-half alerts show from now on. Earlier alerts keep theirs."""
+    require_admin(request)
+    from kalchas_db.over_bets import set_first_half_mode_sync
+
+    return set_first_half_mode_sync(_dsn(), body.first_half_mode)
 
 
 @router.get("/results")
@@ -638,10 +710,18 @@ def admin_results(
         raise HTTPException(status_code=503, detail=f"results unavailable: {exc}") from exc
     settled = int(summary["confirmed"]) + int(summary["expired"])
     hit_rate = (int(summary["confirmed"]) / settled) if settled else None
+    over = _over_summary(
+        since=start,
+        until=end,
+        strategies=keys or None,
+        state=state or None,
+        team=team or None,
+        league=league or None,
+    )
     return {
         "since": start.isoformat(),
         "until": end.isoformat(),
-        "summary": {**summary, "hit_rate": hit_rate},
+        "summary": {**summary, "hit_rate": hit_rate, "over_bets": over},
         "patterns": pattern_summary(pattern_src) if patterns else [],
         "items": display,
     }
@@ -674,6 +754,37 @@ def _load_results(
     return [_result_item(row) for row in rows], summary
 
 
+OVER_CSV_COLUMNS: tuple[str, ...] = (
+    "over_bet",
+    "over_price",
+    "over_won",
+    "ft_o05_price",
+    "ft_o05_won",
+    "ft_o15_price",
+    "ft_o15_won",
+    "ht_o05_price",
+    "ht_o05_won",
+)
+
+
+def _over_csv(over: Any) -> dict[str, Any]:
+    if not isinstance(over, dict):
+        return {}
+
+    def won(value: Any) -> str:
+        return "" if value is None else ("1" if value else "0")
+
+    row: dict[str, Any] = {
+        "over_bet": over.get("label") or "",
+        "over_price": over.get("price") if over.get("price") is not None else "",
+        "over_won": won(over.get("won")),
+    }
+    for variant, bet in (over.get("bets") or {}).items():
+        row[f"{variant}_price"] = bet.get("price") if bet.get("price") is not None else ""
+        row[f"{variant}_won"] = won(bet.get("won"))
+    return row
+
+
 @router.get("/results.csv")
 def admin_results_csv(
     request: Request,
@@ -701,10 +812,12 @@ def admin_results_csv(
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"results unavailable: {exc}") from exc
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=list(CSV_COLUMNS), extrasaction="ignore")
+    writer = csv.DictWriter(
+        buf, fieldnames=[*CSV_COLUMNS, *OVER_CSV_COLUMNS], extrasaction="ignore"
+    )
     writer.writeheader()
     for item in items:
-        writer.writerow(csv_row(item))
+        writer.writerow({**csv_row(item), **_over_csv(item.get("over_bet"))})
     return Response(
         content=buf.getvalue(),
         media_type="text/csv; charset=utf-8",

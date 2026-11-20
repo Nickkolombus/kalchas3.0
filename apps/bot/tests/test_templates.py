@@ -491,3 +491,59 @@ def test_span_tags_render_in_a_template() -> None:
 def test_preview_returns_tag_values() -> None:
     out = t.preview("default", "paid", "alert", t.DEFAULT_TEMPLATES["alert"], [_row()])
     assert out["values"]["l10_sot"] == "SOT: <b>4</b> - 1"
+
+
+def _over_row(price: float | None = 1.7) -> dict[str, Any]:
+    row = _row()
+    row["payload"]["over_bet"] = {
+        "primary": "ft_o05",
+        "bets": {"ft_o05": {"period": "ft", "line": 1.5, "label": "Over 1.5 FT", "price": price}},
+    }
+    return row
+
+
+LINE = "🎯 Over 1.5 FT @ 1.70"
+
+
+def test_paid_channels_add_the_over_bet_line_free_and_x_do_not() -> None:
+    row = _over_row()
+    caption, fallback = t.builtin_alert([row])
+    texts = t.alert_texts([row], {}, caption=caption, fallback=fallback)
+    assert texts.paid.caption == caption + "\n\n" + LINE
+    assert texts.paid.fallback.endswith(LINE)
+    assert texts.discord_paid.endswith(LINE)
+    assert texts.free.caption == caption
+    assert texts.discord_free == caption
+    assert "Over 1.5" not in texts.x
+    # Built-in text with the line is not a template: nothing to retry.
+    assert not texts.paid.templated
+
+
+def test_over_line_without_a_price_and_without_a_bet() -> None:
+    texts = t.alert_texts([_over_row(price=None)], {}, caption="C", fallback="F")
+    assert texts.paid.caption == "C\n\n🎯 Over 1.5 FT"
+    plain = t.alert_texts([_row()], {}, caption="C", fallback="F")
+    assert plain.paid.caption == "C"
+
+
+def test_paid_template_gets_the_line_unless_it_places_the_tag() -> None:
+    row = _over_row()
+    caption, fallback = t.builtin_alert([row])
+    added = t.alert_texts(
+        [row], {(D, "paid", "alert"): "{home} v {away}"}, caption=caption, fallback=fallback
+    )
+    assert added.paid.caption == "Arsenal v Chelsea\n\n" + LINE
+    # If Telegram rejects the template, the retry is the built-in text with the line.
+    assert added.paid.builtin[0].endswith(LINE)
+    placed = t.alert_texts(
+        [row],
+        {(D, "paid", "alert"): "{over_line} at {over_price}\n{home}"},
+        caption=caption,
+        fallback=fallback,
+    )
+    assert placed.paid.caption == "Over 1.5 FT at 1.70\nArsenal"
+    discord = t.alert_texts(
+        [row], {(D, "discord", "alert"): "{home}"}, caption=caption, fallback=fallback
+    )
+    assert discord.discord_paid == "Arsenal\n\n" + LINE
+    assert discord.discord_free == "Arsenal"

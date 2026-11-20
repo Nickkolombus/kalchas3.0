@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from kalchas_core.chance import chance_for_alert
+from kalchas_core.over_bet import primary_bet
 from kalchas_core.weights import short_label_for
 
 from kalchas_bot.discord_channel import html_to_discord
@@ -281,6 +282,14 @@ TAGS: tuple[Tag, ...] = (
     Tag("odds_away", "Away win odds at kickoff", "Odds at kickoff", "4.20"),
     Tag("favourite", "Favourite at kickoff (lower odds)", "Odds at kickoff", "Arsenal"),
     Tag("team_odds", "Kickoff odds of the team the signal is for", "Odds at kickoff", "1.85"),
+    Tag(
+        "over_bet",
+        "Over bet with its live price (paid channels add it on their own)",
+        "Over bet",
+        "🎯 Over 1.5 FT @ 1.70",
+    ),
+    Tag("over_line", "Over bet without the price", "Over bet", "Over 1.5 FT"),
+    Tag("over_price", "Live price of the Over bet when the signal fired", "Over bet", "1.70"),
     Tag("h2h_meetings", "Past meetings counted", "Head to head", "8"),
     Tag("h2h_home_wins", "Home team wins", "Head to head", "4"),
     Tag("h2h_draws", "Draws", "Head to head", "2"),
@@ -591,7 +600,44 @@ def alert_values(rows: Sequence[Mapping[str, Any]], *, with_score: bool = False)
     values["chance"] = f"{chance.percent}%" if chance else ""
     values["chance_odds_only"] = f"{chance.baseline_percent}%" if chance else ""
     values.update(_h2h_values(payload.get("h2h")))
+    values.update(_over_values(payload.get("over_bet")))
     return values
+
+
+def _over_values(raw: object) -> dict[str, str]:
+    bet = primary_bet(raw)
+    if not bet or not bet.get("label"):
+        return {"over_bet": "", "over_line": "", "over_price": ""}
+    price = _odd(bet.get("price"))
+    label = _esc(str(bet["label"]))
+    shown = f"{price:.2f}" if price is not None else ""
+    return {
+        "over_bet": f"🎯 {label} @ {shown}" if shown else f"🎯 {label}",
+        "over_line": label,
+        "over_price": shown,
+    }
+
+
+OVER_TAGS = ("{over_bet}", "{over_line}", "{over_price}")
+
+
+def over_bet_line(rows: Sequence[Mapping[str, Any]]) -> str:
+    """The paid channels' Over bet line ("🎯 Over 1.5 FT @ 1.70"), or "" when none."""
+    if not rows:
+        return ""
+    return _over_values(_merged(ordered_rows(rows)).get("over_bet"))["over_bet"]
+
+
+def _uses_over_tag(body: str | None) -> bool:
+    return bool(body) and any(tag in body for tag in OVER_TAGS)  # type: ignore[operator]
+
+
+def _with_line(text: str, line: str, limit: int) -> str:
+    """``text`` plus the Over line on its own paragraph, when it fits."""
+    if not line or not text:
+        return text
+    joined = text + "\n\n" + line
+    return joined if len(joined) <= limit else text
 
 
 def _odds_values(raw: object, *, home: str, away: str, side: str) -> dict[str, str]:
@@ -805,25 +851,42 @@ def alert_texts(
     builtin = (caption, fallback)
     plain = ChannelText(caption, fallback, builtin)
     match_id = rows[0].get("match_id") if rows else None
+    # Paid channels (Telegram and Discord) carry the Over bet; free, X and the site do not.
+    line = over_bet_line(rows)
+    paid_builtin = (
+        _with_line(caption, line, CAPTION_LIMIT),
+        _with_line(fallback, line, TEXT_LIMIT),
+    )
+    paid_plain = ChannelText(*paid_builtin, paid_builtin)
     if not rows or not _has_kind(templates, "alert"):
-        return AlertTexts(plain, plain, caption, caption, alert_tweet_text(caption, match_id))
+        return AlertTexts(
+            paid_plain, plain, paid_plain.caption, caption, alert_tweet_text(caption, match_id)
+        )
     lead = strategy or lead_key(rows)
     caption_values = alert_values(rows, with_score=False)
     fallback_values = alert_values(rows, with_score=True)
     fallbacks: list[Fallback] = []
 
     def tier(channel: str) -> ChannelText:
+        base = paid_plain if channel == "paid" else plain
         picked = pick(templates, lead, channel, "alert")
         if picked is None:
-            return plain
+            return base
         owner, body = picked
         cap = render_or_builtin(body, caption_values, caption, kind="alert", limit=CAPTION_LIMIT)
         text = render_or_builtin(body, fallback_values, fallback, kind="alert", limit=TEXT_LIMIT)
         problem = cap.problem or text.problem
         if problem:
             fallbacks.append((owner, channel, "alert", problem))
-            return plain
-        return ChannelText(cap.text, text.text, builtin, owner)
+            return base
+        if channel == "paid" and not _uses_over_tag(body):
+            return ChannelText(
+                _with_line(cap.text, line, CAPTION_LIMIT),
+                _with_line(text.text, line, TEXT_LIMIT),
+                paid_builtin,
+                owner,
+            )
+        return ChannelText(cap.text, text.text, base.builtin, owner)
 
     paid = tier("paid")
     free = tier("free")
@@ -837,7 +900,10 @@ def alert_texts(
         if made.problem:
             fallbacks.append((owner, "discord", "alert", made.problem))
         else:
-            discord_paid = discord_free = made.text
+            discord_free = made.text
+            discord_paid = (
+                made.text if _uses_over_tag(body) else _with_line(made.text, line, DISCORD_LIMIT)
+            )
     x = alert_tweet_text(free.caption, match_id)
     picked = pick(templates, lead, "x", "alert")
     if picked is not None:

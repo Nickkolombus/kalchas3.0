@@ -50,6 +50,47 @@ type ResultFactors = {
   chance_baseline?: number | null;
 };
 
+type OverBetLeg = {
+  name: string;
+  label: string | null;
+  price: number | null;
+  won: boolean | null;
+  return: number | null;
+};
+
+type OverBet = OverBetLeg & {
+  primary: string;
+  graded: boolean;
+  bets: Record<string, OverBetLeg>;
+};
+
+type OverSummaryRow = {
+  variant: string;
+  name: string;
+  chosen: boolean;
+  graded: number;
+  won: number;
+  priced: number;
+  priced_won: number;
+  avg_price: number | null;
+  profit: number;
+};
+
+const OVER_VARIANTS: { key: string; name: string; when: string }[] = [
+  { key: "ft_o05", name: "FT Over +0.5", when: "Second-half alerts" },
+  { key: "ft_o15", name: "FT Over +1.5", when: "First-half alerts" },
+  { key: "ht_o05", name: "HT Over +0.5", when: "First-half alerts" },
+];
+
+const FIRST_HALF_MODES: [string, string][] = [
+  ["ft_o15", "FT Over +1.5"],
+  ["ht_o05", "HT Over +0.5"],
+];
+
+function units(v: number): string {
+  return `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)}`;
+}
+
 type ResultItem = {
   id: number;
   match_id: string;
@@ -66,6 +107,7 @@ type ResultItem = {
   settle_score?: string | null;
   settle_minute?: number | null;
   live: boolean;
+  over_bet?: OverBet | null;
   factors?: ResultFactors;
 };
 
@@ -268,6 +310,9 @@ export function AdminResults({
   const [logState, setLogState] = useState("");
   const [query, setQuery] = useState("");
   const [openRow, setOpenRow] = useState<number | null>(null);
+  const [overRows, setOverRows] = useState<OverSummaryRow[]>([]);
+  const [firstHalfMode, setFirstHalfMode] = useState<string | null>(null);
+  const [modeBusy, setModeBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!rangeValid(range)) return;
@@ -281,10 +326,13 @@ export function AdminResults({
       if (strategy) logParams.append("strategy", strategy);
       const [insights, rows] = await Promise.all([
         api<ResultsInsights>(`/api/admin/insights/results?${params.toString()}`),
-        api<{ items: ResultItem[] }>(`/api/admin/results?${logParams.toString()}`),
+        api<{ items: ResultItem[]; summary?: { over_bets?: OverSummaryRow[] } }>(
+          `/api/admin/results?${logParams.toString()}`,
+        ),
       ]);
       setBody(insights);
       setLog(rows.items);
+      setOverRows(rows.summary?.over_bets || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "load failed");
     } finally {
@@ -295,6 +343,29 @@ export function AdminResults({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    api<{ first_half_mode: string }>("/api/admin/over-bet/settings")
+      .then((s) => setFirstHalfMode(s.first_half_mode))
+      .catch(() => setFirstHalfMode(null));
+  }, [api]);
+
+  async function saveFirstHalfMode(mode: string) {
+    if (mode === firstHalfMode) return;
+    setModeBusy(true);
+    try {
+      const s = await api<{ first_half_mode: string }>("/api/admin/over-bet/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ first_half_mode: mode }),
+      });
+      setFirstHalfMode(s.first_half_mode);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "saving the first-half bet failed");
+    } finally {
+      setModeBusy(false);
+    }
+  }
 
   const names = useMemo(() => {
     const out: Record<string, string> = { ...(body?.names || {}) };
@@ -464,6 +535,81 @@ export function AdminResults({
           },
         ]}
       />
+
+      <Card
+        title="Over bets"
+        sub="Every alert read as an Over bet at the bookmaker's live price when it fired, graded on the 90-minute score. Second-half alerts: Over (goals + 0.5) to full time. First-half alerts: both bets are tracked; the switch picks the one paid alerts show from now on. Return is 1-unit stakes with no commission; alerts without a stored price count in the hit rate only."
+        right={
+          <div className="kit-tools">
+            <span className="kit-chips-label">First-half alerts show</span>
+            <div className="kit-seg">
+              {FIRST_HALF_MODES.map(([value, text]) => (
+                <button
+                  key={value}
+                  type="button"
+                  disabled={modeBusy || firstHalfMode == null}
+                  className={firstHalfMode === value ? "is-on" : ""}
+                  onClick={() => void saveFirstHalfMode(value)}
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
+          </div>
+        }
+      >
+        <div className="kit-table-wrap">
+          <table className="kit-table">
+            <thead>
+              <tr>
+                <th>Bet</th>
+                <th className="r">Graded</th>
+                <th className="r">Hit rate</th>
+                <th className="r">Priced</th>
+                <th className="r" title="Average stored price of the priced bets">Avg price</th>
+                <th className="r" title="Hit rate needed to break even at the average price">Break-even</th>
+                <th className="r" title="Profit in units from 1-unit stakes at the stored price">Return</th>
+                <th className="r">ROI</th>
+              </tr>
+            </thead>
+            <tbody>
+              {OVER_VARIANTS.map(({ key, name, when }) => {
+                const parts = overRows.filter((r) => r.variant === key);
+                const sum = (k: "graded" | "won" | "priced" | "priced_won" | "profit") =>
+                  parts.reduce((s, r) => s + r[k], 0);
+                const graded = sum("graded");
+                const priced = sum("priced");
+                const profit = sum("profit");
+                const avg = priced
+                  ? parts.reduce((s, r) => s + (r.avg_price || 0) * r.priced, 0) / priced
+                  : null;
+                const shown = key === "ft_o05" || key === firstHalfMode;
+                const tone = priced ? (profit >= 0 ? "res-pos" : "res-neg") : "";
+                return (
+                  <tr key={key}>
+                    <td>
+                      <b>{name}</b> {shown ? <span className="kit-tag">shown in alerts</span> : null}
+                      <small>{when}</small>
+                    </td>
+                    <td className="r kit-num">{fmtInt(graded)}</td>
+                    <td className="r kit-num">{graded ? pct(sum("won") / graded) : "–"}</td>
+                    <td className="r kit-num">
+                      {fmtInt(priced)}
+                      {priced ? <small>{pct(sum("priced_won") / priced)} hit</small> : null}
+                    </td>
+                    <td className="r kit-num">{avg != null ? avg.toFixed(2) : "–"}</td>
+                    <td className="r kit-num">{avg ? pct(1 / avg) : "–"}</td>
+                    <td className={`r kit-num ${tone}`}>{priced ? units(profit) : "–"}</td>
+                    <td className={`r kit-num ${tone}`}>
+                      {priced ? `${profit >= 0 ? "+" : "−"}${Math.abs((profit / priced) * 100).toFixed(1)}%` : "–"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       <Card
         title="Strategy scorecard"
@@ -672,6 +818,7 @@ export function AdminResults({
                 <th>At fire</th>
                 <th>Board at fire</th>
                 <th className="r" title="Live match-winner price of the alerted team when the alert fired">Live odds</th>
+                <th title="The Over bet the alert stands for, at the live price when it fired; a tick or cross once the match is over">Over bet</th>
                 <th>Settled</th>
                 <th>Outcome</th>
               </tr>
@@ -684,7 +831,7 @@ export function AdminResults({
                 return (
                   <Fragment key={day}>
                     <tr className="res-day">
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <b>{day === today ? "Today" : day === yesterday ? "Yesterday" : fmtDay(day)}</b>
                         {items.length} alerts
                         <span className="kit-num">
@@ -768,6 +915,20 @@ export function AdminResults({
                               );
                             })()}
                             <td className="kit-num">
+                              {row.over_bet?.label ? (
+                                <>
+                                  {row.over_bet.won === true ? <span className="res-pos">✓ </span> : null}
+                                  {row.over_bet.won === false ? <span className="res-neg">✕ </span> : null}
+                                  {row.over_bet.label}
+                                  <small>
+                                    {row.over_bet.price != null ? `@ ${Number(row.over_bet.price).toFixed(2)}` : "no price"}
+                                  </small>
+                                </>
+                              ) : (
+                                <span className="kit-muted">–</span>
+                              )}
+                            </td>
+                            <td className="kit-num">
                               {row.settle_score ? `${row.settle_score}${row.settle_minute != null ? ` ${row.settle_minute}′` : ""}` : "–"}
                             </td>
                             <td>
@@ -776,7 +937,7 @@ export function AdminResults({
                           </tr>
                           {openRow === row.id ? (
                             <tr className="res-expand">
-                              <td colSpan={8}>
+                              <td colSpan={9}>
                                 <div className="res-expand-grid">
                                   <div><span>Half</span><b>{f?.half || "–"}</b></div>
                                   <div><span>Score state</span><b>{f?.score_state || "–"}</b></div>
@@ -788,6 +949,16 @@ export function AdminResults({
                                   </div>
                                   <div><span>Sweet spot</span><b>{f?.sweet_spot == null ? "–" : f.sweet_spot ? "yes" : "no"}</b></div>
                                   <div><span>Minutes to goal</span><b>{gap != null ? `${gap}′` : "–"}</b></div>
+                                  {Object.entries(row.over_bet?.bets || {}).map(([key, leg]) => (
+                                    <div key={key}>
+                                      <span>{leg.name}</span>
+                                      <b>
+                                        {leg.label}
+                                        {leg.price != null ? ` @ ${Number(leg.price).toFixed(2)}` : " · no price"}
+                                        {leg.won == null ? " · open" : leg.won ? " · won" : " · lost"}
+                                      </b>
+                                    </div>
+                                  ))}
                                 </div>
                               </td>
                             </tr>
@@ -800,7 +971,7 @@ export function AdminResults({
               })}
               {!rows.length ? (
                 <tr>
-                  <td colSpan={8} className="kit-muted kit-pad">
+                  <td colSpan={9} className="kit-muted kit-pad">
                     {busy ? "Loading…" : "No alerts match these filters."}
                   </td>
                 </tr>

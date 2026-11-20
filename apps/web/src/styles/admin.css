@@ -3234,3 +3234,12 @@
   flex-basis: 100%;
   font-size: 0.75rem;
 }
+
+/* Over bets: profit / loss tone */
+.res-pos {
+  color: var(--good);
+}
+
+.res-neg {
+  color: var(--bad);
+}
