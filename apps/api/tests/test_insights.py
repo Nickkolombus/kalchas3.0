@@ -412,3 +412,38 @@ def test_visitors_and_overview_routes(monkeypatch) -> None:
     assert data["visitors"]["today"]["visitors"] == 1
     assert len(data["hit_daily"]) == 14
     assert {row["strategy"] for row in data["strategies"]} >= {"kscore"}
+
+
+def test_top_matches_groups_viewers_by_country_and_dates_in_zone() -> None:
+    from kalchas_api.insights import top_matches
+
+    named = {
+        "match_id": "m9",
+        "home_team": "Ajax",
+        "away_team": "PSV",
+        "league": "Eredivisie",
+        # 23:30 UTC on the 1st is already the 2nd in Athens.
+        "kickoff": "2026-11-01T23:30:00+00:00",
+    }
+    bare = {"match_id": "m2", "home_team": None, "away_team": None}
+    items = []
+    for who, country, matches in (
+        ("a", "NL", [named]),
+        ("b", "NL", [named, bare]),
+        ("c", "FI", [named]),
+        ("a", "NL", [named]),  # second visit, same viewer
+        ("d", "", [bare]),
+    ):
+        row = visit(TODAY, who)
+        row["country"] = country
+        row["matches"] = matches
+        items.append(row)
+    rows = top_matches(items, ATHENS)
+    assert [r["match_id"] for r in rows] == ["m9", "m2"]
+    top = rows[0]
+    assert top["viewers"] == 3
+    assert (top["home_team"], top["away_team"], top["league"]) == ("Ajax", "PSV", "Eredivisie")
+    assert top["date"] == "2026-11-02"
+    assert top["countries"] == [{"label": "NL", "visitors": 2}, {"label": "FI", "visitors": 1}]
+    assert rows[1]["home_team"] is None and rows[1]["date"] is None
+    assert rows[1]["countries"] == [{"label": "", "visitors": 1}, {"label": "NL", "visitors": 1}]

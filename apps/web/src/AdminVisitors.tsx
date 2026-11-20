@@ -25,6 +25,14 @@ import {
 
 type MatchRef = { match_id: string; home_team: string | null; away_team: string | null };
 
+/** A most-watched match: names when known, viewers per country (most first). */
+type WatchedMatch = MatchRef & {
+  league: string | null;
+  date: string | null;
+  viewers: number;
+  countries: { label: string; visitors: number }[];
+};
+
 type Visit = {
   id: number;
   visitor_id: string | null;
@@ -101,7 +109,7 @@ type VisitorsInsights = {
   devices: Share[];
   browsers: Share[];
   os: Share[];
-  matches: (MatchRef & { viewers: number })[];
+  matches: WatchedMatch[];
   watchlist: WatchlistUsage;
   filtered: number;
   log: Visit[];
@@ -543,12 +551,32 @@ export function AdminVisitors({ api, range, zone }: { api: Api; range: Range; zo
               </tr>
             </thead>
             <tbody>
-              {body.matches.map((m) => (
-                <tr key={m.match_id}>
-                  <td>{m.home_team && m.away_team ? `${m.home_team} v ${m.away_team}` : m.match_id}</td>
-                  <td className="r kit-num">{m.viewers}</td>
-                </tr>
-              ))}
+              {body.matches.map((m) => {
+                const named = Boolean(m.home_team && m.away_team);
+                const meta = [m.league, m.date ? fmtShort(m.date) : null].filter(Boolean).join(" · ");
+                return (
+                  <tr key={m.match_id}>
+                    <td>
+                      {named ? `${m.home_team} vs ${m.away_team}` : <span className="kit-num">{m.match_id}</span>}
+                      <span className="vis-match-meta">
+                        <span>{meta || (named ? "" : "Name not found")}</span>
+                        <span className="vis-flags">
+                          {m.countries.map((c) => (
+                            <span
+                              key={c.label || "unknown"}
+                              {...tip(countryName(c.label), [["Viewers", fmtInt(c.visitors)]])}
+                            >
+                              {countryFlag(c.label) || "?"}
+                              {c.visitors > 1 ? <small className="kit-num">{c.visitors}</small> : null}
+                            </span>
+                          ))}
+                        </span>
+                      </span>
+                    </td>
+                    <td className="r kit-num">{m.viewers}</td>
+                  </tr>
+                );
+              })}
               {!body.matches.length ? (
                 <tr>
                   <td colSpan={2} className="kit-muted kit-pad">

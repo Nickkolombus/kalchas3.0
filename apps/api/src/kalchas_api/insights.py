@@ -639,25 +639,44 @@ def duration_histogram(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any
     return out
 
 
-def top_matches(items: Sequence[Mapping[str, Any]], top: int = 8) -> list[dict[str, Any]]:
+def top_matches(
+    items: Sequence[Mapping[str, Any]], zone: tzinfo = UTC, top: int = 8
+) -> list[dict[str, Any]]:
+    """The most-viewed matches, each with where its viewers came from.
+
+    ``countries`` counts unique viewers per country code (``""`` = unknown),
+    most first; ``date`` is the kick-off day in `zone` when it is known.
+    """
     viewers: dict[str, set[str]] = defaultdict(set)
+    by_country: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
     names: dict[str, Mapping[str, Any]] = {}
     for item in items:
+        key = visitor_key(item)
+        country = str(item.get("country") or "")
         for match in item.get("matches") or []:
             mid = str(match.get("match_id") if isinstance(match, Mapping) else match)
-            viewers[mid].add(visitor_key(item))
+            viewers[mid].add(key)
+            by_country[mid][country].add(key)
             if isinstance(match, Mapping):
                 names[mid] = match
-    ranked = sorted(viewers.items(), key=lambda kv: -len(kv[1]))[:top]
-    return [
-        {
-            "match_id": mid,
-            "home_team": (names.get(mid) or {}).get("home_team"),
-            "away_team": (names.get(mid) or {}).get("away_team"),
-            "viewers": len(ids),
-        }
-        for mid, ids in ranked
-    ]
+    ranked = sorted(viewers.items(), key=lambda kv: (-len(kv[1]), kv[0]))[:top]
+    out = []
+    for mid, ids in ranked:
+        name = names.get(mid) or {}
+        kickoff = parse_time(name.get("kickoff"))
+        countries = sorted(by_country[mid].items(), key=lambda kv: (-len(kv[1]), kv[0]))
+        out.append(
+            {
+                "match_id": mid,
+                "home_team": name.get("home_team"),
+                "away_team": name.get("away_team"),
+                "league": name.get("league"),
+                "date": kickoff.astimezone(zone).date().isoformat() if kickoff else None,
+                "viewers": len(ids),
+                "countries": [{"label": c, "visitors": len(who)} for c, who in countries],
+            }
+        )
+    return out
 
 
 def daily_visitors(items: Sequence[Mapping[str, Any]], window: Window) -> list[dict[str, Any]]:
@@ -719,7 +738,7 @@ def visitors_insights(
         ),
         "browsers": _unique_by(cur, lambda item: str(item.get("browser") or "Other"), 5),
         "os": _unique_by(cur, lambda item: str(item.get("os") or "Other"), 5),
-        "matches": top_matches(cur),
+        "matches": top_matches(cur, zone),
         "watchlist": watchlist_usage(cur, within(chart), chart),
         "filtered": sum(
             1

@@ -181,11 +181,69 @@ SELECT_VISITS = text(
     """
 )
 
-SELECT_MATCH_NAMES = text(
-    """
-    SELECT match_id, home_team, away_team FROM matches WHERE match_id = ANY(:ids)
-    """
+# Where a viewed match's name can come from, best first. Live `matches` rows
+# are deleted once a game ends, so most viewed matches are only found in the
+# archives or in the alerts we sent on them. An alert's own time stands in for
+# kick-off when nothing better is known: alerts fire during the game.
+MATCH_NAME_SOURCES = (
+    text(
+        """
+        SELECT match_id, home_team, away_team, league_name AS league, kickoff_at AS kickoff
+        FROM matches WHERE match_id = ANY(:ids)
+        """
+    ),
+    text(
+        """
+        SELECT match_id, home_team, away_team, league_name AS league, kickoff_at AS kickoff
+        FROM match_history WHERE match_id = ANY(:ids)
+        """
+    ),
+    text(
+        """
+        SELECT match_id,
+               payload->'home'->>'name' AS home_team,
+               payload->'away'->>'name' AS away_team,
+               payload->'league'->>'name' AS league,
+               payload->>'kickoff' AS kickoff
+        FROM watchlist_matches WHERE match_id = ANY(:ids)
+        """
+    ),
+    text(
+        """
+        SELECT match_id, MAX(home_team) AS home_team, MAX(away_team) AS away_team,
+               MAX(payload->>'league') AS league, MIN(created_at) AS kickoff
+        FROM alerts
+        WHERE match_id = ANY(:ids) AND home_team IS NOT NULL AND away_team IS NOT NULL
+        GROUP BY match_id
+        """
+    ),
 )
+
+MATCH_FIELDS = ("home_team", "away_team", "league", "kickoff")
+
+
+def _iso(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
+def match_names(conn: Any, ids: list[str]) -> dict[str, dict[str, Any]]:
+    """``{match_id: {match_id, home_team, away_team, league, kickoff}}`` for the
+    ids any source knows; each field comes from the best source that has it.
+    ``kickoff`` is an ISO string."""
+    out: dict[str, dict[str, Any]] = {}
+    if not ids:
+        return out
+    for query in MATCH_NAME_SOURCES:
+        for row in conn.execute(query, {"ids": ids}).mappings():
+            mid = str(row["match_id"])
+            found = out.setdefault(mid, {"match_id": mid, **dict.fromkeys(MATCH_FIELDS)})
+            for field in MATCH_FIELDS:
+                value = row[field] if field != "kickoff" else _iso(row[field])
+                if found[field] is None and value:
+                    found[field] = value
+    return out
 
 
 def record_page_load(
@@ -302,7 +360,8 @@ def list_visits(
 
     ``first_ever`` and ``visit_count`` look across the whole retained log, not
     just the window, so "returning" means returning within the last 30 days.
-    Viewed matches come back as ``{match_id, home_team, away_team}`` dicts.
+    Viewed matches come back as ``{match_id, home_team, away_team, league,
+    kickoff}`` dicts; fields no source knows are None.
     """
     eng = sync_engine(dsn)
     with eng.connect() as conn:
@@ -313,13 +372,10 @@ def list_visits(
             ).mappings()
         ]
         ids = sorted({m for r in rows for m in (r.get("matches_viewed") or [])})
-        names: dict[str, dict[str, Any]] = {}
-        if ids:
-            for m in conn.execute(SELECT_MATCH_NAMES, {"ids": ids}).mappings():
-                names[str(m["match_id"])] = dict(m)
+        names = match_names(conn, ids)
     for row in rows:
         row["matches_viewed"] = [
-            names.get(m) or {"match_id": m, "home_team": None, "away_team": None}
+            names.get(m) or {"match_id": m, **dict.fromkeys(MATCH_FIELDS)}
             for m in (row.get("matches_viewed") or [])
         ]
     return rows

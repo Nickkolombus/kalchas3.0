@@ -1292,6 +1292,35 @@
   gap: 10px;
 }
 
+.vis-match-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.vis-flags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px 8px;
+  color: var(--text);
+}
+
+.vis-flags span {
+  white-space: nowrap;
+  cursor: default;
+}
+
+.kit-table .vis-flags small {
+  display: inline;
+  margin: 0 0 0 2px;
+  color: var(--muted);
+}
+
 .vis-split {
   display: flex;
   gap: 2px;

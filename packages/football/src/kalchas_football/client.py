@@ -1441,10 +1441,18 @@ class FootballAPIClient:
         processed["match_id"] = mid
         return processed
 
-    def get_fixture_events(self, match_id: str | int) -> dict[str, Any]:
-        """``action=get_events&match_id=`` — raw match row (goalscorer + cards)."""
+    def get_fixture_events(
+        self, match_id: str | int, *, timezone: str | None = None
+    ) -> dict[str, Any]:
+        """``action=get_events&match_id=`` — raw match row (goalscorer + cards).
+
+        ``timezone`` (``+00:00``) sets the zone of ``match_date`` / ``match_time``.
+        """
+        params = {"match_id": str(match_id)}
+        if timezone:
+            params["timezone"] = timezone
         try:
-            data = self._get("get_events", {"match_id": str(match_id)})
+            data = self._get("get_events", params)
         except RateLimitBudgetExceeded:
             logger.warning("skipping get_events for %s; hourly HTTP budget exhausted", match_id)
             return {}

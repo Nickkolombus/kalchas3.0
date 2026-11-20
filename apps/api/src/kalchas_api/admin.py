@@ -990,6 +990,9 @@ def visitors_insights_route(
         retained_since=datetime.now(UTC) - timedelta(days=RETENTION_DAYS),
         live_now=_live_now(),
     )
+    from kalchas_api.match_names import fill_missing_names
+
+    fill_missing_names(body["matches"], zone, dsn=_dsn())
     log = [item for item in items if window.contains(parse_time(item["first_seen"]))]
     log.sort(key=lambda item: item["last_seen"], reverse=True)
     body["log"] = log[:400]
