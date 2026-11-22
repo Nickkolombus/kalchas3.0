@@ -206,3 +206,16 @@ def test_old_weight_keys_are_ignored() -> None:
     assert evaluate(quiet(60), weights=w, **EVEN).home.probability == pytest.approx(
         evaluate(quiet(60), **EVEN).home.probability
     )
+
+
+class TestTooEarly:
+    def test_no_reading_before_minute_ten(self) -> None:
+        result = evaluate(quiet(3), threshold=1, home_odds=1.3, draw_odds=5.0, away_odds=9.0)
+        assert result.too_early
+        assert (result.home.score, result.away.score, result.match_score) == (0, 0, 0)
+        assert result.triggering_team is None
+
+    def test_reads_from_minute_ten(self) -> None:
+        result = evaluate(quiet(10), home_odds=1.3, draw_odds=5.0, away_odds=9.0)
+        assert not result.too_early
+        assert result.home.score > 0

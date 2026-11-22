@@ -208,7 +208,7 @@ const STRAT_ROWS: {
     digits: 0,
     tone: "k",
     scale: { min: 0, max: 100 },
-    tip: "Chance, in %, that this team scores in the next 20 minutes (before the half ends). A match is picked once a team passes the alert line.",
+    tip: "Chance, in %, that this team scores in the next 20 minutes (before the half ends), shown from 10'. A match is picked once a team passes the alert line.",
   },
   {
     key: "delta_5min",

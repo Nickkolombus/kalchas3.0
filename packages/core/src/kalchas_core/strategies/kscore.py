@@ -58,6 +58,11 @@ DEFAULT_THRESHOLD: Final = 40.0
 RECENT_SHOTS_WINDOW: Final = 10
 """Minutes of play the recent-shots term looks back over."""
 
+MINIMUM_MINUTE: Final = 10
+"""No reading before this minute. In the first minutes the number is the
+kickoff price alone (a 1.30 favourite reads about 33 at 2'), with no play
+behind it, and the recipe was fitted on minutes 10-87 only."""
+
 UNREALISED_CAP: Final = 4.0
 """Unrealised goals beyond this add nothing more; negative readings count as 0."""
 
@@ -100,6 +105,8 @@ class KScoreResult:
     horizon_minutes: float
     priced: bool
     """False when no kickoff prices were available and an average match was assumed."""
+    too_early: bool = False
+    """True before `MINIMUM_MINUTE`: both teams read 0 and nothing can fire."""
 
     def team(self, side: Side) -> TeamKScore:
         return self.home if side is Side.HOME else self.away
@@ -216,6 +223,25 @@ def evaluate(
     rates = chance.goal_rates(home_odds, draw_odds, away_odds)
     priced = rates is not None
     home_rate, away_rate = rates if rates is not None else DEFAULT_RATES
+
+    if minute < MINIMUM_MINUTE:
+        blank = TeamKScore(
+            score=0,
+            probability=0.0,
+            baseline=0.0,
+            live_boost=1.0,
+            unrealised_goals=0.0,
+            recent_shots=0,
+        )
+        return KScoreResult(
+            home=blank,
+            away=blank,
+            match_score=0,
+            threshold=threshold,
+            horizon_minutes=w.get(STRATEGY_KEY, "horizon_minutes"),
+            priced=priced,
+            too_early=True,
+        )
 
     def team(side: Side) -> TeamKScore:
         home = side is Side.HOME
