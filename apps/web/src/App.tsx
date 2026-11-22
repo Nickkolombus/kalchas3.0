@@ -1524,7 +1524,7 @@ function KCell({ match }: { match: LiveMatch }) {
         cardClass="hover-tone-k"
         body={
           <HoverLedger
-            tip="Chance, in %, that a team scores in the next 20 minutes (before the half ends). Shown from 10'. 40+ is a picked match."
+            tip="Rises only with a team's shooting (0 until it shoots), read as the % chance it scores in the next 20 minutes, before the half ends. The first 10' need an extraordinary start. 40+ is a picked match."
             extra={
               <p className="hover-match-k">
                 Match{" "}
@@ -3204,7 +3204,7 @@ export function App() {
                 onSort={onSort}
                 className="col-k col-strat col-tone-k"
                 hintTitle="K Index"
-                hintBody="Chance, in %, that a team scores in the next 20 minutes (before the half ends). Shown from 10'. 40+ is a picked match."
+                hintBody="Rises only with a team's shooting (0 until it shoots), read as the % chance it scores in the next 20 minutes, before the half ends. The first 10' need an extraordinary start. 40+ is a picked match."
                 hoverTone="k"
               />
               {STRAT_COLS.map((c) => (

@@ -141,18 +141,17 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
             name="K-Score",
             short="K",
             equation=(
-                "base = goal rate from kickoff 1X2 x share of goals in the next window "
-                "(to half end) x score tilt x base level\n"
-                "boost = [1H multiplier] x (1 + boost x unrealised)"
-                " x (1 + shots last 10')^power\n"
-                "K = round(100 x (1 - exp(-base x boost)))"
+                "priced = goal rate from kickoff 1X2 x share of goals in the window "
+                "(to half end) x score tilt\n"
+                "evidence = (shot pace / pace the price expects)^power, 0 with no shots\n"
+                "K = round(100 x (1 - exp(-level x priced x evidence x [1H] x early brake)))"
             ),
             blurb=(
-                "The chance, in %, that this team scores within the window (20 minutes "
-                "by default, ending at half time), the same bet a K alert is settled "
-                "on. Kickoff prices, the clock and the score set the base; unrealised "
-                "goals and recent shots nudge it. Fitted on match history: K 40-50 "
-                "scored about 42% of the time."
+                "Rises only with play: a team that has not shot reads 0, and the "
+                "kickoff price decides how much each shot is worth. Read as the chance "
+                "the team scores within the window (20 minutes, ending at half time), "
+                "the bet a K alert is settled on. Before 10' only an extraordinary "
+                "start moves it. Fitted on match history: K 40-50 scored 43%."
             ),
         ),
     }
@@ -393,23 +392,63 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 5.0,
                 45.0,
                 1.0,
-                "K is the chance the team scores within this many minutes, stopping "
-                "at the end of the half. Keep it equal to the K-Index outcome window.",
+                "K is about the team scoring within this many minutes, stopping at "
+                "the end of the half. Keep it equal to the K-Index outcome window.",
             ),
             WeightSpec(
-                "base_multiplier",
-                "Base level",
-                0.92,
+                "level",
+                "Level",
+                1.25,
                 0.5,
-                1.5,
+                2.5,
                 0.01,
-                "Scales the scoring rate the kickoff prices, clock and score give. "
-                "1.0 takes the prices as they are; fitted 0.92 on match history.",
+                "Overall scale, fitted on match history so K 40 scores about 40% of the time.",
+            ),
+            WeightSpec(
+                "evidence_power",
+                "How much the shooting decides",
+                0.5,
+                0.0,
+                1.0,
+                0.05,
+                "0 = the price alone, shooting ignored. Above 0 a team with no shots "
+                "reads 0. At 0.5 shooting at four times the pace the price expects "
+                "doubles K; at 1 K follows the shooting pace fully.",
+            ),
+            WeightSpec(
+                "recent_shots_extra",
+                "Extra weight on the last 10 minutes",
+                0.4,
+                0.0,
+                2.0,
+                0.05,
+                "Shots in the last 10 minutes count 1 + this. 0.4: a recent shot counts 1.4 shots.",
+            ),
+            WeightSpec(
+                "settling_minutes",
+                "Settling minutes",
+                15.0,
+                0.0,
+                45.0,
+                1.0,
+                "Shot pace is averaged as if this many extra minutes had been "
+                "played, so a burst early on counts for less than the same burst "
+                "later.",
+            ),
+            WeightSpec(
+                "early_brake_minutes",
+                "Early brake (minutes)",
+                10.0,
+                0.0,
+                30.0,
+                1.0,
+                "Before this minute K is multiplied by (minute / this)^2: a quarter "
+                "at 5', a hundredth at 1'. Only an extraordinary start reaches 40.",
             ),
             WeightSpec(
                 "first_half_multiplier",
                 "First-half multiplier",
-                1.28,
+                1.42,
                 1.0,
                 2.0,
                 0.01,
@@ -417,33 +456,13 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
                 "quarter-hour shares say. Applied in the first half only.",
             ),
             WeightSpec(
-                "unrealised_boost",
-                "Boost per unrealised goal",
-                0.07,
-                0.0,
-                0.5,
-                0.01,
-                "Each Rule of 3 unrealised goal (0 to 4) raises the rate by this "
-                "share: 0.07 means +7% per unrealised goal.",
-            ),
-            WeightSpec(
-                "recent_shots_power",
-                "Recent shots power",
-                0.08,
-                0.0,
-                0.5,
-                0.01,
-                "Rate x (1 + shots in the last 10 minutes) ^ this. At 0.08, two "
-                "shots add 9% and five add 15%.",
-            ),
-            WeightSpec(
-                "max_live_boost",
-                "Most the live stats can add",
+                "max_evidence",
+                "Most the shooting can multiply",
                 2.0,
                 1.0,
-                3.0,
+                4.0,
                 0.05,
-                "Cap on the combined first-half, unrealised and recent-shots multiplier.",
+                "Cap on the shooting multiplier.",
             ),
         ),
     }

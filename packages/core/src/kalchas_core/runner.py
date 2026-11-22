@@ -63,7 +63,6 @@ def _shot_profile(timeline: MatchTimeline, side: Side) -> TeamShotProfile:
 
 def _kindex(
     timeline: MatchTimeline,
-    ro3: Any,
     *,
     home_goals: int,
     away_goals: int,
@@ -78,8 +77,6 @@ def _kindex(
         timeline,
         home_goals=home_goals,
         away_goals=away_goals,
-        home_unrealised=float(ro3.home.unrealised_goals) if ro3 is not None else 0.0,
-        away_unrealised=float(ro3.away.unrealised_goals) if ro3 is not None else 0.0,
         home_odds=home_odds,
         draw_odds=draw_odds,
         away_odds=away_odds,
@@ -346,17 +343,8 @@ def evaluate_match(
             )
 
     if 7 in slots:
-        # K-Index uses Rule of 3's unrealised goals even when slot 1 is off.
-        if ro3 is None:
-            ro3 = rule_of_three.evaluate(
-                _shot_profile(timeline, Side.HOME),
-                _shot_profile(timeline, Side.AWAY),
-                minute=minute,
-                weights=w,
-            )
         ks = _kindex(
             timeline,
-            ro3,
             home_goals=home_goals,
             away_goals=away_goals,
             home_odds=home_odds,
@@ -406,7 +394,6 @@ def evaluate_match(
         if ks is None:
             ks = _kindex(
                 timeline,
-                ro3,
                 home_goals=home_goals,
                 away_goals=away_goals,
                 home_odds=home_odds,
@@ -513,7 +500,6 @@ def board_snapshot(
 
     ks = _kindex(
         timeline,
-        ro3,
         home_goals=home_goals,
         away_goals=away_goals,
         home_odds=home_odds,
