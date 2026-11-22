@@ -340,6 +340,35 @@ class CooldownBook:
             key, f"Strategy {strategy_slot} allowed (Value: {strategy_value:.2f})"
         )
 
+    def seed(
+        self,
+        match_id: Any,
+        strategy_slot: int,
+        *,
+        team: str | None,
+        minute: int,
+        value: float,
+        first_half: bool,
+        fired_at: datetime | None = None,
+    ) -> None:
+        """Remember an alert that fired before a restart.
+
+        Call oldest first: the latest alert per match, strategy and team wins,
+        as it would have in the running process.
+        """
+        rules = self.rules_for(strategy_slot)
+        key = cooldown_key(match_id, strategy_slot, team)
+        self._state[key] = CooldownState(
+            match_id=normalize_match_id(match_id),
+            strategy_slot=strategy_slot,
+            team=team,
+            last_alert_minute=int(minute),
+            last_alert_value=float(value),
+            last_alert_time=fired_at or self._clock(),
+            waiting_for_drop=rules.rearm_after_drop,
+            first_half=bool(first_half),
+        )
+
     def confirm(self, key: str) -> None:
         """Clear reservation after a successful send; keep the alert minute."""
         state = self._state.get(key)

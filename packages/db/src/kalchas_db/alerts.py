@@ -356,6 +356,26 @@ def list_recent_alerts_sync(dsn: str, limit: int = 20) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+LIST_RECENT_FOR_COOLDOWN = text(
+    """
+    SELECT match_id, strategy_slot, team, value, minute,
+           payload->>'status_short' AS status_short, created_at
+    FROM alerts
+    WHERE created_at >= NOW() - make_interval(hours => :hours)
+    ORDER BY created_at
+    """
+)
+
+
+def list_recent_alerts_for_cooldown_sync(dsn: str, hours: int = 3) -> list[dict[str, Any]]:
+    """Alerts fired in the last `hours`, oldest first, to rebuild the scanner's
+    cooldown memory after a restart."""
+    eng = sync_engine(dsn)
+    with eng.connect() as conn:
+        rows = conn.execute(LIST_RECENT_FOR_COOLDOWN, {"hours": int(hours)}).mappings().all()
+    return [dict(row) for row in rows]
+
+
 def list_open_alerts_for_match_sync(dsn: str, match_id: str) -> list[dict[str, Any]]:
     eng = sync_engine(dsn)
     with eng.connect() as conn:

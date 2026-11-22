@@ -89,6 +89,11 @@ TEAM_FORM_RETRY_SEC = 600
 """How long a failed team-form fetch waits before the next try."""
 
 
+COOLDOWN_SEED_HOURS = 3
+"""How far back the cooldown memory is rebuilt after a restart: longer than
+any match still being played."""
+
+
 def _in_first_half(status_short: str | None) -> bool:
     """First half or half-time, for the first-half cut-off. From the status,
     not the minute: first-half stoppage arrives as 46, 47, ..."""
@@ -185,6 +190,8 @@ class Scanner:
     sweet_spot: SweetSpotWindows = field(default_factory=SweetSpotWindows)
     _cycles: int = 0
     _tuning_at: float = 0.0
+    _cooldown_seeded: bool = False
+    """Whether the cooldown memory has been rebuilt from recent alerts since start."""
     _odds_by_match: dict[str, dict[str, float]] = field(default_factory=dict)
     _odds_fetched_at: float = 0.0
     _live_odds_by_match: dict[str, dict] = field(default_factory=dict)
@@ -992,6 +999,37 @@ class Scanner:
         except Exception:
             logger.exception("failed loading admin settings")
         self._tuning_at = now
+        if not self._cooldown_seeded:
+            self._seed_cooldown(dsn)
+
+    def _seed_cooldown(self, dsn: str) -> None:
+        """Rebuild the cooldown memory from recent alerts, once per process.
+
+        The memory lives in this process, so without this every restart or
+        deploy forgets which teams already alerted: a "once per half" strategy
+        could fire again in the same half, and cooldowns restart from zero.
+        """
+        try:
+            from kalchas_db.alerts import list_recent_alerts_for_cooldown_sync
+
+            rows = list_recent_alerts_for_cooldown_sync(dsn, hours=COOLDOWN_SEED_HOURS)
+        except Exception:
+            logger.exception("failed rebuilding cooldown memory; will retry")
+            return
+        for row in rows:
+            if row.get("strategy_slot") is None or row.get("minute") is None:
+                continue
+            self.cooldown.seed(
+                row["match_id"],
+                int(row["strategy_slot"]),
+                team=row.get("team") or None,
+                minute=int(row["minute"]),
+                value=float(row.get("value") or 0.0),
+                first_half=_in_first_half(row.get("status_short")),
+                fired_at=row.get("created_at"),
+            )
+        self._cooldown_seeded = True
+        logger.info("cooldown memory rebuilt from %s recent alerts", len(rows))
 
     def _settle_open_alerts(self, match: LiveMatch, events: list[dict]) -> None:
         dsn = getattr(self.persist, "dsn", None)
