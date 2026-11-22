@@ -35,6 +35,7 @@ type StrategyConfig = {
   cooldown_bypass_delta: number | null;
   max_fire_minute: number | null;
   max_fire_minute_1h: number | null;
+  once_per_half: boolean;
   enabled: boolean;
   success_window_minutes: number;
   expiration_buffer_minutes: number;
@@ -105,6 +106,7 @@ const SETTING_FIELDS = [
   "cooldown_bypass_delta",
   "max_fire_minute",
   "max_fire_minute_1h",
+  "once_per_half",
   "enabled",
   "success_window_minutes",
   "expiration_buffer_minutes",
@@ -333,6 +335,7 @@ export function AdminApp() {
             cooldown_bypass_delta: row.cooldown_bypass_delta,
             max_fire_minute: row.max_fire_minute,
             max_fire_minute_1h: row.max_fire_minute_1h,
+            once_per_half: row.once_per_half,
             enabled: row.enabled,
           })),
         }),
@@ -905,6 +908,16 @@ function StrategiesPage({
                   onChange={(e) => onPatch(c.slot, { max_fire_minute_1h: numberOrNull(e.target.value) })}
                 />
               </Field>
+            </div>
+            <div className="adm-toggles">
+              <label className={`kit-toggle ${changed("once_per_half") ? "is-dirty" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(c.once_per_half)}
+                  onChange={(e) => onPatch(c.slot, { once_per_half: e.target.checked })}
+                />
+                Only once per team per half (cooldown and bypass then don’t matter)
+              </label>
             </div>
           </section>
 

@@ -168,7 +168,7 @@ LIST_RULES = text(
     SELECT strategy_slot, strategy_name, success_window_minutes,
            expiration_buffer_minutes, infinite_ttl, team_specific, enabled,
            cooldown_minutes, cooldown_bypass_delta, expire_at_half_end,
-           max_fire_minute, max_fire_minute_1h
+           max_fire_minute, max_fire_minute_1h, once_per_half
     FROM strategy_rules
     ORDER BY strategy_slot
     """
@@ -179,7 +179,7 @@ GET_RULE_FOR_UPDATE = text(
     SELECT strategy_slot, strategy_name, success_window_minutes,
            expiration_buffer_minutes, infinite_ttl, team_specific, enabled,
            cooldown_minutes, cooldown_bypass_delta, expire_at_half_end,
-           max_fire_minute, max_fire_minute_1h
+           max_fire_minute, max_fire_minute_1h, once_per_half
     FROM strategy_rules
     WHERE strategy_slot = :slot
     FOR UPDATE
@@ -199,12 +199,13 @@ UPDATE_RULE = text(
         expire_at_half_end = :expire_at_half_end,
         max_fire_minute = :max_fire_minute,
         max_fire_minute_1h = :max_fire_minute_1h,
+        once_per_half = :once_per_half,
         updated_at = NOW()
     WHERE strategy_slot = :slot
     RETURNING strategy_slot, strategy_name, success_window_minutes,
               expiration_buffer_minutes, infinite_ttl, team_specific, enabled,
               cooldown_minutes, cooldown_bypass_delta, expire_at_half_end,
-              max_fire_minute, max_fire_minute_1h
+              max_fire_minute, max_fire_minute_1h, once_per_half
     """
 )
 
@@ -338,6 +339,7 @@ def update_admin_rule(dsn: str, slot: int, fields: dict[str, Any]) -> dict[str, 
         "max_fire_minute_1h": (
             None if fields.get("max_fire_minute_1h") is None else int(fields["max_fire_minute_1h"])
         ),
+        "once_per_half": bool(fields.get("once_per_half")),
     }
     eng = sync_engine(dsn)
     with eng.begin() as conn:

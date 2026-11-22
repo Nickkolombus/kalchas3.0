@@ -49,6 +49,8 @@ class ThresholdIn(BaseModel):
     enabled: bool = True
     max_fire_minute: int | None = Field(default=None, ge=1, le=130)
     max_fire_minute_1h: int | None = Field(default=None, ge=1, le=60)
+    once_per_half: bool | None = None
+    """None keeps the stored setting."""
 
 
 class ThresholdsPut(BaseModel):
@@ -244,6 +246,7 @@ def admin_config(request: Request) -> dict[str, Any]:
                     if row and row.get("max_fire_minute_1h") is not None
                     else None
                 ),
+                "once_per_half": bool((row or {}).get("once_per_half")),
                 "weights": weights.describe(key),
                 "presets": list(BUILTIN_PRESETS.get(key, {}).keys()),
                 "saved_presets": list_saved_names.get(key, []),
@@ -303,6 +306,11 @@ def put_thresholds(request: Request, body: ThresholdsPut) -> dict[str, bool]:
                 "cooldown_bypass_delta": item.cooldown_bypass_delta,
                 "max_fire_minute": item.max_fire_minute,
                 "max_fire_minute_1h": item.max_fire_minute_1h,
+                "once_per_half": (
+                    bool((current or {}).get("once_per_half"))
+                    if item.once_per_half is None
+                    else item.once_per_half
+                ),
             },
         )
     upsert_thresholds(dsn, values)
@@ -335,6 +343,7 @@ def put_rules(request: Request, body: RulesPut) -> dict[str, bool]:
                 "cooldown_bypass_delta": current.get("cooldown_bypass_delta"),
                 "max_fire_minute": current.get("max_fire_minute"),
                 "max_fire_minute_1h": current.get("max_fire_minute_1h"),
+                "once_per_half": bool(current.get("once_per_half")),
             },
         )
         if updated is None:

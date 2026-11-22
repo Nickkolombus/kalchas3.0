@@ -191,3 +191,37 @@ def test_first_half_cutoff_off_by_default() -> None:
     book = CooldownBook()
     assert book.rules_for(2).max_fire_minute_1h is None
     assert book.decide("1", 2, 45, 75.0, team="home", first_half=True).can_send
+
+
+def test_once_per_half_blocks_repeats_even_on_a_big_rise() -> None:
+    book = CooldownBook(
+        rules={7: CooldownRules(strategy_slot=7, value_delta_threshold=5.0, once_per_half=True)}
+    )
+    first = book.decide("1", 7, 12, 55.0, team="home", first_half=True)
+    assert first.can_send
+    book.confirm(first.cooldown_key)
+    # A 10-point jump would bypass the cooldown; once per half still blocks it.
+    assert book.decide("1", 7, 14, 65.0, team="home", first_half=True).blocked_by == (
+        "S7_ONCE_PER_HALF"
+    )
+    # Long after the cooldown, and at half-time, still the same half.
+    assert book.decide("1", 7, 40, 56.0, team="home", first_half=True).blocked_by == (
+        "S7_ONCE_PER_HALF"
+    )
+    # The other team has its own turn.
+    assert book.decide("1", 7, 15, 55.0, team="away", first_half=True).can_send
+    # The second half starts fresh, even in its first minutes (46' after HT).
+    second = book.decide("1", 7, 46, 55.0, team="home", first_half=False)
+    assert second.can_send
+    book.confirm(second.cooldown_key)
+    assert book.decide("1", 7, 70, 60.0, team="home", first_half=False).blocked_by == (
+        "S7_ONCE_PER_HALF"
+    )
+
+
+def test_once_per_half_off_by_default() -> None:
+    book = CooldownBook(rules={7: CooldownRules(strategy_slot=7, value_delta_threshold=5.0)})
+    assert book.rules_for(7).once_per_half is False
+    first = book.decide("1", 7, 12, 55.0, team="home", first_half=True)
+    book.confirm(first.cooldown_key)
+    assert book.decide("1", 7, 14, 60.0, team="home", first_half=True).can_send

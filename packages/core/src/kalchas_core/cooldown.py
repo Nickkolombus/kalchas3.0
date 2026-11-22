@@ -8,7 +8,8 @@ admin-settings lookups stay in the app layer. Core owns the decision tree:
 3. Per-strategy cut-offs: none past ``max_fire_minute_1h`` in the first half
    (or at half-time), none past ``max_fire_minute`` at all
 4. Team stack: one speaking turn per side (K-Score is exempt both ways)
-5. Per-strategy window with optional value-delta bypass
+5. Per-strategy window with optional value-delta bypass, or one alert per
+   team per half where the rule says so
 6. Same-minute and reservation blocks
 """
 
@@ -54,6 +55,9 @@ class CooldownRules:
     """Last first-half minute this strategy may fire at; `None` is no cut-off.
     Needs the caller to say it is the first half: 45+3 arrives as minute 48,
     the same number as the second half's 48'."""
+    once_per_half: bool = False
+    """At most one alert per team (or per match) in each half; the cooldown and
+    its bypass no longer matter once it has fired in this half."""
 
     @staticmethod
     def for_slot(strategy_slot: int) -> CooldownRules:
@@ -107,6 +111,8 @@ class CooldownState:
     last_alert_time: datetime
     reserved_until: datetime | None = None
     waiting_for_drop: bool = False
+    first_half: bool | None = None
+    """The half the last alert fired in (first half or half-time is True)."""
 
     def is_reserved(self, now: datetime) -> bool:
         return self.reserved_until is not None and now < self.reserved_until
@@ -284,6 +290,11 @@ class CooldownBook:
                 return CooldownDecision.block(
                     f"Already triggered at {current_minute}'", "SAME_MINUTE"
                 )
+            if rules.once_per_half and state.first_half is bool(first_half):
+                return CooldownDecision.block(
+                    f"Already alerted this half at {state.last_alert_minute}'",
+                    f"S{strategy_slot}_ONCE_PER_HALF",
+                )
             if rules.rearm_after_drop and state.waiting_for_drop:
                 reset_at = state.last_alert_value * rules.rearm_drop_ratio
                 if strategy_value > reset_at:
@@ -323,6 +334,7 @@ class CooldownBook:
                 last_alert_time=now,
                 reserved_until=now + timedelta(seconds=self.reservation_seconds),
                 waiting_for_drop=rules.rearm_after_drop,
+                first_half=bool(first_half),
             )
         return CooldownDecision.allow(
             key, f"Strategy {strategy_slot} allowed (Value: {strategy_value:.2f})"

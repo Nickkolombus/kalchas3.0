@@ -985,6 +985,7 @@ class Scanner:
                         if row.get("max_fire_minute_1h") is not None
                         else None
                     ),
+                    once_per_half=bool(row.get("once_per_half")),
                 )
             if rules:
                 self.cooldown.rules = rules

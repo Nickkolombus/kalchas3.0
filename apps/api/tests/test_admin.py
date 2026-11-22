@@ -383,6 +383,7 @@ def test_put_thresholds_saves_late_cutoff(monkeypatch) -> None:
         "cooldown_bypass_delta": None,
         "max_fire_minute": 85,
         "max_fire_minute_1h": 40,
+        "once_per_half": True,
     }
     monkeypatch.setenv("ADMIN_PASSWORD", "s3cret")
     monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
@@ -414,6 +415,14 @@ def test_put_thresholds_saves_late_cutoff(monkeypatch) -> None:
     assert saved[7]["max_fire_minute_1h"] == 38
     item["max_fire_minute_1h"] = 61
     assert client.put("/api/admin/thresholds", json={"items": [item]}).status_code == 422
+    del item["max_fire_minute_1h"]
+
+    # Once-per-half: left out keeps the stored setting, sent changes it.
+    assert client.put("/api/admin/thresholds", json={"items": [item]}).status_code == 200
+    assert saved[7]["once_per_half"] is True
+    item["once_per_half"] = False
+    assert client.put("/api/admin/thresholds", json={"items": [item]}).status_code == 200
+    assert saved[7]["once_per_half"] is False
 
     # Saving confirmation rules keeps the stored cut-off.
     rule = {
@@ -426,3 +435,4 @@ def test_put_thresholds_saves_late_cutoff(monkeypatch) -> None:
     assert client.put("/api/admin/rules", json={"items": [rule]}).status_code == 200
     assert saved[7]["max_fire_minute"] == 85
     assert saved[7]["max_fire_minute_1h"] == 40
+    assert saved[7]["once_per_half"] is True
