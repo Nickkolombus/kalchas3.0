@@ -1217,7 +1217,7 @@ const STRAT_STEP_FALLBACK: Record<string, number> = {
   pressure_index: 68,
   delta_goal: 1,
   npei: 55,
-  kscore: 60,
+  kscore: 40,
 };
 
 /**
@@ -1524,7 +1524,7 @@ function KCell({ match }: { match: LiveMatch }) {
         cardClass="hover-tone-k"
         body={
           <HoverLedger
-            tip="Blend of the other signals, out of 100. 60+ is a picked match."
+            tip="Chance, in %, that a team scores in the next 20 minutes (before the half ends). 40+ is a picked match."
             extra={
               <p className="hover-match-k">
                 Match{" "}
@@ -3204,7 +3204,7 @@ export function App() {
                 onSort={onSort}
                 className="col-k col-strat col-tone-k"
                 hintTitle="K Index"
-                hintBody="Blend of the other signals, out of 100. 60+ is a picked match."
+                hintBody="Chance, in %, that a team scores in the next 20 minutes (before the half ends). 40+ is a picked match."
                 hoverTone="k"
               />
               {STRAT_COLS.map((c) => (

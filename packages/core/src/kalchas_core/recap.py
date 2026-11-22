@@ -658,7 +658,7 @@ def readout_note(miss: Mapping[str, Any]) -> str:
         "delta_5min": "5-minute pressure, out of 12",
         "pressure_index": "sustained pressure, out of 100",
         "rule_of_three": "unrealised goals",
-        "kscore": "K-Score, out of 100",
+        "kscore": "K Index, the % chance to score soon",
     }
     label = next((labels[k] for k in miss.get("strategies") or [] if k in labels), "")
     head = f"{_cap(label)} at {miss['minute']}′. " if label else ""

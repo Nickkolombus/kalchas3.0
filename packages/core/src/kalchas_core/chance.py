@@ -219,6 +219,26 @@ def remaining_goal_share(minute: int, *, first_half: bool | None = None) -> floa
     return (1 - played) * quarters[5]
 
 
+def window_goal_share(minute: int, horizon: float, *, first_half: bool | None = None) -> float:
+    """Share of a full match's goals expected in the next `horizon` minutes.
+
+    The window stops at the end of the current half, the way an alert that
+    expires at half time is settled: at 40' a 20-minute window is the rest of
+    the first half, stoppage included, and nothing after the break.
+    """
+    in_first_half = minute <= _HALF_TIME_MINUTE if first_half is None else first_half
+    now = remaining_goal_share(minute, first_half=in_first_half)
+    end = minute + max(0.0, float(horizon))
+    if in_first_half:
+        half_end = 30 + 15 + FIRST_HALF_STOPPAGE_MINUTES
+        later = remaining_goal_share(int(min(end, half_end)), first_half=True)
+        if end >= half_end:
+            later = sum(GOAL_SHARE_BY_QUARTER_HOUR[3:])
+    else:
+        later = remaining_goal_share(int(end), first_half=False) if end < 96 else 0.0
+    return max(0.0, now - later)
+
+
 def score_tilt(goal_difference: int) -> float:
     """Scoring-rate adjustment for the scoreline, from the team's own side.
 

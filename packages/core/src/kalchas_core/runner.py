@@ -26,7 +26,6 @@ from kalchas_core.strategies import (
     pressure_index,
     rule_of_three,
 )
-from kalchas_core.strategies.kscore import TeamSignals
 from kalchas_core.strategies.rule_of_three import TeamShotProfile
 from kalchas_core.weights import WeightSet
 
@@ -60,6 +59,34 @@ def _shot_profile(timeline: MatchTimeline, side: Side) -> TeamShotProfile:
         return TeamShotProfile()
     team = snap.team(side)
     return TeamShotProfile.from_stats(team, goals=int(team.goals or 0))
+
+
+def _kindex(
+    timeline: MatchTimeline,
+    ro3: Any,
+    *,
+    home_goals: int,
+    away_goals: int,
+    home_odds: float | None,
+    draw_odds: float | None,
+    away_odds: float | None,
+    first_half: bool | None,
+    threshold: float,
+    weights: WeightSet,
+) -> kscore.KScoreResult:
+    return kscore.evaluate(
+        timeline,
+        home_goals=home_goals,
+        away_goals=away_goals,
+        home_unrealised=float(ro3.home.unrealised_goals) if ro3 is not None else 0.0,
+        away_unrealised=float(ro3.away.unrealised_goals) if ro3 is not None else 0.0,
+        home_odds=home_odds,
+        draw_odds=draw_odds,
+        away_odds=away_odds,
+        first_half=first_half,
+        threshold=threshold,
+        weights=weights,
+    )
 
 
 def _clears_fire(value: float, threshold: float) -> bool:
@@ -235,7 +262,7 @@ def evaluate_match(
     minute = timeline.current_minute
     candidates: list[AlertCandidate] = []
 
-    npei_snap = compute_npei(timeline, weights=w) if 7 in slots else None
+    npei_snap = None
     pi = None
     d5 = None
     ro3 = None
@@ -319,30 +346,26 @@ def evaluate_match(
             )
 
     if 7 in slots:
-        # Consultants needed for K-Score even when their own slots are off.
-        if pi is None and 2 not in slots:
-            pi = pressure_index.evaluate(
-                timeline, home_goals=home_goals, away_goals=away_goals, weights=w
-            )
-        if d5 is None and 4 not in slots:
-            d5 = delta_5min.evaluate(timeline, weights=w)
-        if ro3 is None and 1 not in slots:
+        # K-Index uses Rule of 3's unrealised goals even when slot 1 is off.
+        if ro3 is None:
             ro3 = rule_of_three.evaluate(
                 _shot_profile(timeline, Side.HOME),
                 _shot_profile(timeline, Side.AWAY),
                 minute=minute,
                 weights=w,
             )
-
-        def _signals(side: Side) -> TeamSignals:
-            return TeamSignals(
-                delta_5min=float(d5.team(side).pressure) if d5 else 0.0,
-                pressure_index=float(pi.team(side).pressure) if pi else 0.0,
-                rule_of_three=float(ro3.team(side).unrealised_goals) if ro3 else 0.0,
-                npei=float(npei_snap.team(side).score) if npei_snap else 0.0,
-            )
-
-        ks = kscore.evaluate(_signals(Side.HOME), _signals(Side.AWAY), weights=w, threshold=th[7])
+        ks = _kindex(
+            timeline,
+            ro3,
+            home_goals=home_goals,
+            away_goals=away_goals,
+            home_odds=home_odds,
+            draw_odds=draw_odds,
+            away_odds=away_odds,
+            first_half=first_half,
+            threshold=th[7],
+            weights=w,
+        )
         if ks.triggering_team is not None and _clears_fire(ks.trigger_value, th[7]):
             side = ks.triggering_team
             candidates.append(
@@ -381,20 +404,17 @@ def evaluate_match(
                 threshold=th[3],
             )
         if ks is None:
-
-            def _cond_signals(side: Side) -> TeamSignals:
-                return TeamSignals(
-                    delta_5min=float(d5.team(side).pressure) if d5 else 0.0,
-                    pressure_index=float(pi.team(side).pressure) if pi else 0.0,
-                    rule_of_three=float(ro3.team(side).unrealised_goals) if ro3 else 0.0,
-                    npei=float(npei_snap.team(side).score) if npei_snap else 0.0,
-                )
-
-            ks = kscore.evaluate(
-                _cond_signals(Side.HOME),
-                _cond_signals(Side.AWAY),
-                weights=w,
+            ks = _kindex(
+                timeline,
+                ro3,
+                home_goals=home_goals,
+                away_goals=away_goals,
+                home_odds=home_odds,
+                draw_odds=draw_odds,
+                away_odds=away_odds,
+                first_half=first_half,
                 threshold=th[7],
+                weights=w,
             )
         ctx = _condition_match(
             timeline,
@@ -491,15 +511,18 @@ def board_snapshot(
     )
     npei_snap = compute_npei(timeline, weights=w)
 
-    def _signals(side: Side) -> TeamSignals:
-        return TeamSignals(
-            delta_5min=float(d5.team(side).pressure) if d5 else 0.0,
-            pressure_index=float(pi.team(side).pressure) if pi else 0.0,
-            rule_of_three=float(ro3.team(side).unrealised_goals) if ro3 else 0.0,
-            npei=float(npei_snap.team(side).score) if npei_snap else 0.0,
-        )
-
-    ks = kscore.evaluate(_signals(Side.HOME), _signals(Side.AWAY), weights=w, threshold=th[7])
+    ks = _kindex(
+        timeline,
+        ro3,
+        home_goals=home_goals,
+        away_goals=away_goals,
+        home_odds=home_odds,
+        draw_odds=draw_odds,
+        away_odds=away_odds,
+        first_half=first_half,
+        threshold=th[7],
+        weights=w,
+    )
 
     ctx = None
     if conditions and any(conditions.values()):

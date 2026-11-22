@@ -367,3 +367,40 @@ def test_kickoff_draw_odds_reads_the_same_block_as_home_and_away() -> None:
     )
     assert kickoff_draw_odds({"home": 2.1, "away": 3.4}) is None
     assert kickoff_draw_odds(None) is None
+
+
+class TestWindowGoalShare:
+    def test_second_half_window(self) -> None:
+        from kalchas_core.chance import remaining_goal_share, window_goal_share
+
+        share = window_goal_share(60, 20, first_half=False)
+        assert share == pytest.approx(
+            remaining_goal_share(60, first_half=False) - remaining_goal_share(80, first_half=False)
+        )
+
+    def test_first_half_window_stops_at_half_time(self) -> None:
+        from kalchas_core.chance import (
+            GOAL_SHARE_BY_QUARTER_HOUR,
+            remaining_goal_share,
+            window_goal_share,
+        )
+
+        rest_of_half = remaining_goal_share(40, first_half=True) - sum(
+            GOAL_SHARE_BY_QUARTER_HOUR[3:]
+        )
+        assert window_goal_share(40, 20, first_half=True) == pytest.approx(rest_of_half)
+        assert window_goal_share(40, 45, first_half=True) == pytest.approx(rest_of_half)
+
+    def test_window_to_full_time_is_the_rest_of_the_match(self) -> None:
+        from kalchas_core.chance import remaining_goal_share, window_goal_share
+
+        assert window_goal_share(80, 30, first_half=False) == pytest.approx(
+            remaining_goal_share(80, first_half=False)
+        )
+
+    def test_never_negative_and_grows_with_the_window(self) -> None:
+        from kalchas_core.chance import window_goal_share
+
+        shares = [window_goal_share(55, h, first_half=False) for h in (0, 5, 10, 20)]
+        assert shares[0] == 0.0
+        assert shares == sorted(shares)

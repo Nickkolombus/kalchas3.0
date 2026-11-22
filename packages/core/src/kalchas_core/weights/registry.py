@@ -141,16 +141,18 @@ STRATEGY_INFO: Mapping[str, StrategyInfo] = MappingProxyType(
             name="K-Score",
             short="K",
             equation=(
-                "votes: momentum=σ(Δ5/ms), pressure=PI/100, rule3=(RO3+0.3)/1.3\n"
-                "logit = bias + Σ trust_i · (2·vote_i − 1) + context\n"
-                "K = round(100 · σ(logit) · ΦI)   ΦI = floor+(1−floor)·NPEI/100"
+                "base = goal rate from kickoff 1X2 x share of goals in the next window "
+                "(to half end) x score tilt x base level\n"
+                "boost = [1H multiplier] x (1 + boost x unrealised)"
+                " x (1 + shots last 10')^power\n"
+                "K = round(100 x (1 - exp(-base x boost)))"
             ),
             blurb=(
-                "Meta-strategy: three consultant strategies vote in [0,1], a weighted "
-                "logit blend produces a probability, and NPEI scales it as a focus "
-                "multiplier (ΦI). Optional context terms adjust for red cards, late "
-                "trailing and kickoff odds. Outputs a 0–100 score per team and a "
-                "match-level OR of both."
+                "The chance, in %, that this team scores within the window (20 minutes "
+                "by default, ending at half time), the same bet a K alert is settled "
+                "on. Kickoff prices, the clock and the score set the base; unrealised "
+                "goals and recent shots nudge it. Fitted on match history: K 40-50 "
+                "scored about 42% of the time."
             ),
         ),
     }
@@ -385,94 +387,63 @@ REGISTRY: Mapping[str, tuple[WeightSpec, ...]] = MappingProxyType(
         ),
         "kscore": _specs(
             WeightSpec(
-                "trust_momentum",
-                "Trust: Δ5min (momentum)",
-                1.2,
-                0.0,
-                3.0,
-                0.1,
-                "Logit weight on the Delta 5min consultant vote.",
-            ),
-            WeightSpec(
-                "trust_pressure",
-                "Trust: Pressure Index",
-                0.7,
-                0.0,
-                3.0,
-                0.1,
-                "Logit weight on the Pressure Index consultant vote.",
-            ),
-            WeightSpec(
-                "trust_rule3",
-                "Trust: Unrealised goals",
-                0.8,
-                0.0,
-                3.0,
-                0.1,
-                "Logit weight on the Unrealised goals consultant vote.",
-            ),
-            WeightSpec(
-                "phi_floor",
-                "ΦI focus floor",
-                0.2,
-                0.0,
-                1.0,
-                0.05,
-                "Minimum focus multiplier when NPEI is zero.",
-            ),
-            WeightSpec(
-                "bias",
-                "Logit bias",
-                -1.0,
-                -5.0,
+                "horizon_minutes",
+                "Window (minutes)",
+                20.0,
                 5.0,
-                0.1,
-                "Constant shift applied before the sigmoid.",
+                45.0,
+                1.0,
+                "K is the chance the team scores within this many minutes, stopping "
+                "at the end of the half. Keep it equal to the K-Index outcome window.",
             ),
             WeightSpec(
-                "momentum_scale",
-                "Δ5 → vote scale",
-                8.0,
-                1.0,
-                30.0,
+                "base_multiplier",
+                "Base level",
+                0.92,
                 0.5,
-                "Divisor in σ(Δ5 / scale) for the momentum vote.",
+                1.5,
+                0.01,
+                "Scales the scoring rate the kickoff prices, clock and score give. "
+                "1.0 takes the prices as they are; fitted 0.92 on match history.",
             ),
             WeightSpec(
-                "ctx_red_card",
-                "Context: red-card penalty",
-                0.4,
-                0.0,
+                "first_half_multiplier",
+                "First-half multiplier",
+                1.28,
                 1.0,
-                0.05,
-                "Logit subtracted per red card (capped at 2).",
+                2.0,
+                0.01,
+                "Goals inside a first-half window come more often than the "
+                "quarter-hour shares say. Applied in the first half only.",
             ),
             WeightSpec(
-                "ctx_ko_prior",
-                "Context: kickoff-odds prior",
-                0.25,
-                0.0,
-                1.0,
-                0.05,
-                "Logit shift from normalised kickoff implied probabilities.",
-            ),
-            WeightSpec(
-                "ctx_trailing",
-                "Context: late-trailing boost",
-                0.15,
+                "unrealised_boost",
+                "Boost per unrealised goal",
+                0.07,
                 0.0,
                 0.5,
-                0.05,
-                "Logit added when trailing after ctx_late_minute.",
+                0.01,
+                "Each Rule of 3 unrealised goal (0 to 4) raises the rate by this "
+                "share: 0.07 means +7% per unrealised goal.",
             ),
             WeightSpec(
-                "ctx_late_minute",
-                "Context: late-game start",
-                70.0,
-                60.0,
-                90.0,
+                "recent_shots_power",
+                "Recent shots power",
+                0.08,
+                0.0,
+                0.5,
+                0.01,
+                "Rate x (1 + shots in the last 10 minutes) ^ this. At 0.08, two "
+                "shots add 9% and five add 15%.",
+            ),
+            WeightSpec(
+                "max_live_boost",
+                "Most the live stats can add",
+                2.0,
                 1.0,
-                "Minute from which the trailing boost begins to ramp.",
+                3.0,
+                0.05,
+                "Cap on the combined first-half, unrealised and recent-shots multiplier.",
             ),
         ),
     }
@@ -535,16 +506,7 @@ BUILTIN_PRESETS: Mapping[str, Mapping[str, Mapping[str, float]]] = MappingProxyT
             },
         },
         "kscore": {
-            "Balanced (default)": {},
-            "Momentum-led": {
-                "trust_momentum": 1.8,
-                "trust_pressure": 0.5,
-            },
-            "Context-aware": {
-                "ctx_red_card": 0.6,
-                "ctx_trailing": 0.25,
-                "ctx_ko_prior": 0.4,
-            },
+            "Fitted (default)": {},
         },
     }
 )

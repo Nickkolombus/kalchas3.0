@@ -1,8 +1,8 @@
-"""K-Score (Strategy 7).
+"""K-Index (Strategy 7): the chance, in %, that a team scores inside the window.
 
-New in 3.0; 2.2 had no unit tests for the blend. Matched 2.2 over 800 signal
-pairs when it was ported; it has diverged since Omega, the fourth consultant,
-was retired. Three remain.
+Rebuilt 2026-11-22 from a logit blend of other strategies into a calibrated
+chance. These tests pin the arithmetic and the behaviours the recipe was
+fitted for; calibration itself was checked on `match_history`.
 """
 
 from __future__ import annotations
@@ -10,226 +10,199 @@ from __future__ import annotations
 import math
 
 import pytest
-from kalchas_core.match import Side
+from conftest import timeline_from
+from kalchas_core import chance
+from kalchas_core.match import MatchTimeline, Side
 from kalchas_core.strategies.kscore import (
+    DEFAULT_RATES,
     DEFAULT_THRESHOLD,
-    MatchContext,
-    TeamSignals,
-    consultant_votes,
-    context_logit_delta,
+    UNREALISED_CAP,
     evaluate,
-    evaluate_team,
-    focus,
-    sigmoid,
+    live_boost,
+    recent_shots,
 )
 from kalchas_core.weights import WeightSet
 
 DEFAULTS = WeightSet.defaults()
+EVEN = {"home_odds": 2.5, "draw_odds": 3.3, "away_odds": 2.9}
 
 
-def signals(**kwargs: float) -> TeamSignals:
-    return TeamSignals(**kwargs)
+def quiet(minute: int) -> MatchTimeline:
+    return timeline_from({minute - 10: {}, minute: {}}, current_minute=minute)
 
 
-class TestSigmoid:
-    def test_midpoint(self) -> None:
-        assert sigmoid(0.0) == pytest.approx(0.5)
+def shooting(minute: int, *, home_shots: int = 0, away_shots: int = 0) -> MatchTimeline:
+    return timeline_from(
+        {
+            minute - 10: {},
+            minute: {
+                "home": {"shots_off_target": home_shots},
+                "away": {"shots_off_target": away_shots},
+            },
+        },
+        current_minute=minute,
+    )
 
-    def test_is_monotonic_and_bounded(self) -> None:
-        values = [sigmoid(x) for x in (-20, -1, 0, 1, 20)]
-        assert values == sorted(values)
-        assert all(0.0 < v < 1.0 for v in values)
 
-    def test_extreme_inputs_stay_finite(self) -> None:
-        assert math.isfinite(sigmoid(1e6))
-        assert math.isfinite(sigmoid(-1e6))
+def weights(**overrides: float) -> WeightSet:
+    return WeightSet.from_overrides({"kscore": overrides})
 
 
-class TestConsultantVotes:
-    def test_quiet_signals_sit_near_or_below_neutral(self) -> None:
-        votes = consultant_votes(signals(), DEFAULTS)
-        assert votes["momentum"] == pytest.approx(0.5)
-        assert votes["pressure"] == 0.0
-        assert votes["rule3"] == pytest.approx(0.3 / 1.3)
+class TestRecipe:
+    def test_quiet_minute_is_the_priced_base(self) -> None:
+        result = evaluate(quiet(60), first_half=False, weights=weights(), **EVEN)
+        home_rate, _ = chance.goal_rates(2.5, 3.3, 2.9)
+        expected = home_rate * chance.window_goal_share(60, 20, first_half=False) * 0.92
+        assert result.home.probability == pytest.approx(1 - math.exp(-expected))
+        assert result.home.live_boost == 1.0
+        assert result.home.score == round(100 * (1 - math.exp(-expected)))
+        assert result.priced
 
-    def test_only_three_consultants_vote(self) -> None:
-        assert set(consultant_votes(signals(), DEFAULTS)) == {"momentum", "pressure", "rule3"}
+    def test_reads_as_a_percentage(self) -> None:
+        result = evaluate(quiet(30), **EVEN)
+        assert 0 <= result.home.score <= 100
+        assert result.home.score == round(result.home.probability * 100)
 
-    def test_strong_signals_approach_one(self) -> None:
-        votes = consultant_votes(
-            signals(
-                delta_5min=40.0,
-                pressure_index=100.0,
-                rule_of_three=1.0,
-            ),
-            DEFAULTS,
+    def test_default_threshold_is_forty(self) -> None:
+        assert DEFAULT_THRESHOLD == 40.0
+
+    def test_favourite_reads_higher(self) -> None:
+        result = evaluate(quiet(55), home_odds=1.4, draw_odds=4.8, away_odds=8.0)
+        assert result.home.score > result.away.score
+
+    def test_team_behind_reads_a_little_higher(self) -> None:
+        level = evaluate(quiet(60), **EVEN)
+        behind = evaluate(quiet(60), home_goals=0, away_goals=1, **EVEN)
+        assert behind.home.probability > level.home.probability
+        assert behind.away.probability < level.away.probability
+
+    def test_less_time_left_reads_lower(self) -> None:
+        early = evaluate(quiet(60), first_half=False, **EVEN)
+        late = evaluate(quiet(85), first_half=False, **EVEN)
+        assert late.home.probability < early.home.probability
+
+    def test_window_stops_at_half_time(self) -> None:
+        """At 44' only the rest of the first half counts, not the second."""
+        at_44 = evaluate(
+            quiet(44), first_half=True, weights=weights(first_half_multiplier=1.0), **EVEN
         )
-        assert votes["momentum"] > 0.99
-        assert votes["pressure"] == 1.0
-        assert votes["rule3"] == 1.0
-
-    def test_momentum_scale_is_tunable(self) -> None:
-        quiet_scale = WeightSet.from_overrides({"kscore": {"momentum_scale": 2.0}})
-        wide_scale = WeightSet.from_overrides({"kscore": {"momentum_scale": 30.0}})
-        s = signals(delta_5min=8.0)
-        assert (
-            consultant_votes(s, quiet_scale)["momentum"]
-            > consultant_votes(s, wide_scale)["momentum"]
+        home_rate, _ = chance.goal_rates(2.5, 3.3, 2.9)
+        rest_of_half = chance.remaining_goal_share(44, first_half=True) - sum(
+            chance.GOAL_SHARE_BY_QUARTER_HOUR[3:]
         )
+        expected = home_rate * rest_of_half * 0.92
+        assert at_44.home.probability == pytest.approx(1 - math.exp(-expected))
+
+    def test_match_score_is_either_team(self) -> None:
+        result = evaluate(quiet(50), **EVEN)
+        either = 1 - (1 - result.home.probability) * (1 - result.away.probability)
+        assert result.match_score == round(100 * either)
+
+    def test_no_prices_falls_back_to_an_average_match(self) -> None:
+        result = evaluate(quiet(60), first_half=False)
+        expected = DEFAULT_RATES[0] * chance.window_goal_share(60, 20, first_half=False) * 0.92
+        assert result.home.probability == pytest.approx(1 - math.exp(-expected))
+        assert not result.priced
+
+    def test_horizon_is_tunable(self) -> None:
+        short = evaluate(quiet(60), weights=weights(horizon_minutes=10), **EVEN)
+        long = evaluate(quiet(60), weights=weights(horizon_minutes=30), **EVEN)
+        assert short.home.probability < long.home.probability
+        assert short.horizon_minutes == 10
 
 
-class TestFocus:
-    def test_zero_npei_returns_the_floor(self) -> None:
-        assert focus(0.0, DEFAULTS) == pytest.approx(DEFAULTS.get("kscore", "phi_floor"))
+class TestLiveBoost:
+    def test_unrealised_goals_raise_it(self) -> None:
+        calm = evaluate(quiet(60), **EVEN)
+        overdue = evaluate(quiet(60), home_unrealised=2.0, **EVEN)
+        assert overdue.home.live_boost == pytest.approx(1 + 0.07 * 2)
+        assert overdue.home.probability > calm.home.probability
 
-    def test_full_npei_returns_one(self) -> None:
-        assert focus(100.0, DEFAULTS) == pytest.approx(1.0)
+    def test_unrealised_is_capped_and_floored(self) -> None:
+        assert live_boost(
+            unrealised_goals=9.0, shots_last_10=0, first_half=False, weights=DEFAULTS
+        ) == pytest.approx(1 + 0.07 * UNREALISED_CAP)
+        assert live_boost(
+            unrealised_goals=-1.5, shots_last_10=0, first_half=False, weights=DEFAULTS
+        ) == pytest.approx(1.0)
 
-    def test_npei_is_linear_between_floor_and_one(self) -> None:
-        mid = focus(50.0, DEFAULTS)
-        floor = DEFAULTS.get("kscore", "phi_floor")
-        assert mid == pytest.approx(floor + (1.0 - floor) * 0.5)
+    def test_recent_shots_raise_it(self) -> None:
+        result = evaluate(shooting(70, home_shots=5), first_half=False, **EVEN)
+        assert result.home.recent_shots == 5
+        assert result.home.live_boost == pytest.approx(6**0.08)
+        assert result.away.live_boost == 1.0
 
+    def test_first_half_multiplier(self) -> None:
+        assert live_boost(
+            unrealised_goals=0, shots_last_10=0, first_half=True, weights=DEFAULTS
+        ) == pytest.approx(1.28)
 
-class TestContext:
-    def test_missing_context_contributes_nothing(self) -> None:
-        assert context_logit_delta(Side.HOME, None, DEFAULTS) == 0.0
-
-    def test_red_cards_penalise(self) -> None:
-        ctx = MatchContext(home_red_cards=2)
-        assert context_logit_delta(Side.HOME, ctx, DEFAULTS) < 0
-        assert context_logit_delta(Side.AWAY, ctx, DEFAULTS) == 0.0
-
-    def test_red_cards_cap_at_two(self) -> None:
-        two = context_logit_delta(Side.HOME, MatchContext(home_red_cards=2), DEFAULTS)
-        three = context_logit_delta(Side.HOME, MatchContext(home_red_cards=3), DEFAULTS)
-        assert two == three
-
-    def test_trailing_late_boosts(self) -> None:
-        ctx = MatchContext(minute=85, home_score=0, away_score=2)
-        assert context_logit_delta(Side.HOME, ctx, DEFAULTS) > 0
-        assert context_logit_delta(Side.AWAY, ctx, DEFAULTS) == 0.0
-
-    def test_trailing_before_the_late_minute_does_nothing(self) -> None:
-        ctx = MatchContext(minute=50, home_score=0, away_score=2)
-        assert context_logit_delta(Side.HOME, ctx, DEFAULTS) == 0.0
-
-    def test_kickoff_favourite_gets_a_positive_prior(self) -> None:
-        ctx = MatchContext(home_kickoff_odds=1.4, away_kickoff_odds=7.0)
-        assert context_logit_delta(Side.HOME, ctx, DEFAULTS) > 0
-        assert context_logit_delta(Side.AWAY, ctx, DEFAULTS) < 0
-
-    def test_even_odds_contribute_nothing(self) -> None:
-        ctx = MatchContext(home_kickoff_odds=2.5, away_kickoff_odds=2.5)
-        assert context_logit_delta(Side.HOME, ctx, DEFAULTS) == pytest.approx(0.0)
-
-
-class TestEvaluate:
-    def test_strong_home_signals_score_higher_than_quiet(self) -> None:
-        strong = evaluate(
-            signals(
-                delta_5min=30.0,
-                pressure_index=90.0,
-                rule_of_three=1.0,
-                npei=80.0,
-            ),
-            signals(),
+    def test_boost_is_capped(self) -> None:
+        capped = live_boost(
+            unrealised_goals=4,
+            shots_last_10=30,
+            first_half=True,
+            weights=weights(unrealised_boost=0.5, max_live_boost=1.5),
         )
-        quiet = evaluate(signals(), signals())
-        assert strong.home.score > quiet.home.score
+        assert capped == pytest.approx(1.5)
 
-    def test_match_score_is_the_or_of_both_probabilities(self) -> None:
-        result = evaluate(
-            signals(delta_5min=20.0, pressure_index=80.0, npei=70.0),
-            signals(delta_5min=20.0, pressure_index=80.0, npei=70.0),
+    def test_switching_live_terms_off_leaves_the_base(self) -> None:
+        w = weights(unrealised_boost=0, recent_shots_power=0, first_half_multiplier=1.0)
+        result = evaluate(shooting(30, home_shots=6), home_unrealised=3, weights=w, **EVEN)
+        assert result.home.probability == pytest.approx(result.home.baseline)
+
+
+class TestRecentShots:
+    def test_counts_shots_on_and_off_target(self) -> None:
+        tl = timeline_from(
+            {60: {}, 70: {"home": {"shots_on_target": 2, "shots_off_target": 3}}},
+            current_minute=70,
         )
-        expected = 1.0 - (1.0 - result.home.probability) * (1.0 - result.away.probability)
-        assert result.match_score == max(0, min(100, round(100.0 * expected)))
+        assert recent_shots(tl, Side.HOME) == 5
+        assert recent_shots(tl, Side.AWAY) == 0
 
-    def test_scores_are_integers_in_zero_to_one_hundred(self) -> None:
-        result = evaluate(
-            signals(delta_5min=50.0, pressure_index=100.0, rule_of_three=2.0, npei=100.0),
-            signals(),
+    def test_does_not_reach_back_into_the_first_half(self) -> None:
+        """The feed numbers first-half stoppage 46-50, so the second half starts at 51."""
+        tl = timeline_from(
+            {
+                40: {},
+                48: {"home": {"shots_off_target": 6}},
+                52: {"home": {"shots_off_target": 6}},
+                55: {"home": {"shots_off_target": 7}},
+            },
+            current_minute=55,
         )
-        for score in (result.home.score, result.away.score, result.match_score):
-            assert isinstance(score, int)
-            assert 0 <= score <= 100
+        assert recent_shots(tl, Side.HOME) == 1
 
-    def test_a_team_above_threshold_triggers(self) -> None:
-        result = evaluate(
-            signals(
-                delta_5min=40.0,
-                pressure_index=100.0,
-                rule_of_three=1.0,
-                npei=100.0,
-            ),
-            signals(),
-            threshold=DEFAULT_THRESHOLD,
+    def test_gap_in_polling_uses_the_nearest_earlier_minute(self) -> None:
+        tl = timeline_from(
+            {20: {}, 35: {"home": {"shots_off_target": 4}}},
+            current_minute=35,
         )
-        assert result.home.score >= DEFAULT_THRESHOLD
-        assert result.triggering_team is Side.HOME
-        assert result.trigger_value == float(result.home.score)
+        assert recent_shots(tl, Side.HOME) == 4
 
-    def test_neither_team_above_threshold_does_not_trigger(self) -> None:
-        result = evaluate(signals(), signals(), threshold=60.0)
+
+class TestTrigger:
+    def test_nothing_triggers_below_threshold(self) -> None:
+        result = evaluate(quiet(60), **EVEN)
         assert result.triggering_team is None
         assert result.trigger_value == 0.0
 
-    def test_tie_on_score_goes_to_the_home_team(self) -> None:
-        identical = signals(
-            delta_5min=40.0,
-            pressure_index=100.0,
-            rule_of_three=1.0,
-            npei=100.0,
-        )
-        result = evaluate(identical, identical, threshold=50.0)
-        assert result.home.score == result.away.score
-        assert result.home.score >= 50.0
+    def test_higher_team_triggers(self) -> None:
+        result = evaluate(quiet(20), threshold=1, home_odds=1.3, draw_odds=5.5, away_odds=10.0)
         assert result.triggering_team is Side.HOME
+        assert result.trigger_value == float(result.home.score)
 
-    def test_focus_scales_the_raw_probability(self) -> None:
-        high = evaluate_team(signals(delta_5min=20.0, pressure_index=80.0, npei=100.0))
-        low = evaluate_team(signals(delta_5min=20.0, pressure_index=80.0, npei=0.0))
-        assert high.probability > low.probability
-        assert high.probability_raw == pytest.approx(low.probability_raw)
-
-
-class TestRemovedDeadControls:
-    def test_horizon_is_not_in_the_registry(self) -> None:
-        """2.2 showed a horizon slider that the formula never read."""
-        assert "horizon" not in WeightSet.defaults().for_strategy("kscore")
-
-    def test_omega_trust_is_not_in_the_registry(self) -> None:
-        assert "trust_omega" not in WeightSet.defaults().for_strategy("kscore")
+    def test_ties_go_home(self) -> None:
+        result = evaluate(quiet(20), threshold=1, home_odds=2.6, draw_odds=3.2, away_odds=2.6)
+        if result.home.score == result.away.score:
+            assert result.triggering_team is Side.HOME
 
 
-class TestWeightTuning:
-    def test_raising_momentum_trust_amplifies_a_strong_delta(self) -> None:
-        heavy = WeightSet.from_overrides({"kscore": {"trust_momentum": 3.0}})
-        light = WeightSet.from_overrides({"kscore": {"trust_momentum": 0.1}})
-        s = signals(delta_5min=40.0, npei=100.0)
-        assert evaluate_team(s, weights=heavy).score > evaluate_team(s, weights=light).score
-
-    def test_a_preset_applies(self) -> None:
-        preset = WeightSet.from_preset("kscore", "Momentum-led")
-        assert evaluate_team(signals(delta_5min=20.0, npei=50.0), weights=preset).score >= 0
-
-    def test_context_weights_at_zero_disable_the_terms(self) -> None:
-        off = WeightSet.from_overrides(
-            {
-                "kscore": {
-                    "ctx_red_card": 0.0,
-                    "ctx_trailing": 0.0,
-                    "ctx_ko_prior": 0.0,
-                }
-            }
-        )
-        ctx = MatchContext(
-            minute=85,
-            home_score=0,
-            away_score=2,
-            home_red_cards=2,
-            home_kickoff_odds=1.3,
-            away_kickoff_odds=6.0,
-        )
-        assert context_logit_delta(Side.HOME, ctx, off) == 0.0
+def test_old_weight_keys_are_ignored() -> None:
+    """Saved rows for the retired blend (trust_*, bias, phi_floor...) drop out."""
+    w = WeightSet.from_overrides({"kscore": {"bias": -2.3, "trust_momentum": 1.8}})
+    assert w.get("kscore", "base_multiplier") == pytest.approx(0.92)
+    assert evaluate(quiet(60), weights=w, **EVEN).home.probability == pytest.approx(
+        evaluate(quiet(60), **EVEN).home.probability
+    )
