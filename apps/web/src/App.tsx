@@ -17,7 +17,15 @@ import {
   type HoverScale,
   type WindowBlock,
 } from "./HoverTip";
-import { PickBox, PickTag, SpyglassIcon, WatchlistButton, isLook, usePick } from "./WatchlistPicks";
+import {
+  FirstHalfTag,
+  PickBox,
+  PickTag,
+  SpyglassIcon,
+  WatchlistButton,
+  isLook,
+  usePick,
+} from "./WatchlistPicks";
 import { logVisitEvent, visitorId } from "./visit";
 import { MatchOverlay } from "./MatchPanel";
 import { ContactLink, SiteFooter } from "./ContactForm";
@@ -1055,6 +1063,12 @@ function TeamStack({
           ) : null}
           {run?.side === "home" ? <UnderdogMark run={run} /> : null}
           <PickTag matchId={match.match_id} score={match.score} minute={match.minute} side="home" />
+          <FirstHalfTag
+            matchId={match.match_id}
+            score={match.score}
+            status={match.status_short}
+            goals={match.goal_events}
+          />
         </div>
         <div className="team-line">
           <TeamBadge name={match.away_team} src={awayLogo} />

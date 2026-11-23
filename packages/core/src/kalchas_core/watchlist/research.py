@@ -10,6 +10,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any, Final
 
+from kalchas_core.watchlist.first_half import first_half_chance
 from kalchas_core.watchlist.patterns import (
     NOTABLE,
     STRONG,
@@ -287,6 +288,7 @@ def list_row(research: Mapping[str, Any], league_key: str) -> dict[str, Any]:
     top = patterns[0] if patterns and research["watch"] != "quiet" else None
     odds = research.get("odds") or {}
     result = research.get("result") or None
+    first_half = first_half_chance(odds)
     return {
         "match_id": research["match_id"],
         "kickoff": research["kickoff"],
@@ -294,6 +296,11 @@ def list_row(research: Mapping[str, Any], league_key: str) -> dict[str, Any]:
         "home": {k: research["home"][k] for k in ("name", "badge", "position")},
         "away": {k: research["away"][k] for k in ("name", "badge", "position")},
         "odds": {k: odds[k] for k in ("home", "draw", "away") if k in odds} or None,
+        # Chance of a goal before half-time from the Over 2.5 price; the live
+        # board marks the top tenth (`first_half.BADGE_MIN`).
+        "first_half": {"chance": round(first_half, 3), "over_2_5": float(odds["over_2_5"])}
+        if first_half is not None
+        else None,
         "watch": research["watch"],
         "score": research["score"],
         "lead_key": top["key"] if top else "",

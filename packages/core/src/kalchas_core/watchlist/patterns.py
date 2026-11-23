@@ -13,6 +13,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Final
 
+from kalchas_core.watchlist.first_half import first_half_chance
 from kalchas_core.watchlist.profile import (
     MIN_LEAGUE_GAMES,
     LeagueNorms,
@@ -58,6 +59,7 @@ FAMILY: Final = {
     "team_over_1_5_away": "goals",
     "leaky_home": "goals",
     "leaky_away": "goals",
+    "first_half_goal": "goals",
     "under_2_5": "tight",
     "btts_no": "tight",
     "blanks_home": "tight",
@@ -341,25 +343,41 @@ def _late(home: TeamProfile, away: TeamProfile, norms: LeagueNorms, league: str)
     ]
 
 
-def _early(home: TeamProfile, away: TeamProfile, norms: LeagueNorms, league: str) -> list[Pattern]:
-    norm = norms.rate("first_half_goal")
-    pair = _pair(home, away, "first_half_goal", norm, games="ht")
-    if pair is None:
+def _early(
+    home: TeamProfile,
+    away: TeamProfile,
+    norms: LeagueNorms,
+    league: str,
+    odds: Mapping[str, Any] | None,
+) -> list[Pattern]:
+    """A goal before half-time, from the Over 2.5 price (`first_half`). The
+    teams' first-half records are quoted but not counted: once the price is
+    known they add nothing."""
+    chance = first_half_chance(odds)
+    if chance is None or odds is None:
         return []
-    estimate, (hc, hn), (ac, an) = pair
-    score = _lift(estimate, norm)
+    norm = norms.rate("first_half_goal")
+    score = _lift(chance, norm)
     if score <= 0:
         return []
+    detail = (
+        f"Over 2.5 goals is priced {float(odds['over_2_5']):.2f}, which puts a goal before "
+        f"half-time at about {_pct(chance)}, against {_avg(league, norm)}."
+    )
+    pair = _pair(home, away, "first_half_goal", norm, games="ht")
+    if pair is not None:
+        _, (hc, hn), (ac, an) = pair
+        detail += (
+            f" {_of(hc, hn)} of {_poss(home.name)} last games and {_of(ac, an)} of "
+            f"{_poss(away.name)} had one."
+        )
     return [
         Pattern(
             key="first_half_goal",
             tag="First-half goals",
-            title="Goals tend to come before half-time.",
-            detail=(
-                f"{_of(hc, hn)} of {_poss(home.name)} last games and {_of(ac, an)} of "
-                f"{_poss(away.name)} had a first-half goal, against {_avg(league, norm)}."
-            ),
-            brief=f"A first-half goal in {_of(hc, hn)} and {_of(ac, an)} of their last games.",
+            title="A goal before half-time looks likely.",
+            detail=detail,
+            brief=f"Priced for goals: a first-half goal about {_pct(chance)}.",
             score=score,
         )
     ]
@@ -665,7 +683,7 @@ def match_patterns(
         *_btts(home, away, norms, league, h2h),
         *_goals_line(home, away, norms, league, h2h),
         *_late(home, away, norms, league),
-        *_early(home, away, norms, league),
+        *_early(home, away, norms, league, odds),
         *_team_goals(home, away, norms, league),
         *_cards(home, away, norms, league),
         *_runs(home, away),

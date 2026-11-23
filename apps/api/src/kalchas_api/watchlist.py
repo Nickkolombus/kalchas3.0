@@ -131,10 +131,20 @@ class Pick(BaseModel):
     outcome_note: str = ""
 
 
+class FirstHalfMark(BaseModel):
+    """A match the Over 2.5 price puts in the top tenth for a goal before
+    half-time, for the live board's "1H goal" mark."""
+
+    match_id: str
+    chance: float
+    over_2_5: float
+
+
 class LivePicks(BaseModel):
     today: str
     next: Pick | None = None
     picks: list[Pick] = []
+    first_half: list[FirstHalfMark] = []
 
 
 class WatchlistMonth(BaseModel):
@@ -436,19 +446,30 @@ def _pick(row: dict, day: str) -> Pick:
 @router.get("/picks", response_model=LivePicks)
 def watchlist_picks() -> LivePicks:
     """For the live board: every strong watch and worth a look of yesterday
-    and today (late games cross midnight), and the next strong watch of today
-    still to kick off."""
+    and today (late games cross midnight), the next strong watch of today
+    still to kick off, and the matches marked for a first-half goal."""
+    from kalchas_core.watchlist.first_half import BADGE_MIN
     from kalchas_db.watchlist import load_watchlist_day
 
     now = datetime.now(UTC)
     today = board_today(now)
     picks: list[Pick] = []
     upcoming: list[Pick] = []
+    first_half: list[FirstHalfMark] = []
     try:
         dsn = _dsn()
         for day in (today - timedelta(days=1), today):
             doc = load_watchlist_day(dsn, day.isoformat()) or {}
             for row in doc.get("matches") or []:
+                early = row.get("first_half") or {}
+                if float(early.get("chance") or 0) >= BADGE_MIN:
+                    first_half.append(
+                        FirstHalfMark(
+                            match_id=str(row["match_id"]),
+                            chance=float(early["chance"]),
+                            over_2_5=float(early.get("over_2_5") or 0),
+                        )
+                    )
                 if row.get("watch") not in ("strong", "look"):
                     continue
                 pick = _pick(row, day.isoformat())
@@ -466,7 +487,12 @@ def watchlist_picks() -> LivePicks:
     except Exception as exc:
         raise _unavailable(exc) from exc
     upcoming.sort(key=lambda p: (p.kickoff, p.match_id))
-    return LivePicks(today=today.isoformat(), next=upcoming[0] if upcoming else None, picks=picks)
+    return LivePicks(
+        today=today.isoformat(),
+        next=upcoming[0] if upcoming else None,
+        picks=picks,
+        first_half=first_half,
+    )
 
 
 class LiveScore(BaseModel):

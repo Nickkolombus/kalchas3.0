@@ -156,6 +156,31 @@ def test_picks_lists_strong_watches_and_the_next_to_kick_off(
     assert body["picks"][0]["outcome"] == "landed"
 
 
+def test_picks_carry_the_first_half_marks(client: TestClient, monkeypatch) -> None:
+    row = DAY["matches"][0]
+    marked = {
+        **row,
+        "match_id": "301",
+        "watch": "quiet",
+        "first_half": {"chance": 0.83, "over_2_5": 1.38},
+    }
+    below = {**row, "match_id": "302", "first_half": {"chance": 0.76, "over_2_5": 1.7}}
+    older = {**row, "match_id": "303"}  # built before the field existed
+    yesterday = {**DAY, "matches": [{**marked, "match_id": "300"}]}
+    today = {**DAY, "matches": [marked, below, older]}
+    monkeypatch.setattr(
+        "kalchas_db.watchlist.load_watchlist_day",
+        lambda dsn, day: today if day == "2026-11-03" else yesterday,
+    )
+    body = client.get("/api/watchlist/picks").json()
+    assert body["first_half"] == [
+        {"match_id": "300", "chance": 0.83, "over_2_5": 1.38},
+        {"match_id": "301", "chance": 0.83, "over_2_5": 1.38},
+    ]
+    # A quiet match carries the mark but is not a pick.
+    assert "301" not in {p["match_id"] for p in body["picks"]}
+
+
 def test_live_scores_for_unsettled_matches_under_way(client: TestClient, monkeypatch) -> None:
     under_way = {
         **DAY["matches"][0],

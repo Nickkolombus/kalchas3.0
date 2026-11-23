@@ -289,6 +289,28 @@ body {
   background: rgba(242, 235, 224, 0.06);
 }
 
+/* First-half goal mark: from the price, not a watchlist pick, so its own
+   blue. Landed fills, missed reads the same grey as a pick. */
+.pick-tag.fh-tag {
+  color: #8fb8ff;
+  background: rgba(143, 184, 255, 0.12);
+  cursor: default;
+}
+
+.pick-tag.fh-tag.is-landed {
+  color: #071018;
+  background: #8fb8ff;
+}
+
+.pick-tag.fh-tag.is-missed {
+  color: var(--muted);
+  background: rgba(242, 235, 224, 0.06);
+}
+
+.hover-card.hover-card-pick.hover-card-fh {
+  border-top-color: #8fb8ff;
+}
+
 .hover-card.hover-card-pick {
   min-width: 17rem;
   max-width: 21rem;

@@ -27,11 +27,19 @@ export type Pick = {
   outcome_note?: string;
 };
 
-type LivePicks = { today: string; next?: Pick | null; picks: Pick[] };
+/** A match the Over 2.5 price puts in the top tenth for a goal before half-time. */
+export type FirstHalfMark = { match_id: string; chance: number; over_2_5: number };
 
-type PicksState = { today: string | null; byId: Map<string, Pick>; next: Pick | null };
+type LivePicks = { today: string; next?: Pick | null; picks: Pick[]; first_half?: FirstHalfMark[] };
 
-const PicksContext = createContext<PicksState>({ today: null, byId: new Map(), next: null });
+type PicksState = {
+  today: string | null;
+  byId: Map<string, Pick>;
+  next: Pick | null;
+  firstHalf: Map<string, FirstHalfMark>;
+};
+
+const PicksContext = createContext<PicksState>({ today: null, byId: new Map(), next: null, firstHalf: new Map() });
 
 const REFRESH_MS = 5 * 60_000;
 
@@ -66,7 +74,12 @@ export function PicksProvider({ children }: { children: ReactNode }) {
       picks
         .filter((p) => !isLook(p) && p.day === data?.today && Date.parse(p.kickoff) > now)
         .sort((a, b) => a.kickoff.localeCompare(b.kickoff))[0] ?? null;
-    return { today: data?.today ?? null, byId: new Map(picks.map((p) => [p.match_id, p])), next };
+    return {
+      today: data?.today ?? null,
+      byId: new Map(picks.map((p) => [p.match_id, p])),
+      next,
+      firstHalf: new Map((data?.first_half ?? []).map((m) => [String(m.match_id), m])),
+    };
   }, [data, now]);
 
   return <PicksContext.Provider value={value}>{children}</PicksContext.Provider>;
@@ -291,6 +304,89 @@ export function PickTag({
           {decided ? <i aria-hidden>{decided === "landed" ? "✓" : "✗"}</i> : null}
           {pick.tag}
         </a>
+      </HoverTip>
+    </span>
+  );
+}
+
+/* ------------------------------------------------------- first-half mark */
+
+const BEFORE_KICKOFF = new Set(["", "NS", "TBD", "PST", "CANC", "ABD", "AWD", "WO", "SUSP", "INT"]);
+
+/** Whether a goal came before half-time: `null` while the first half is
+ * still open, `"unknown"` when the board can't tell (goals after the break
+ * and no event clearly before it). */
+export function firstHalfVerdict(
+  score: string,
+  status: string | null | undefined,
+  goals: { minute: number }[] | undefined,
+): Outcome | "unknown" | null {
+  const m = /^(\d+)\s*[-–]\s*(\d+)/.exec(score || "");
+  const total = m ? Number(m[1]) + Number(m[2]) : 0;
+  const st = (status || "").toUpperCase();
+  if (BEFORE_KICKOFF.has(st)) return null;
+  if (st === "1H") return total > 0 ? "landed" : null;
+  if (st === "HT") return total > 0 ? "landed" : "missed";
+  if (total === 0) return "missed";
+  // Second half or later. The feed numbers first-half stoppage 46-50, so
+  // only a goal at 45' or earlier is surely a first-half one.
+  return (goals ?? []).some((g) => g.minute > 0 && g.minute <= 45) ? "landed" : "unknown";
+}
+
+/** "1H goal 82%" next to the home team, on matches whose Over 2.5 price puts
+ * a goal before half-time in the top tenth. Ticks when one comes, strikes
+ * through at a goalless half-time. Left off where the watchlist pick on the
+ * same match already says it. */
+export function FirstHalfTag({
+  matchId,
+  score,
+  status,
+  goals,
+}: {
+  matchId: string;
+  score: string;
+  status?: string | null;
+  goals?: { minute: number }[];
+}) {
+  const { firstHalf } = useContext(PicksContext);
+  const pick = usePick(matchId);
+  const mark = firstHalf.get(String(matchId));
+  if (!mark || pick?.lead_key === "first_half_goal") return null;
+  const decided = firstHalfVerdict(score, status, goals);
+  if (decided === "unknown") return null;
+  const pct = Math.round(mark.chance * 100);
+  const now =
+    decided === "landed"
+      ? "Landed: a goal before half-time."
+      : decided === "missed"
+        ? "Missed: no goal before half-time."
+        : BEFORE_KICKOFF.has((status || "").toUpperCase())
+          ? ""
+          : "Now: no goal yet before half-time.";
+  return (
+    <span className="pick-mark" data-hover-stop>
+      <HoverTip
+        anchorClass="pick-anchor"
+        cardClass="hover-card-pick hover-card-fh"
+        body={
+          <div className="pick-tip">
+            <p className="pick-tip-k">First-half goal · from the price</p>
+            <p>
+              <b>About {pct}% for a goal before half-time.</b> Over 2.5 goals was priced{" "}
+              {mark.over_2_5.toFixed(2)} at kick-off. Matches priced like this had a first-half goal
+              about {pct}% of the time, against 72% of all matches.
+            </p>
+            {now ? <p className="pick-tip-now">{now}</p> : null}
+          </div>
+        }
+      >
+        <span
+          className={`pick-tag fh-tag${decided ? ` is-${decided}` : ""}`}
+          title={decided === "landed" ? "Landed" : decided === "missed" ? "Missed" : undefined}
+        >
+          {decided ? <i aria-hidden>{decided === "landed" ? "✓" : "✗"}</i> : null}
+          1H goal {pct}%
+        </span>
       </HoverTip>
     </span>
   );
