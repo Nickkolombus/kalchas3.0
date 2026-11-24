@@ -316,8 +316,8 @@
 .m-tone-urg { --tc: #5eead4; --tb: 45, 212, 191; }
 .m-tone-d5 { --tc: #fdba74; --tb: 249, 115, 22; }
 .m-tone-d10 { --tc: #fde68a; --tb: 234, 179, 8; }
-.m-tone-lbar { --tc: #7dd3fc; --tb: 14, 165, 233; }
-.m-tone-phi { --tc: #93c5fd; --tb: 59, 130, 246; }
+.m-tone-lbar { --tc: #94a3b8; --tb: 148, 163, 184; }
+.m-tone-phi { --tc: #94a3b8; --tb: 148, 163, 184; }
 .m-tone-tslg { --tc: #94a3b8; --tb: 148, 163, 184; }
 
 .m-head-cell[class*="m-tone-"] {

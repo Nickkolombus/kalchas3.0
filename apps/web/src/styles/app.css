@@ -1093,13 +1093,14 @@ body {
 .row-a td.col-tone-d10 { background: rgba(234, 179, 8, 0.06); }
 .row-b td.col-tone-d10 { background: rgba(234, 179, 8, 0.11); }
 
-.board th.col-tone-lbar { color: #7dd3fc; background: rgba(14, 165, 233, 0.12); }
-.row-a td.col-tone-lbar { background: rgba(14, 165, 233, 0.07); }
-.row-b td.col-tone-lbar { background: rgba(14, 165, 233, 0.12); }
+/* F Bar and ΦI are match readings, not alerting strategies: same grey as TSLG. */
+.board th.col-tone-lbar { color: #94a3b8; background: rgba(148, 163, 184, 0.12); }
+.row-a td.col-tone-lbar { background: rgba(148, 163, 184, 0.06); }
+.row-b td.col-tone-lbar { background: rgba(148, 163, 184, 0.11); }
 
-.board th.col-tone-phi { color: #93c5fd; background: rgba(59, 130, 246, 0.10); }
-.row-a td.col-tone-phi { background: rgba(59, 130, 246, 0.06); }
-.row-b td.col-tone-phi { background: rgba(59, 130, 246, 0.11); }
+.board th.col-tone-phi { color: #94a3b8; background: rgba(148, 163, 184, 0.12); }
+.row-a td.col-tone-phi { background: rgba(148, 163, 184, 0.06); }
+.row-b td.col-tone-phi { background: rgba(148, 163, 184, 0.11); }
 
 .board th.col-tone-tslg { color: #94a3b8; background: rgba(148, 163, 184, 0.12); }
 .row-a td.col-tone-tslg { background: rgba(148, 163, 184, 0.06); }
@@ -1777,7 +1778,9 @@ body {
 }
 
 .board th.col-stat-start,
-.board td.col-stat-start {
+.board td.col-stat-start,
+.board th.col-tone-lbar,
+.board td.col-tone-lbar {
   border-left: 1px solid rgba(242, 235, 224, 0.16);
 }
 
@@ -1853,8 +1856,8 @@ body {
 .hover-card.hover-tone-urg { border-top-color: #5eead4; }
 .hover-card.hover-tone-d5 { border-top-color: #fdba74; }
 .hover-card.hover-tone-d10 { border-top-color: #fde68a; }
-.hover-card.hover-tone-lbar { border-top-color: #7dd3fc; }
-.hover-card.hover-tone-phi { border-top-color: #93c5fd; }
+.hover-card.hover-tone-lbar { border-top-color: #94a3b8; }
+.hover-card.hover-tone-phi { border-top-color: #94a3b8; }
 .hover-card.hover-tone-k { border-top-color: #e4c56a; }
 .hover-card.hover-tone-tslg { border-top-color: #94a3b8; }
 
@@ -1948,11 +1951,11 @@ body {
   background: var(--accent);
 }
 
-.hover-tone-phi .hover-dot.is-lead { background: #93c5fd; }
+.hover-tone-phi .hover-dot.is-lead { background: #94a3b8; }
 .hover-tone-urg .hover-dot.is-lead { background: #5eead4; }
 .hover-tone-d5 .hover-dot.is-lead { background: #fdba74; }
 .hover-tone-d10 .hover-dot.is-lead { background: #fde68a; }
-.hover-tone-lbar .hover-dot.is-lead { background: #7dd3fc; }
+.hover-tone-lbar .hover-dot.is-lead { background: #94a3b8; }
 .hover-tone-k .hover-dot.is-lead { background: #e4c56a; }
 .hover-tone-tslg .hover-dot.is-lead { background: #94a3b8; }
 
@@ -1987,11 +1990,11 @@ body {
   background: var(--accent);
 }
 
-.hover-tone-phi .hover-mini > i { background: #93c5fd; }
+.hover-tone-phi .hover-mini > i { background: #94a3b8; }
 .hover-tone-urg .hover-mini > i { background: #5eead4; }
 .hover-tone-d5 .hover-mini > i { background: #fdba74; }
 .hover-tone-d10 .hover-mini > i { background: #fde68a; }
-.hover-tone-lbar .hover-mini > i { background: #7dd3fc; }
+.hover-tone-lbar .hover-mini > i { background: #94a3b8; }
 .hover-tone-k .hover-mini > i { background: #e4c56a; }
 
 .hover-card.hover-card-match {
