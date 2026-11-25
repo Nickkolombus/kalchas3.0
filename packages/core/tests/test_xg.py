@@ -14,11 +14,16 @@ def test_box_model_prices_penalties_and_shot_location() -> None:
     assert xg.value == 2.35  # 0.76*2 + 0.12*6 + 0.035*3
 
 
-def test_falls_back_to_on_and_off_target_without_locations() -> None:
+def test_falls_back_to_a_flat_price_per_shot_without_locations() -> None:
     team = TeamStats(shots_on_target=4, shots_off_target=6, penalties=1)
     xg = shot_quality_xg(team)
     assert xg.source == "shots"
-    assert xg.value == 1.79  # 0.76 + 0.19*3 + 0.077*6
+    assert xg.value == 1.48  # 0.76 + 0.08*9
+
+
+def test_fallback_reads_on_the_box_scale() -> None:
+    # UNAN-Managua v Sport Sebaco, 43': Sebaco 7 on target, 4 off, no locations.
+    assert shot_quality_xg(TeamStats(shots_on_target=7, shots_off_target=4)).value == 0.88
 
 
 def test_penalties_never_push_box_shots_negative() -> None:

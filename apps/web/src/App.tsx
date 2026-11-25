@@ -266,7 +266,7 @@ const KIND_RANK: Record<string, number> = {
 };
 
 const XG_HINT =
-  "What a team's shots were worth, by where they were taken: a penalty counts 0.76, a shot in the box 0.12, one from outside 0.035. A ~ means the league sends no shot locations, so it is a rougher guess from shots on and off target.";
+  "What a team's shots were worth, by where they were taken: a penalty counts 0.76, a shot in the box 0.12, one from outside 0.035. A ~ means the league sends no shot locations, so every shot counts 0.08: a rougher guess.";
 
 const XG_ROUGH_NOTE = "Rough guess: this league sends no shot locations.";
 

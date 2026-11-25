@@ -8,17 +8,23 @@ was, using standard published averages:
        + 0.035 x shots outside the box
 
 Shot locations (inside / outside the box) come only with the extended stats
-block that top leagues carry. Elsewhere the estimate falls back to shots on and
-off target, which is rougher, and says so through `source`:
+block that top leagues carry. Elsewhere the estimate falls back to a flat price
+per shot, which is rougher, and says so through `source`:
 
     xG = 0.76 x penalties
-       + 0.19 x (shots on target - penalties)
-       + 0.077 x shots off target
+       + 0.08 x (shots on target + shots off target - penalties)
+
+The fallback is fitted to the box version, so both read on one scale: on
+4,100 top-league team-halves (27 Oct - 25 Nov 2026, where both can be worked
+out) the box version priced a shot at about 0.08 whether it was on target or
+off, and knowing the goals scored added nothing. Out of sample it misses the
+box version by 0.23 a half. The earlier fallback (0.19 per shot on target,
+0.077 off) read 0.20 a half higher and missed by 0.36.
 
 Checked on 2026-11-25 against a commercial board's full-time xG for four
 Champions League teams: the box version missed by 0.47 on average (three of
-four within 0.16), the shots version by 0.84. It is an estimate; one clear
-one-on-one chance can be worth far more than its shot type suggests.
+four within 0.16). It is an estimate; one clear one-on-one chance can be worth
+far more than its shot type suggests.
 """
 
 from __future__ import annotations
@@ -31,8 +37,7 @@ from kalchas_core.match.snapshot import TeamStats
 PENALTY_XG = 0.76
 INSIDE_BOX_XG = 0.12
 OUTSIDE_BOX_XG = 0.035
-ON_TARGET_XG = 0.19
-OFF_TARGET_XG = 0.077
+SHOT_XG = 0.08
 
 XgSource = Literal["box", "shots"]
 
@@ -54,12 +59,8 @@ def shot_quality_xg(team: TeamStats) -> ShotXg:
             + OUTSIDE_BOX_XG * team.shots_outside_box
         )
         return ShotXg(round(value, 2), "box")
-    value = (
-        PENALTY_XG * pens
-        + ON_TARGET_XG * max(0, team.shots_on_target - pens)
-        + OFF_TARGET_XG * team.shots_off_target
-    )
-    return ShotXg(round(value, 2), "shots")
+    shots = max(0, team.shots_on_target + team.shots_off_target - pens)
+    return ShotXg(round(PENALTY_XG * pens + SHOT_XG * shots, 2), "shots")
 
 
 def match_xg(home: TeamStats, away: TeamStats) -> tuple[dict[str, float], XgSource]:
