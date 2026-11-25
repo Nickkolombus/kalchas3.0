@@ -48,6 +48,16 @@ class TeamStats:
     fouls: int = 0
     possession: float = 0.0
 
+    penalties: int = 0
+    """Penalties awarded so far, scored or not."""
+
+    shots_inside_box: int | None = None
+    """Shots from inside the box (penalties included), or None when the feed
+    sends no shot locations. Only top leagues carry them."""
+
+    shots_outside_box: int | None = None
+    shots_blocked: int | None = None
+
     goals: int | None = None
     """Goals scored by this team as at this minute, or None if unrecorded.
 
@@ -116,6 +126,12 @@ def _team_stats(raw_minute: Mapping[str, Any], side: Side) -> TeamStats:
         else 0.0
     )
 
+    def optional_counter(stat: str) -> int | None:
+        block = raw_minute.get(stat)
+        if not isinstance(block, Mapping) or block.get(side.value) is None:
+            return None
+        return _coerce_count(block.get(side.value))
+
     goals_block = raw_minute.get("goals")
     goals = (
         _coerce_count(goals_block.get(side.value))
@@ -131,6 +147,10 @@ def _team_stats(raw_minute: Mapping[str, Any], side: Side) -> TeamStats:
         corners=counter("corners"),
         fouls=counter("fouls"),
         possession=possession,
+        penalties=counter("penalties"),
+        shots_inside_box=optional_counter("shots_inside_box"),
+        shots_outside_box=optional_counter("shots_outside_box"),
+        shots_blocked=optional_counter("shots_blocked"),
         goals=goals,
     )
 

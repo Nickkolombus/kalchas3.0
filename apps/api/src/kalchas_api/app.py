@@ -26,6 +26,7 @@ from kalchas_core.runner import (
     live_home_away_odds,
 )
 from kalchas_core.weights import WeightSet, strategy_names
+from kalchas_core.xg import match_xg
 from kalchas_football import apifootball_badge_url, https_asset_url
 from pydantic import BaseModel, Field
 
@@ -195,6 +196,7 @@ class MatchPanelResponse(BaseModel):
     home_team_logo: str | None = None
     away_team_logo: str | None = None
     stat_lines: dict[str, SideValue] = Field(default_factory=dict)
+    xg_source: str | None = None
     strategy_status: dict[str, StrategyBlock] = Field(default_factory=dict)
     events: list[MatchEventOut] = Field(default_factory=list)
     substitutions: list[SubstitutionOut] = Field(default_factory=list)
@@ -296,6 +298,8 @@ class LiveMatchRow(BaseModel):
     away_team_logo: str | None = None
     hot_score: int = 0
     stat_lines: dict[str, SideValue] = Field(default_factory=dict)
+    xg_source: str | None = None
+    """"box" when xG used shot locations, "shots" for the rough fallback."""
     strategy_status: dict[str, StrategyBlock] = Field(default_factory=dict)
     active_strategies: list[str] = Field(default_factory=list)
     goal_events: list[MatchEventOut] = Field(default_factory=list)
@@ -532,6 +536,15 @@ def _stat_lines_from_sides(
     return out
 
 
+def _xg_from_sides(home_stats: dict[str, Any], away_stats: dict[str, Any]) -> tuple[SideValue, str]:
+    """Shot-quality xG for the board row, from the stored side counters."""
+    keys = set(home_stats) | set(away_stats)
+    block = {key: {"home": home_stats.get(key), "away": away_stats.get(key)} for key in keys}
+    snap = MatchTimeline.from_raw({"0": block}, 0).minutes[0]
+    line, source = match_xg(snap.home, snap.away)
+    return SideValue(home=line["home"], away=line["away"]), source
+
+
 def _strategy_blocks(raw: dict[str, Any]) -> dict[str, StrategyBlock]:
     out: dict[str, StrategyBlock] = {}
     for key, block in raw.items():
@@ -570,6 +583,7 @@ def _enrich_live_row(
     home_stats = _parse_jsonb(row.get("home_stats"))
     away_stats = _parse_jsonb(row.get("away_stats"))
     stat_lines = _stat_lines_from_sides(home_stats, away_stats)
+    stat_lines["xg"], xg_source = _xg_from_sides(home_stats, away_stats)
 
     strategy_status: dict[str, StrategyBlock] = {}
     active: list[str] = []
@@ -616,6 +630,7 @@ def _enrich_live_row(
             stat_lines = {
                 k: SideValue(home=v["home"], away=v["away"]) for k, v in board["stat_lines"].items()
             }
+            xg_source = board.get("xg_source") or xg_source
         last_5min = _window_stats(board.get("last_5min"))
         last_10min = _window_stats(board.get("last_10min"))
     events = [
@@ -656,6 +671,7 @@ def _enrich_live_row(
         away_team_logo=_team_logo(row.get("away_team_logo"), away_id, away_team),
         hot_score=hot,
         stat_lines=stat_lines,
+        xg_source=xg_source,
         strategy_status=strategy_status,
         active_strategies=active,
         goal_events=goals,
@@ -959,6 +975,7 @@ def _panel_to_response(raw: dict[str, Any]) -> MatchPanelResponse:
             away_team,
         ),
         stat_lines=stat_lines,
+        xg_source=str(raw["xg_source"]) if raw.get("xg_source") else None,
         strategy_status=_strategy_blocks(raw.get("strategy_status") or {}),
         events=events,
         substitutions=[

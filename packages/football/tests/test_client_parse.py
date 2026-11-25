@@ -430,6 +430,59 @@ def test_primary_labels_win_over_later_synonyms() -> None:
     assert out["away_team"]["ball_possession"] == 58
 
 
+# Shape of a top-league get_events row (Shakhtar v Fenerbahce, 2026-11-25):
+# the live-counter block's possession is junk, the extended block's is real.
+_EXTENDED_EVENT_STATS = [
+    {"type": "Corners", "home": "3", "away": "5"},
+    {"type": "Attacks", "home": "101", "away": "110"},
+    {"type": "Dangerous Attacks", "home": "44", "away": "40"},
+    {"type": "On Target", "home": "2", "away": "5"},
+    {"type": "Off Target", "home": "6", "away": "8"},
+    {"type": "Ball Possession", "home": "91%", "away": "9%"},
+    {"type": "Shots Total", "home": "8", "away": "13"},
+    {"type": "Shots On Goal", "home": "2", "away": "5"},
+    {"type": "Shots Off Goal", "home": "5", "away": "6"},
+    {"type": "Shots Blocked", "home": "1", "away": "2"},
+    {"type": "Shots Inside Box", "home": "3", "away": "9"},
+    {"type": "Shots Outside Box", "home": "5", "away": "4"},
+    {"type": "Corners", "home": "3", "away": "5"},
+    {"type": "Ball Possession", "home": "54%", "away": "46%"},
+]
+
+
+def test_duplicate_possession_uses_the_extended_block() -> None:
+    out = statistics_to_team_dict(_EXTENDED_EVENT_STATS)
+    assert out["home_team"]["ball_possession"] == 54
+    assert out["away_team"]["ball_possession"] == 46
+    # Everything else still comes from the first (live-counter) block.
+    assert out["home_team"]["off_target"] == 6
+    assert out["away_team"]["on_target"] == 5
+    # Shot locations for xG.
+    assert out["home_team"]["shots_inside_box"] == 3
+    assert out["away_team"]["shots_outside_box"] == 4
+    assert out["away_team"]["shots_blocked"] == 2
+
+
+def test_penalties_parsed_and_box_shots_absent_without_extended_block() -> None:
+    raw = [
+        {"type": "Penalty", "home": "1", "away": "0"},
+        {"type": "On Target", "home": "3", "away": "1"},
+    ]
+    out = statistics_to_team_dict(raw)
+    assert out["home_team"]["penalties"] == 1
+    assert "shots_inside_box" not in out["home_team"]
+
+
+def test_duplicate_possession_skips_an_empty_second_row() -> None:
+    raw = [
+        {"type": "Ball Possession", "home": "52%", "away": "48%"},
+        {"type": "Ball Possession", "home": "0%", "away": "0%"},
+    ]
+    out = statistics_to_team_dict(raw)
+    assert out["home_team"]["ball_possession"] == 52
+    assert out["away_team"]["ball_possession"] == 48
+
+
 def test_fallback_labels_used_when_primary_absent() -> None:
     raw = [
         {"type": "Shots On Goal", "home": "9", "away": "2"},

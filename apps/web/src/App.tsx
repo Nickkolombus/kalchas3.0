@@ -96,6 +96,8 @@ export type LiveMatch = {
   away_team_logo?: string | null;
   hot_score?: number;
   stat_lines?: Record<string, SideValue>;
+  /** "box" when xG used shot locations; "shots" when it is the rougher on/off-target guess. */
+  xg_source?: string | null;
   strategy_status?: Record<string, StrategyBlock>;
   active_strategies?: string[];
   odds?: OddsFlat | null;
@@ -166,10 +168,10 @@ type SortKey =
   | "delta_5min"
   | "pressure_index"
   | "delta_goal"
-  | "npei"
   | "tslg"
   | "shots_on_target"
   | "shots_off_target"
+  | "xg"
   | "attacks"
   | "dangerous_attacks"
   | "corners"
@@ -263,6 +265,11 @@ const KIND_RANK: Record<string, number> = {
   no_goal: 5,
 };
 
+const XG_HINT =
+  "What a team's shots were worth, by where they were taken: a penalty counts 0.76, a shot in the box 0.12, one from outside 0.035. A ~ means the league sends no shot locations, so it is a rougher guess from shots on and off target.";
+
+const XG_ROUGH_NOTE = "Rough guess: this league sends no shot locations.";
+
 const STRAT_COLS: {
   key: string;
   label: string;
@@ -311,13 +318,13 @@ const STRAT_COLS: {
     tip: "Goals behind the pace their form sets: their median scored and the opponent's median conceded over the last 10 games, spread over 90 minutes. 1.0 is a goal behind. Ahead means they have scored more than their pace so far. Done means they already have their full expected share. Needs 5+ recent games, or reads blank.",
   },
   {
-    key: "npei",
-    label: "ΦI",
-    name: "Efficiency",
-    digits: 0,
-    tone: "phi",
-    scale: { min: 0, max: 100 },
-    tip: "How well attacks become shots, out of 100. A higher number means more shots from the same attacks.",
+    key: "xg",
+    label: "xG",
+    name: "Expected goals",
+    digits: 2,
+    tone: "xg",
+    scale: { min: 0, max: 3 },
+    tip: XG_HINT,
   },
 ];
 
@@ -654,7 +661,6 @@ function compareMatches(
     case "delta_5min":
     case "pressure_index":
     case "delta_goal":
-    case "npei":
       cmp = stratMax(a, key) - stratMax(b, key);
       break;
     default:
@@ -1118,12 +1124,26 @@ function stratCellText(
 }
 
 /** Board text for one strategy cell; Form Bar swaps a negative gap for a word. */
+/** The band block for a column: strategies from strategy_status, xG from its stat line. */
+function stratBlock(match: LiveMatch, key: string): StrategyBlock | undefined {
+  if (key !== "xg") return match.strategy_status?.[key];
+  const line = match.stat_lines?.xg;
+  if (!line) return undefined;
+  const note = match.xg_source === "shots" ? XG_ROUGH_NOTE : null;
+  return {
+    teams: { home: { value: line.home, note }, away: { value: line.away, note } },
+  };
+}
+
 function cellText(
   key: string,
   cell: TeamCell | undefined,
   digits: number,
   extras: { suffix?: string; signed?: boolean },
 ): string {
+  if (key === "xg" && cell?.note === XG_ROUGH_NOTE && cell.value != null) {
+    return `~${stratCellText(cell, digits, extras)}`;
+  }
   if (key === "delta_goal" && !cell?.delivered && cell?.value != null && cell.value < 0) {
     return FORM_BAR_AHEAD;
   }
@@ -1148,7 +1168,7 @@ function StratCell({
   const home = block?.teams?.home;
   const away = block?.teams?.away;
   const extras = { suffix: col.suffix, signed: col.signed };
-  const fires = col.key !== "npei";
+  const fires = col.key !== "xg";
   const lead = hoverLead(
     fires ? home : { value: home?.value },
     fires ? away : { value: away?.value },
@@ -1230,7 +1250,7 @@ const STRAT_STEP_FALLBACK: Record<string, number> = {
   delta_5min: 6.8,
   pressure_index: 68,
   delta_goal: 1,
-  npei: 55,
+  xg: 1.5,
   kscore: 40,
 };
 
@@ -1999,10 +2019,12 @@ function mobileStrat(
   col: (typeof STRAT_COLS)[number],
   side: BoardSide,
 ): { text: string; cls: string } {
-  const block = match.strategy_status?.[col.key];
+  const block = stratBlock(match, col.key);
   const cell = block?.teams?.[side];
-  const trig = col.key !== "npei" && Boolean(cell?.triggered);
-  const text = cellText(col.key, cell, col.digits, { suffix: col.suffix, signed: col.signed });
+  const trig = col.key !== "xg" && Boolean(cell?.triggered);
+  // Phone columns are narrow: xG drops to one decimal so "~1.87" does not clip.
+  const digits = col.key === "xg" ? 1 : col.digits;
+  const text = cellText(col.key, cell, digits, { suffix: col.suffix, signed: col.signed });
   const word = text === FORM_BAR_DONE || text === FORM_BAR_AHEAD ? " is-word" : "";
   return {
     text,
@@ -3275,7 +3297,6 @@ export function App() {
               </tr>
             ) : null}
             {display.map((m, idx) => {
-              const ss = m.strategy_status || {};
               const fav = favorites.has(m.match_id);
               // Pinned rows sort first, so the last one closes the shelf.
               const favLast = fav && !favorites.has(display[idx + 1]?.match_id ?? "");
@@ -3331,7 +3352,7 @@ export function App() {
                     <StratCell
                       key={c.key}
                       match={m}
-                      block={ss[c.key]}
+                      block={stratBlock(m, c.key)}
                       col={c}
                     />
                   ))}

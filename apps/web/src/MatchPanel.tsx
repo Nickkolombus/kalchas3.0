@@ -73,6 +73,7 @@ export type OverlayMatch = {
   home_team_logo?: string | null;
   away_team_logo?: string | null;
   stat_lines?: Record<string, SideValue>;
+  xg_source?: string | null;
   strategy_status?: Record<string, StrategyBlock>;
   goal_events?: { minute: number; side: string }[];
   card_events?: MatchEvent[];
@@ -92,6 +93,7 @@ type MatchPanel = {
   home_team_logo?: string | null;
   away_team_logo?: string | null;
   stat_lines: Record<string, SideValue>;
+  xg_source?: string | null;
   strategy_status: Record<string, StrategyBlock>;
   events: MatchEvent[];
   substitutions: Substitution[];
@@ -176,9 +178,10 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "lineups", label: "Line-ups" },
 ];
 
-const STAT_BARS: { key: string; label: string }[] = [
+const STAT_BARS: { key: string; label: string; digits?: number }[] = [
   { key: "shots_on_target", label: "Shots on target" },
   { key: "shots_off_target", label: "Shots off target" },
+  { key: "xg", label: "Expected goals (xG)", digits: 2 },
   { key: "attacks", label: "Attacks" },
   { key: "dangerous_attacks", label: "Dangerous attacks" },
   { key: "corners", label: "Corners" },
@@ -245,16 +248,6 @@ const STRAT_ROWS: {
     tone: "lbar",
     scale: { min: 0, max: 2 },
     tip: "Goals behind the pace their form sets: their median scored and the opponent's median conceded over the last 10 games, spread over 90 minutes. 1.0 is a goal behind. Ahead means they have scored more than their pace so far. Done means they already have their full expected share. Needs 5+ recent games, or reads blank.",
-  },
-  {
-    key: "npei",
-    what: "Attacks turned into shots, out of 100",
-    label: "Efficiency",
-    digits: 0,
-    tone: "phi",
-    scale: { min: 0, max: 100 },
-    tip: "How well attacks become shots, out of 100. A higher number means more shots from the same attacks.",
-    noLine: true,
   },
 ];
 
@@ -375,6 +368,7 @@ function panelFromLive(match: OverlayMatch): MatchPanel {
     home_team_logo: match.home_team_logo,
     away_team_logo: match.away_team_logo,
     stat_lines: match.stat_lines || {},
+    xg_source: match.xg_source,
     strategy_status: match.strategy_status || {},
     events,
     substitutions: [],
@@ -558,15 +552,25 @@ function SignalRow({
 
 /** One match stat: the name in the middle, a number at each end, and a bar
  * split at the centre where each team fills its half by its share. */
-function StatRow({ label, home, away }: { label: string; home: number; away: number }) {
+function StatRow({
+  label,
+  home,
+  away,
+  digits = 0,
+}: {
+  label: string;
+  home: number;
+  away: number;
+  digits?: number;
+}) {
   const total = home + away;
   const lead = home > away ? "home" : away > home ? "away" : null;
   const share = (value: number) => `${total > 0 ? (value / total) * 100 : 0}%`;
   return (
     <div className="mp-stat">
-      <b className={lead === "home" ? "is-lead" : ""}>{fmt(home)}</b>
+      <b className={lead === "home" ? "is-lead" : ""}>{fmt(home, digits)}</b>
       <span>{label}</span>
-      <b className={lead === "away" ? "is-lead" : ""}>{fmt(away)}</b>
+      <b className={lead === "away" ? "is-lead" : ""}>{fmt(away, digits)}</b>
       <span className="mp-stat-bars" aria-hidden>
         <span className="mp-half is-home">
           <i className={lead === "home" ? "is-lead" : ""} style={{ width: share(home) }} />
@@ -1660,9 +1664,14 @@ export function MatchOverlay({
                   {STAT_BARS.map((row) => (
                     <StatRow
                       key={row.key}
-                      label={row.label}
+                      label={
+                        row.key === "xg" && panel.xg_source === "shots"
+                          ? "Expected goals (rough)"
+                          : row.label
+                      }
                       home={Number(panel.stat_lines[row.key]?.home || 0)}
                       away={Number(panel.stat_lines[row.key]?.away || 0)}
+                      digits={row.digits}
                     />
                   ))}
                 </div>

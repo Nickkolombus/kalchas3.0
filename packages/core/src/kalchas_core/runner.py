@@ -28,6 +28,7 @@ from kalchas_core.strategies import (
 )
 from kalchas_core.strategies.rule_of_three import TeamShotProfile
 from kalchas_core.weights import WeightSet
+from kalchas_core.xg import match_xg
 
 # Slot → default fire threshold (2.2 triggers.json values).
 DEFAULT_THRESHOLDS: dict[int, float] = {
@@ -664,12 +665,16 @@ def board_snapshot(
                 "home": getattr(snap.home, key),
                 "away": getattr(snap.away, key),
             }
+    xg_source: str | None = None
+    if snap is not None:
+        stat_lines["xg"], xg_source = match_xg(snap.home, snap.away)
 
     return {
         "strategy_status": strategy_status,
         "active_strategies": active,
         "hot_score": int(ks.match_score),
         "stat_lines": stat_lines,
+        "xg_source": xg_source,
         "last_5min": delta_5min.last_5min_block(timeline),
         "last_10min": pressure_index.last_10min_block(timeline),
     }

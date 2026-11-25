@@ -299,6 +299,10 @@ _STAT_KEYS = (
     "corners",
     "fouls",
     "possession",
+    "penalties",
+    "shots_inside_box",
+    "shots_outside_box",
+    "shots_blocked",
 )
 
 

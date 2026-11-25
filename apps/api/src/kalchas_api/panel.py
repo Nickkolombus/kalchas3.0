@@ -247,6 +247,7 @@ def build_match_panel(dsn: str, match_id: str) -> dict[str, Any] | None:
         "league": str(row["league_name"]) if row.get("league_name") else None,
         "status_short": str(row["status_short"]) if row.get("status_short") else None,
         "stat_lines": (board or {}).get("stat_lines") or {},
+        "xg_source": (board or {}).get("xg_source"),
         "strategy_status": (board or {}).get("strategy_status") or {},
         "last_5min": (board or {}).get("last_5min"),
         "last_10min": (board or {}).get("last_10min"),

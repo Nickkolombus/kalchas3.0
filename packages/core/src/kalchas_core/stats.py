@@ -4,6 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
+# Shot-location counters the extended feed block carries (top leagues only),
+# plus penalties awarded. flat key suffix -> (team-dict key, minute-block key).
+# Kept only when the feed sent them: absent means "unknown", not zero.
+_OPTIONAL_COUNTERS: dict[str, tuple[str, str]] = {
+    "sib": ("shots_inside_box", "shots_inside_box"),
+    "sob": ("shots_outside_box", "shots_outside_box"),
+    "blocked": ("shots_blocked", "shots_blocked"),
+    "pens": ("penalties", "penalties"),
+}
+
 
 def parse_statistics_payload(
     stats: Any,
@@ -18,7 +28,7 @@ def parse_statistics_payload(
     if isinstance(stats, dict) and "home_team" in stats and "away_team" in stats:
         home_stats = stats["home_team"]
         away_stats = stats["away_team"]
-        return {
+        flat = {
             "home_sot": int(home_stats.get("on_target", 0)),
             "away_sot": int(away_stats.get("on_target", 0)),
             "home_sofft": int(home_stats.get("off_target", 0)),
@@ -32,6 +42,11 @@ def parse_statistics_payload(
             "home_possession": home_possession,
             "away_possession": away_possession,
         }
+        for suffix, (team_key, _block_key) in _OPTIONAL_COUNTERS.items():
+            if team_key in home_stats or team_key in away_stats:
+                flat[f"home_{suffix}"] = int(home_stats.get(team_key) or 0)
+                flat[f"away_{suffix}"] = int(away_stats.get(team_key) or 0)
+        return flat
 
     if isinstance(stats, list) and len(stats) >= 2:
         home_stats = stats[0]
@@ -69,7 +84,7 @@ def parse_statistics_payload(
 
 def flattened_to_minute_block(flat: dict[str, int]) -> dict[str, dict[str, int]]:
     """Convert flat counters into the ``MatchTimeline.from_raw`` minute shape."""
-    return {
+    block = {
         "shots_on_target": {
             "home": flat.get("home_sot", 0),
             "away": flat.get("away_sot", 0),
@@ -95,3 +110,10 @@ def flattened_to_minute_block(flat: dict[str, int]) -> dict[str, dict[str, int]]
             "away": flat.get("away_possession", 50),
         },
     }
+    for suffix, (_team_key, block_key) in _OPTIONAL_COUNTERS.items():
+        if f"home_{suffix}" in flat or f"away_{suffix}" in flat:
+            block[block_key] = {
+                "home": flat.get(f"home_{suffix}", 0),
+                "away": flat.get(f"away_{suffix}", 0),
+            }
+    return block

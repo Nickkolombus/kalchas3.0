@@ -405,7 +405,38 @@ _STAT_LABELS: dict[str, tuple[str, ...]] = {
     "attacks": ("attacks",),
     "dangerous_attacks": ("dangerous_attacks",),
     "ball_possession": ("ball_possession", "possession"),
+    # Shot location, sent only with the extended block (top leagues). Absent
+    # labels stay absent, so "no data" never reads as "no shots in the box".
+    "shots_inside_box": ("shots_inside_box",),
+    "shots_outside_box": ("shots_outside_box",),
+    "shots_blocked": ("shots_blocked",),
+    # Penalties awarded (scored or not), in the live-counter block for most rows.
+    "penalties": ("penalty", "penalties"),
 }
+
+
+def _possession_stat(raw_stats: list[Any]) -> dict[str, Any] | None:
+    """The trustworthy "Ball Possession" row when the feed sends more than one.
+
+    Matches with the extended stats block (Shots Total, Shots Inside Box...)
+    carry possession twice: first in the live-counter block, then in the
+    extended block. Only the second is real possession: on 2026-11-25 the
+    first read 91/9 for Shakhtar v Fenerbahce (real 54/46) and 20/80 for
+    Sporting v Man Utd (real 51/49), and some rows sent 0%/0%. So take the
+    last row whose two sides add up to about 100, else the first row as before.
+    """
+    rows = [
+        s
+        for s in raw_stats or []
+        if isinstance(s, dict)
+        and "_".join(str(s.get("type") or "").lower().split()) in {"ball_possession", "possession"}
+    ]
+    if len(rows) < 2:
+        return rows[0] if rows else None
+    for stat in reversed(rows):
+        if 98 <= _coerce_int(stat.get("home")) + _coerce_int(stat.get("away")) <= 102:
+            return stat
+    return rows[0]
 
 
 def statistics_to_team_dict(raw_stats: list[Any]) -> dict[str, Any]:
@@ -417,14 +448,19 @@ def statistics_to_team_dict(raw_stats: list[Any]) -> dict[str, Any]:
         label = "_".join(str(stat.get("type") or "").lower().split())
         if label and label not in by_label:
             by_label[label] = stat
+    possession = _possession_stat(raw_stats)
     home: dict[str, Any] = {}
     away: dict[str, Any] = {}
     for target, labels in _STAT_LABELS.items():
-        found = next((lbl for lbl in labels if lbl in by_label), None)
-        if found is None:
+        if target == "ball_possession":
+            stat = possession
+        else:
+            found = next((lbl for lbl in labels if lbl in by_label), None)
+            stat = by_label[found] if found is not None else None
+        if stat is None:
             continue
-        home[target] = _coerce_int(by_label[found].get("home"))
-        away[target] = _coerce_int(by_label[found].get("away"))
+        home[target] = _coerce_int(stat.get("home"))
+        away[target] = _coerce_int(stat.get("away"))
     return {"home_team": home, "away_team": away}
 
 
